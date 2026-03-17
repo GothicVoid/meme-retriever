@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "canonical": "蚌埠住了",
+      "aliases": ["绷不住了", "蚌住了", "绷住了", "笑死"],
+      "description": "表示忍不住笑了，常用于搞笑场景",
+      "tags": ["搞笑", "表情包", "网络用语"],
+      "type": "meme"
+    },
+    {
+      "canonical": "哈哈哈",
+      "aliases": ["哈哈", "哈哈哈哈", "lol", "笑哭"],
+      "description": "表示大笑，非常开心",
+      "tags": ["搞笑", "开心"],
+      "type": "meme"
+    }
+  ]
+}

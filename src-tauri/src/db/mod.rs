@@ -1,3 +1,5 @@
+pub mod repo;
+
 use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use std::path::Path;
 
