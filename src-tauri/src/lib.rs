@@ -8,6 +8,7 @@ mod kb;
 mod ml;
 mod search;
 
+use std::sync::Arc;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,9 +22,23 @@ pub fn run() {
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;
+
             tauri::async_runtime::block_on(async {
+                // 初始化数据库
                 let pool = db::init(&app_data).await.expect("db init failed");
+
+                // 初始化知识库
+                let kb_path = app_data.join("../../knowledge_base.json"); // app_data/knowledge_base.json
+                let kb = kb::local::LocalKBProvider::load(&kb_path)
+                    .unwrap_or_else(|_| kb::local::LocalKBProvider::empty());
+
+                // 初始化搜索引擎（预加载向量索引）
+                let engine = search::engine::SearchEngine::new(pool.clone(), Box::new(kb))
+                    .await
+                    .expect("search engine init failed");
+
                 app.manage(pool);
+                app.manage(Arc::new(engine) as commands::EngineState);
             });
             Ok(())
         })

@@ -21,6 +21,10 @@ impl LocalKBProvider {
         let entries = serde_json::from_value(v["entries"].clone()).unwrap_or_default();
         Ok(Self { entries })
     }
+
+    pub fn empty() -> Self {
+        Self { entries: vec![] }
+    }
 }
 
 impl KnowledgeBaseProvider for LocalKBProvider {

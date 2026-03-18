@@ -32,6 +32,11 @@ impl SearchEngine {
         })
     }
 
+    /// 暴露 pool 供外部使用（如 commands 层入库后更新向量索引）
+    pub fn pool(&self) -> &DbPool {
+        &self.pool
+    }
+
     /// 向量索引中插入新向量（入库后调用）。
     pub fn insert_vector(&self, id: String, vector: Vec<f32>) {
         self.vector_store.write().unwrap().insert(id, vector);
