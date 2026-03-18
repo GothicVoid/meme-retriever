@@ -5,8 +5,13 @@
       placeholder="搜索表情包..."
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       @keydown.esc="$emit('update:modelValue', '')"
-    />
-    <button v-if="modelValue" @click="$emit('update:modelValue', '')">✕</button>
+    >
+    <button
+      v-if="modelValue"
+      @click="$emit('update:modelValue', '')"
+    >
+      ✕
+    </button>
   </div>
 </template>
 

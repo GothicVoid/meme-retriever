@@ -1,8 +1,14 @@
 <template>
   <nav class="nav">
-    <RouterLink to="/">搜索</RouterLink>
-    <RouterLink to="/library">图库</RouterLink>
-    <RouterLink to="/settings">设置</RouterLink>
+    <RouterLink to="/">
+      搜索
+    </RouterLink>
+    <RouterLink to="/library">
+      图库
+    </RouterLink>
+    <RouterLink to="/settings">
+      设置
+    </RouterLink>
   </nav>
   <RouterView />
 </template>

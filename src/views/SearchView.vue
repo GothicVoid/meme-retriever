@@ -1,7 +1,13 @@
 <template>
   <div class="search-view">
-    <SearchBar v-model="store.query" @update:model-value="debouncedSearch" />
-    <ImageGrid :images="store.results" :loading="store.loading" />
+    <SearchBar
+      v-model="store.query"
+      @update:model-value="debouncedSearch"
+    />
+    <ImageGrid
+      :images="store.results"
+      :loading="store.loading"
+    />
   </div>
 </template>
 

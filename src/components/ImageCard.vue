@@ -1,6 +1,13 @@
 <template>
-  <div class="image-card" @click="handleClick">
-    <img :src="convertFileSrc(image.thumbnailPath || image.filePath)" :alt="image.id" loading="lazy" />
+  <div
+    class="image-card"
+    @click="handleClick"
+  >
+    <img
+      :src="convertFileSrc(image.thumbnailPath || image.filePath)"
+      :alt="image.id"
+      loading="lazy"
+    >
   </div>
 </template>
 

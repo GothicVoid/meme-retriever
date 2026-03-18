@@ -1,9 +1,14 @@
 <template>
   <div class="library-view">
     <div class="toolbar">
-      <button @click="handleAdd">添加图片</button>
+      <button @click="handleAdd">
+        添加图片
+      </button>
     </div>
-    <ImageGrid :images="store.images as unknown as SearchResult[]" :loading="store.loading" />
+    <ImageGrid
+      :images="store.images as unknown as SearchResult[]"
+      :loading="store.loading"
+    />
   </div>
 </template>
 

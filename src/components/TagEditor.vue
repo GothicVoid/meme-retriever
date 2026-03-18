@@ -1,15 +1,18 @@
 <template>
   <div class="tag-editor">
-    <span v-for="tag in tags" :key="tag" class="tag">
+    <span
+      v-for="tag in tags"
+      :key="tag"
+      class="tag"
+    >
       {{ tag }}
       <button @click="removeTag(tag)">×</button>
     </span>
     <input
       v-model="input"
       placeholder="添加标签..."
-      @keydown.enter.prevent="addTag"
-      @keydown.comma.prevent="addTag"
-    />
+      @keydown="handleKeydown"
+    >
   </div>
 </template>
 
@@ -19,6 +22,13 @@ import { ref } from "vue";
 const props = defineProps<{ tags: string[] }>();
 const emit = defineEmits<{ "update:tags": [tags: string[]] }>();
 const input = ref("");
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault();
+    addTag();
+  }
+}
 
 function addTag() {
   const t = input.value.trim().replace(/,$/, "");

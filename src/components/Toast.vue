@@ -1,11 +1,19 @@
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="toast" :class="type">{{ message }}</div>
+    <div
+      v-if="visible"
+      class="toast"
+      :class="type"
+    >
+      {{ message }}
+    </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
+
+defineOptions({ name: "AppToast" });
 
 const visible = ref(false);
 const message = ref("");

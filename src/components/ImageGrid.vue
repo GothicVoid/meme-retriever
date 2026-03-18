@@ -1,8 +1,22 @@
 <template>
   <div class="image-grid">
-    <p v-if="loading" class="hint">加载中...</p>
-    <p v-else-if="!images.length" class="hint">没找到相关图片，试试其他描述？</p>
-    <ImageCard v-for="img in images" :key="img.id" :image="img" />
+    <p
+      v-if="loading"
+      class="hint"
+    >
+      加载中...
+    </p>
+    <p
+      v-else-if="!images.length"
+      class="hint"
+    >
+      没找到相关图片，试试其他描述？
+    </p>
+    <ImageCard
+      v-for="img in images"
+      :key="img.id"
+      :image="img"
+    />
   </div>
 </template>
 
