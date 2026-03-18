@@ -9,9 +9,20 @@ impl VectorStore {
         Self { ids: vec![], vectors: vec![] }
     }
 
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
     pub fn insert(&mut self, id: String, vector: Vec<f32>) {
         self.ids.push(id);
         self.vectors.push(vector);
+    }
+
+    pub fn remove(&mut self, id: &str) {
+        if let Some(pos) = self.ids.iter().position(|x| x == id) {
+            self.ids.remove(pos);
+            self.vectors.remove(pos);
+        }
     }
 
     /// Returns (id, cosine_similarity) sorted descending.
