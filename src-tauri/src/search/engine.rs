@@ -32,6 +32,11 @@ impl SearchEngine {
         })
     }
 
+    /// 当前向量索引中的向量数量（用于测试和监控）
+    pub fn vector_store_len(&self) -> usize {
+        self.vector_store.read().unwrap().len()
+    }
+
     /// 暴露 pool 供外部使用（如 commands 层入库后更新向量索引）
     pub fn pool(&self) -> &DbPool {
         &self.pool
@@ -101,8 +106,11 @@ impl SearchEngine {
             }
         }
 
-        // 6. 降序排列，取 limit 条
-        let mut ranked: Vec<(String, f32)> = score_map.into_iter().collect();
+        // 6. 降序排列，取 limit 条，score clamp 到 [0, 1]
+        let mut ranked: Vec<(String, f32)> = score_map
+            .into_iter()
+            .map(|(id, s)| (id, s.clamp(0.0, 1.0)))
+            .collect();
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         ranked.truncate(limit);
 

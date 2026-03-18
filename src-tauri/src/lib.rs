@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-mod commands;
-mod config;
-mod db;
-mod indexer;
-mod kb;
-mod ml;
-mod search;
+pub mod commands;
+pub mod config;
+pub mod db;
+pub mod indexer;
+pub mod kb;
+pub mod ml;
+pub mod search;
 
 use std::sync::Arc;
 use tauri::Manager;

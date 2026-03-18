@@ -4,6 +4,12 @@ pub struct VectorStore {
     vectors: Vec<Vec<f32>>,
 }
 
+impl Default for VectorStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VectorStore {
     pub fn new() -> Self {
         Self { ids: vec![], vectors: vec![] }
@@ -11,6 +17,10 @@ impl VectorStore {
 
     pub fn len(&self) -> usize {
         self.ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
     }
 
     pub fn insert(&mut self, id: String, vector: Vec<f32>) {
