@@ -16,6 +16,7 @@
       v-for="img in images"
       :key="img.id"
       :image="img"
+      @delete="$emit('delete', $event)"
     />
   </div>
 </template>
@@ -24,6 +25,7 @@
 import ImageCard from "./ImageCard.vue";
 import type { SearchResult } from "@/stores/search";
 defineProps<{ images: SearchResult[]; loading: boolean }>();
+defineEmits<{ delete: [id: string] }>();
 </script>
 
 <style scoped>

@@ -8,13 +8,14 @@
     <ImageGrid
       :images="store.images as unknown as SearchResult[]"
       :loading="store.loading"
+      @delete="handleDelete"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, confirm } from "@tauri-apps/plugin-dialog";
 import ImageGrid from "@/components/ImageGrid.vue";
 import { useLibraryStore } from "@/stores/library";
 import type { SearchResult } from "@/stores/search";
@@ -28,6 +29,12 @@ async function handleAdd() {
   if (!selected) return;
   const paths = Array.isArray(selected) ? selected : [selected];
   await store.addImages(paths);
+}
+
+async function handleDelete(id: string) {
+  const ok = await confirm("确定要删除这张图片吗？此操作不可撤销。", { title: "删除图片" });
+  if (!ok) return;
+  await store.deleteImage(id);
 }
 </script>
 
