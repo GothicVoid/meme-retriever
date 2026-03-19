@@ -111,6 +111,47 @@ async fn test_use_count_increment(pool: sqlx::SqlitePool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn test_add_images_and_list(pool: sqlx::SqlitePool) {
+    let lib = tempfile::tempdir().unwrap();
+    let paths = vec![
+        fixture("sample.jpg"),
+        fixture("sample_blank.jpg"),
+        fixture("sample_wide.jpg"),
+    ];
+
+    // 1. 入库，全部成功
+    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let results = collect(rx).await;
+    assert_eq!(results.len(), 3);
+    assert!(
+        results.iter().all(|r| r.status == "completed"),
+        "all images should index successfully"
+    );
+
+    // 2. 图库列表应包含 3 张
+    let images = repo::get_images_paged(&pool, 0, 50).await.unwrap();
+    assert_eq!(images.len(), 3, "library should contain 3 images after add");
+
+    // 3. 每张图片字段完整
+    for img in &images {
+        assert!(!img.id.is_empty(), "id should not be empty");
+        assert!(!img.file_name.is_empty(), "file_name should not be empty");
+        assert!(img.width.unwrap_or(0) > 0, "width should be positive: {}", img.file_name);
+        assert!(img.height.unwrap_or(0) > 0, "height should be positive: {}", img.file_name);
+    }
+
+    // 4. 缩略图文件实际存在于磁盘
+    for img in &images {
+        let thumb = img.thumbnail_path.as_deref().unwrap_or("");
+        assert!(!thumb.is_empty(), "thumbnail_path should be set: {}", img.file_name);
+        assert!(
+            std::path::Path::new(thumb).exists(),
+            "thumbnail should exist at: {thumb}"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn test_search_performance(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
     let paths = vec![

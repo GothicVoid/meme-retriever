@@ -8,6 +8,7 @@ use crate::search::engine::SearchEngine;
 pub type EngineState = Arc<SearchEngine>;
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub id: String,
     pub file_path: String,
@@ -17,6 +18,7 @@ pub struct SearchResult {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageMeta {
     pub id: String,
     pub file_path: String,
@@ -221,6 +223,41 @@ mod tests {
     async fn make_engine(pool: SqlitePool) -> Arc<SearchEngine> {
         let kb = Box::new(LocalKBProvider::empty());
         Arc::new(SearchEngine::new(pool, kb).await.unwrap())
+    }
+
+    #[test]
+    fn test_image_meta_serializes_camel_case() {
+        let meta = ImageMeta {
+            id: "uuid-1".into(),
+            file_path: "/library/images/uuid-1.jpg".into(),
+            file_name: "sample.jpg".into(),
+            thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
+            width: 800,
+            height: 600,
+            added_at: 1700000000,
+            use_count: 0,
+            tags: vec![],
+        };
+        let json = serde_json::to_value(&meta).unwrap();
+        assert!(json.get("thumbnailPath").is_some(), "should have thumbnailPath");
+        assert!(json.get("filePath").is_some(), "should have filePath");
+        assert!(json.get("fileName").is_some(), "should have fileName");
+        assert!(json.get("thumbnail_path").is_none(), "should NOT have thumbnail_path");
+    }
+
+    #[test]
+    fn test_search_result_serializes_camel_case() {
+        let result = SearchResult {
+            id: "uuid-1".into(),
+            file_path: "/library/images/uuid-1.jpg".into(),
+            thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
+            score: 0.9,
+            tags: vec![],
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert!(json.get("thumbnailPath").is_some(), "should have thumbnailPath");
+        assert!(json.get("filePath").is_some(), "should have filePath");
+        assert!(json.get("thumbnail_path").is_none(), "should NOT have thumbnail_path");
     }
 
     #[sqlx::test(migrations = "./migrations")]

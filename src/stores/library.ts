@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface ImageMeta {
   id: string;
@@ -28,7 +29,22 @@ export const useLibraryStore = defineStore("library", () => {
   }
 
   async function addImages(paths: string[]) {
+    let remaining = paths.length;
+    const unlistenPromise = listen("index-progress", () => {
+      remaining--;
+    });
     await invoke("add_images", { paths });
+    // 等待所有进度事件到达
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        if (remaining <= 0) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 50);
+    });
+    const unlisten = await unlistenPromise;
+    unlisten();
     await fetchImages();
   }
 
