@@ -54,6 +54,22 @@ impl SearchEngine {
 
     pub async fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<SearchResult>> {
         if query.is_empty() {
+            // 无使用记录时返回最新入库的 n 张
+            if !repo::has_any_usage(&self.pool).await? {
+                let images = repo::get_latest_images(&self.pool, limit as i64).await?;
+                let mut results = Vec::with_capacity(images.len());
+                for img in images {
+                    let tags = repo::get_tags_for_image(&self.pool, &img.id).await?;
+                    results.push(SearchResult {
+                        id: img.id,
+                        file_path: img.file_path,
+                        thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+                        score: 1.0,
+                        tags,
+                    });
+                }
+                return Ok(results);
+            }
             return Ok(vec![]);
         }
 
@@ -179,6 +195,64 @@ mod tests {
         let engine = make_engine(pool).await;
         let results = engine.search("test", 10).await.unwrap();
         assert!(results.is_empty());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_empty_query_no_usage_returns_latest(pool: SqlitePool) {
+        // 插入 3 张图，added_at 不同，use_count 全为 0
+        repo::insert_image(&pool, &repo::ImageRecord {
+            id: "old".into(), file_path: "/tmp/old.jpg".into(), file_name: "old.jpg".into(),
+            format: "jpg".into(), width: Some(100), height: Some(100),
+            added_at: 1000, use_count: 0, thumbnail_path: Some("/tmp/old_t.jpg".into()),
+        }).await.unwrap();
+        repo::insert_image(&pool, &repo::ImageRecord {
+            id: "mid".into(), file_path: "/tmp/mid.jpg".into(), file_name: "mid.jpg".into(),
+            format: "jpg".into(), width: Some(100), height: Some(100),
+            added_at: 2000, use_count: 0, thumbnail_path: Some("/tmp/mid_t.jpg".into()),
+        }).await.unwrap();
+        repo::insert_image(&pool, &repo::ImageRecord {
+            id: "new".into(), file_path: "/tmp/new.jpg".into(), file_name: "new.jpg".into(),
+            format: "jpg".into(), width: Some(100), height: Some(100),
+            added_at: 3000, use_count: 0, thumbnail_path: Some("/tmp/new_t.jpg".into()),
+        }).await.unwrap();
+
+        let engine = make_engine(pool).await;
+        let results = engine.search("", 10).await.unwrap();
+
+        // 应返回 3 张，按 added_at 降序
+        assert_eq!(results.len(), 3, "should return all 3 images");
+        assert_eq!(results[0].id, "new");
+        assert_eq!(results[1].id, "mid");
+        assert_eq!(results[2].id, "old");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_empty_query_no_usage_respects_limit(pool: SqlitePool) {
+        for i in 0..5i64 {
+            repo::insert_image(&pool, &repo::ImageRecord {
+                id: format!("img{i}"), file_path: format!("/tmp/img{i}.jpg"),
+                file_name: format!("img{i}.jpg"), format: "jpg".into(),
+                width: Some(100), height: Some(100),
+                added_at: i * 1000, use_count: 0,
+                thumbnail_path: Some(format!("/tmp/img{i}_t.jpg")),
+            }).await.unwrap();
+        }
+        let engine = make_engine(pool).await;
+        let results = engine.search("", 3).await.unwrap();
+        assert_eq!(results.len(), 3, "should respect limit");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_empty_query_with_usage_returns_empty(pool: SqlitePool) {
+        // 有图片且有使用记录时，空查询返回空（暂不实现按频次排序）
+        repo::insert_image(&pool, &repo::ImageRecord {
+            id: "used".into(), file_path: "/tmp/used.jpg".into(), file_name: "used.jpg".into(),
+            format: "jpg".into(), width: Some(100), height: Some(100),
+            added_at: 1000, use_count: 3, thumbnail_path: None,
+        }).await.unwrap();
+        let engine = make_engine(pool).await;
+        let results = engine.search("", 10).await.unwrap();
+        assert!(results.is_empty(), "should return empty when images have been used");
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -181,6 +181,35 @@ pub async fn increment_use_count(pool: &DbPool, id: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
+pub async fn has_any_usage(pool: &DbPool) -> anyhow::Result<bool> {
+    let row = sqlx::query("SELECT COUNT(*) as cnt FROM images WHERE use_count > 0")
+        .fetch_one(pool)
+        .await?;
+    let cnt: i64 = row.get("cnt");
+    Ok(cnt > 0)
+}
+
+pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<ImageRecord>> {
+    let rows = sqlx::query(
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path
+         FROM images ORDER BY added_at DESC LIMIT ?1"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| ImageRecord {
+        id: r.get("id"),
+        file_path: r.get("file_path"),
+        file_name: r.get("file_name"),
+        format: r.get("format"),
+        width: r.get("width"),
+        height: r.get("height"),
+        added_at: r.get("added_at"),
+        use_count: r.get("use_count"),
+        thumbnail_path: r.get("thumbnail_path"),
+    }).collect())
+}
+
 pub async fn get_tags_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<Vec<String>> {
     let rows = sqlx::query("SELECT tag_text FROM tags WHERE image_id=?1 ORDER BY created_at")
         .bind(image_id)

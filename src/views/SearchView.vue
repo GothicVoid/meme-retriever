@@ -12,11 +12,14 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from "vue";
 import SearchBar from "@/components/SearchBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import { useSearch } from "@/composables/useSearch";
 
 const { store, debouncedSearch } = useSearch();
+
+onMounted(() => store.search(""));
 </script>
 
 <style scoped>
