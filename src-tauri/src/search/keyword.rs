@@ -18,6 +18,7 @@ pub async fn fts_search(pool: &DbPool, query: &str, limit: i64) -> anyhow::Resul
     .await?;
 
     if rows.is_empty() {
+        tracing::debug!("[FTS] 0 hits for {query:?}");
         return Ok(vec![]);
     }
 
@@ -28,7 +29,7 @@ pub async fn fts_search(pool: &DbPool, query: &str, limit: i64) -> anyhow::Resul
     }).collect();
     let max_abs = ranks.iter().cloned().fold(0f64, f64::max);
 
-    let results = rows
+    let results: Vec<(String, f32)> = rows
         .iter()
         .zip(ranks.iter())
         .map(|(r, &abs_rank)| {
@@ -38,7 +39,14 @@ pub async fn fts_search(pool: &DbPool, query: &str, limit: i64) -> anyhow::Resul
         })
         .collect();
 
-    tracing::debug!("fts_search: hits={}", { let r: &Vec<(String, f32)> = &results; r.len() });
+    {
+        let detail: Vec<String> = rows.iter().zip(ranks.iter()).zip(results.iter())
+            .map(|((_r, &raw), (id, score))| {
+                format!("  {}  raw={:.3}  score={:.3}", id, -raw, score)
+            })
+            .collect();
+        tracing::debug!("[FTS] {} hits for {:?} (max_abs={:.3}):\n{}", results.len(), query, max_abs, detail.join("\n"));
+    }
     Ok(results)
 }
 

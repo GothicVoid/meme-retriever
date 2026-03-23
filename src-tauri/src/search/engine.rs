@@ -77,7 +77,11 @@ impl SearchEngine {
 
         // 1. KB 查询扩展
         let expanded = self.kb.expand_query(query);
-        tracing::debug!("search: query={query} expanded={expanded}");
+        if expanded != query {
+            tracing::debug!("[KB] {:?} → {:?} (expanded)", query, expanded);
+        } else {
+            tracing::debug!("[KB] {:?} → no match, using as-is", query);
+        }
 
         // 2. 并行：CLIP 文本编码 + FTS 搜索
         let pool = self.pool.clone();
@@ -90,14 +94,34 @@ impl SearchEngine {
         );
         let text_vec = text_vec_result??;
 
+        // CLIP 向量摘要
+        {
+            let norm: f32 = text_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let preview: Vec<String> = text_vec.iter().take(4).map(|x| format!("{x:.3}")).collect();
+            tracing::debug!("[CLIP] vec[:4]=[{}] norm={:.4}", preview.join(", "), norm);
+        }
+
         // 3. 标签搜索
         let tag_hits: std::collections::HashSet<String> = {
             let tag_results = keyword::tag_search(&self.pool, query, limit_i64).await?;
-            tag_results.into_iter().map(|(id, _)| id).collect()
+            let ids: std::collections::HashSet<String> = tag_results.into_iter().map(|(id, _)| id).collect();
+            if ids.is_empty() {
+                tracing::debug!("[TAG] 0 hits");
+            } else {
+                let list: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+                tracing::debug!("[TAG] {} hits: [{}]", ids.len(), list.join(", "));
+            }
+            ids
         };
 
         // 4. 语义检索
         let semantic_hits = self.vector_store.read().unwrap().query(&text_vec, limit * 2);
+        {
+            let detail: Vec<String> = semantic_hits.iter()
+                .map(|(id, cos)| format!("  {}  cos={:.4}", id, cos))
+                .collect();
+            tracing::debug!("[VEC] {} semantic hits:\n{}", semantic_hits.len(), detail.join("\n"));
+        }
 
         // 5. 加权合并：score = 0.7×semantic + 0.3×keyword（标签命中时 keyword 权重升至 0.6）
         let fts_map: std::collections::HashMap<String, f32> = fts_result
@@ -112,13 +136,20 @@ impl SearchEngine {
             let kw_weight = if tag_hits.contains(id) { 0.6 } else { 0.3 };
             let sem_weight = 1.0 - kw_weight;
             let score = sem_weight * sem_score + kw_weight * kw_score;
+            let tag_ch = if tag_hits.contains(id) { 'Y' } else { 'N' };
+            tracing::debug!("[MERGE] {}  sem={:.4}  kw={:.4}  tag={}  w=({:.1},{:.1})  final={:.4}",
+                id, sem_score, kw_score, tag_ch, sem_weight, kw_weight, score);
             score_map.insert(id.clone(), score);
         }
         // FTS 命中但语义未命中的也加入
         for (id, kw_score) in &fts_map {
             if !score_map.contains_key(id) {
                 let kw_weight = if tag_hits.contains(id) { 0.6 } else { 0.3 };
-                score_map.insert(id.clone(), kw_weight * kw_score);
+                let score = kw_weight * kw_score;
+                let tag_ch = if tag_hits.contains(id) { 'Y' } else { 'N' };
+                tracing::debug!("[MERGE] {}  sem=none  kw={:.4}  tag={}  w=(0.0,{:.1})  final={:.4}",
+                    id, kw_score, tag_ch, kw_weight, score);
+                score_map.insert(id.clone(), score);
             }
         }
 
@@ -137,10 +168,10 @@ impl SearchEngine {
 
         // 7. 从 DB 查询元数据组装结果
         let mut results = Vec::with_capacity(ranked.len());
-        for (id, score) in ranked {
+        for (rank, (id, score)) in ranked.into_iter().enumerate() {
             if let Some(img) = repo::get_image(&self.pool, &id).await? {
                 let tags = repo::get_tags_for_image(&self.pool, &id).await?;
-                tracing::debug!("result: id={id} score={score:.3}");
+                tracing::debug!("[RESULT] #{} {}  score={:.4}  {}", rank + 1, id, score, img.file_path);
                 results.push(SearchResult {
                     id,
                     file_path: img.file_path,
