@@ -109,6 +109,22 @@ SQLite 单文件，4 张表：
 
 ## 项目当前状态
 
-架构和骨架已完成，大部分核心逻辑仍为 TODO：
-- ML 推理（CLIP/OCR）、搜索引擎核心逻辑、入库流水线、FTS 关键词搜索均待实现
-- 前端 UI 组件框架已就绪，IPC 接口已定义
+MVP 已完整实现，共 53 个 Rust 测试 + 24 个前端测试全部通过。
+
+**已完成：**
+- 搜索引擎（混合检索、KB 扩展、加权合并）、入库流水线、FTS 关键词搜索
+- 数据库 CRUD、向量存储、缩略图生成
+- 全部 9 个 IPC 命令、前端 UI（搜索/图库/设置）
+
+**剩余 TODO（需要 ONNX 模型文件）：**
+- `src-tauri/src/ml/clip.rs` L68/L77：`run_text_inference` / `run_image_inference` 真实推理
+- `src-tauri/src/indexer/ocr.rs` L30：`run_inference` OCR 真实推理
+- `src-tauri/src/commands/mod.rs` L179：`copy_to_clipboard` 平台特定实现
+
+模型不存在时自动 fallback 到 mock 向量（基于文本长度/文件路径 seed），搜索可运行但语义不准确。
+
+**模型文件路径**（通过环境变量 `CLIP_MODEL_DIR` 配置，默认 `./models`）：
+- `models/clip_text.onnx`：Chinese-CLIP ViT-B/16 文本编码器（ONNX INT8）
+- `models/clip_image.onnx`：Chinese-CLIP ViT-B/16 图像编码器（ONNX INT8）
+- `models/ocr.onnx`：PaddleOCR 文本识别模型
+- `models/bpe_simple_vocab_16e6.txt`：CLIP BPE 分词表
