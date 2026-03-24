@@ -1,8 +1,9 @@
 use once_cell::sync::OnceCell;
 use std::path::Path;
+use std::sync::Mutex;
 
-static TEXT_SESSION: OnceCell<ort::session::Session> = OnceCell::new();
-static IMAGE_SESSION: OnceCell<ort::session::Session> = OnceCell::new();
+static TEXT_SESSION: OnceCell<Mutex<ort::session::Session>> = OnceCell::new();
+static IMAGE_SESSION: OnceCell<Mutex<ort::session::Session>> = OnceCell::new();
 
 pub struct ClipEncoder;
 
@@ -11,14 +12,18 @@ impl ClipEncoder {
     /// 模型不存在时返回确定性 mock 向量（L2 归一化后的均匀向量）
     pub fn encode_text(text: &str) -> anyhow::Result<Vec<f32>> {
         let start = std::time::Instant::now();
-        let model_path = model_dir().join("clip_text.onnx");
 
-        let result = if model_path.exists() {
-            let session = TEXT_SESSION.get_or_try_init(|| load_session(&model_path))?;
-            run_text_inference(session, text)?
-        } else {
-            tracing::debug!("clip: text model not found, using mock");
-            mock_vector(text.len())
+        let result = match find_model(&["clip_text.onnx", "vit-b-16.txt.fp32.onnx", "vit-b-16.txt.fp16.onnx"]) {
+            Some(model_path) => {
+                let session = TEXT_SESSION.get_or_try_init(|| {
+                    load_session(&model_path).map(Mutex::new)
+                })?;
+                run_text_inference(&mut session.lock().unwrap(), text)?
+            }
+            None => {
+                tracing::debug!("clip: text model not found, using mock");
+                mock_vector(text.len())
+            }
         };
 
         tracing::debug!("encode_text: {}ms", start.elapsed().as_millis());
@@ -34,16 +39,19 @@ impl ClipEncoder {
         }
 
         let start = std::time::Instant::now();
-        let model_path = model_dir().join("clip_image.onnx");
 
-        let result = if model_path.exists() {
-            let session = IMAGE_SESSION.get_or_try_init(|| load_session(&model_path))?;
-            run_image_inference(session, path)?
-        } else {
-            tracing::debug!("clip: image model not found, using mock");
-            // mock：基于文件名生成确定性向量
-            let seed = image_path.bytes().fold(0u64, |acc, b| acc.wrapping_add(b as u64));
-            mock_vector(seed as usize)
+        let result = match find_model(&["clip_image.onnx", "vit-b-16.img.fp32.onnx", "vit-b-16.img.fp16.onnx"]) {
+            Some(model_path) => {
+                let session = IMAGE_SESSION.get_or_try_init(|| {
+                    load_session(&model_path).map(Mutex::new)
+                })?;
+                run_image_inference(&mut session.lock().unwrap(), path)?
+            }
+            None => {
+                tracing::debug!("clip: image model not found, using mock");
+                let seed = image_path.bytes().fold(0u64, |acc, b| acc.wrapping_add(b as u64));
+                mock_vector(seed as usize)
+            }
         };
 
         tracing::debug!("encode_image: {}ms", start.elapsed().as_millis());
@@ -59,27 +67,57 @@ fn model_dir() -> std::path::PathBuf {
         .unwrap_or_else(|_| std::path::PathBuf::from("./models"))
 }
 
+/// 按候选文件名顺序查找第一个存在的模型文件
+fn find_model(candidates: &[&str]) -> Option<std::path::PathBuf> {
+    let dir = model_dir();
+    candidates.iter()
+        .map(|name| dir.join(name))
+        .find(|p| p.exists())
+}
+
 fn load_session(path: &Path) -> anyhow::Result<ort::session::Session> {
     tracing::info!("clip: loading model {:?}", path);
     let session = ort::session::Session::builder()?.commit_from_file(path)?;
     Ok(session)
 }
 
-fn run_text_inference(_session: &ort::session::Session, text: &str) -> anyhow::Result<Vec<f32>> {
-    // TODO: 真实推理（P2-B 真实模型阶段）
-    // 1. tokenize(text) → Vec<i64>
-    // 2. ndarray 转换 → session.run()
-    // 3. 取输出 → l2_normalize
-    let _ = text;
-    Ok(mock_vector(text.len()))
+fn run_text_inference(session: &mut ort::session::Session, text: &str) -> anyhow::Result<Vec<f32>> {
+    use crate::ml::tokenizer;
+    use ort::value::Tensor;
+    let tokens = tokenizer::tokenize(text); // Vec<i64>
+    let seq_len = tokens.len();
+    let tensor = Tensor::from_array(([1usize, seq_len], tokens.into_boxed_slice()))?;
+    let outputs = session.run(ort::inputs!["text" => tensor])?;
+    let (_, data) = outputs[0].try_extract_tensor::<f32>()?;
+    let mut vec: Vec<f32> = data.to_vec();
+    l2_normalize(&mut vec);
+    Ok(vec)
 }
 
-fn run_image_inference(_session: &ort::session::Session, image_path: &Path) -> anyhow::Result<Vec<f32>> {
-    // TODO: 真实推理（P2-B 真实模型阶段）
-    // 1. image::open → resize 224×224 → 归一化(mean/std) → CHW ndarray
-    // 2. session.run() → 取输出 → l2_normalize
-    let seed = image_path.to_string_lossy().bytes().fold(0u64, |acc, b| acc.wrapping_add(b as u64));
-    Ok(mock_vector(seed as usize))
+fn run_image_inference(session: &mut ort::session::Session, image_path: &Path) -> anyhow::Result<Vec<f32>> {
+    use ort::value::Tensor;
+    // 1. 加载图像，resize 224×224
+    let img = image::open(image_path)?
+        .resize_exact(224, 224, image::imageops::FilterType::Triangle)
+        .to_rgb8();
+
+    // 2. 归一化：CLIP 标准 mean/std，转换为 CHW f32
+    const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
+    const STD: [f32; 3] = [0.229, 0.224, 0.225];
+    let mut data = vec![0f32; 3 * 224 * 224];
+    for (idx, pixel) in img.pixels().enumerate() {
+        for c in 0..3 {
+            data[c * 224 * 224 + idx] = (pixel[c] as f32 / 255.0 - MEAN[c]) / STD[c];
+        }
+    }
+
+    // 3. shape [1, 3, 224, 224]
+    let tensor = Tensor::from_array(([1usize, 3, 224, 224], data.into_boxed_slice()))?;
+    let outputs = session.run(ort::inputs!["image" => tensor])?;
+    let (_, data) = outputs[0].try_extract_tensor::<f32>()?;
+    let mut vec: Vec<f32> = data.to_vec();
+    l2_normalize(&mut vec);
+    Ok(vec)
 }
 
 /// 生成确定性的 L2 归一化 512 维向量（用于无模型时的 mock）

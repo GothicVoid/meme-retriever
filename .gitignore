@@ -25,3 +25,6 @@ dist-ssr
 
 # ONNX model files (large binaries, download separately)
 src-tauri/models/
+
+# ONNX Runtime shared library (copy libonnxruntime.so from onnxruntime installation)
+src-tauri/libs/

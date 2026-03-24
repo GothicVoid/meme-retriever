@@ -168,10 +168,10 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
     assert!(results.iter().all(|r| r.status == "completed"));
     assert!(total_ms < 15_000, "indexing 3 images took too long: {total_ms}ms");
 
-    // 搜索性能：< 500ms
+    // 搜索性能：< 2000ms（真实 CLIP 模型推理）
     let engine = make_engine(pool).await;
     let start = std::time::Instant::now();
     let _ = engine.search("test", 10).await.unwrap();
     let search_ms = start.elapsed().as_millis();
-    assert!(search_ms < 500, "search took too long: {search_ms}ms");
+    assert!(search_ms < 2000, "search took too long: {search_ms}ms");
 }
