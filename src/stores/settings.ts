@@ -5,6 +5,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const defaultLimit = ref(9);
   const deleteOriginalFile = ref(false);
   const libraryPath = ref("");
+  const showDebugInfo = ref(false);
 
   function load() {
     const raw = localStorage.getItem("settings");
@@ -13,19 +14,21 @@ export const useSettingsStore = defineStore("settings", () => {
     defaultLimit.value = parsed.defaultLimit ?? 9;
     deleteOriginalFile.value = parsed.deleteOriginalFile ?? false;
     libraryPath.value = parsed.libraryPath ?? "";
+    showDebugInfo.value = parsed.showDebugInfo ?? false;
   }
 
-  watch([defaultLimit, deleteOriginalFile, libraryPath], () => {
+  watch([defaultLimit, deleteOriginalFile, libraryPath, showDebugInfo], () => {
     localStorage.setItem(
       "settings",
       JSON.stringify({
         defaultLimit: defaultLimit.value,
         deleteOriginalFile: deleteOriginalFile.value,
         libraryPath: libraryPath.value,
+        showDebugInfo: showDebugInfo.value,
       })
     );
   });
 
   load();
-  return { defaultLimit, deleteOriginalFile, libraryPath };
+  return { defaultLimit, deleteOriginalFile, libraryPath, showDebugInfo };
 });

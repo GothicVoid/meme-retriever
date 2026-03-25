@@ -26,6 +26,16 @@
         placeholder="留空使用默认路径"
       >
     </label>
+    <label>
+      <input
+        v-model="settings.showDebugInfo"
+        type="checkbox"
+      >
+      显示调试信息
+    </label>
+    <div class="reindex-desc">
+      开启后，搜索结果每张图片显示得分详情和计算公式
+    </div>
 
     <div class="reindex-section">
       <div class="reindex-desc">重新生成图像索引（更新模型或首次使用时需要）</div>

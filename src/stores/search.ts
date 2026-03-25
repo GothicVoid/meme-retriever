@@ -2,12 +2,21 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
+export interface ScoreDebugInfo {
+  semScore: number;
+  kwScore: number;
+  tagHit: boolean;
+  semWeight: number;
+  kwWeight: number;
+}
+
 export interface SearchResult {
   id: string;
   filePath: string;
   thumbnailPath: string;
   score: number;
   tags: string[];
+  debugInfo: ScoreDebugInfo | null;
 }
 
 export const useSearchStore = defineStore("search", () => {

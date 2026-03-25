@@ -8,6 +8,7 @@
     <ImageGrid
       :images="store.images as unknown as SearchResult[]"
       :loading="store.loading"
+      :show-debug-info="false"
       @delete="handleDelete"
     />
   </div>

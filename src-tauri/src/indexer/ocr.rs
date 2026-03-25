@@ -162,9 +162,14 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "需要 models/ocr.onnx"]
-    fn test_extract_text_with_text() {
-        let result = extract_text(&fixture("sample.jpg")).unwrap();
-        assert!(!result.is_empty(), "含文字图片应返回非空文本");
+    fn test_extract_text_with_real_model() {
+        if find_model(&["ocr.onnx", "ch_PP-OCRv4_rec_infer.onnx"]).is_none() {
+            eprintln!("跳过：找不到 OCR 模型（ch_PP-OCRv4_rec_infer.onnx）");
+            return;
+        }
+        // sample_text_line.png 是专为识别模型准备的单行文字条带（320×48），
+        // 内容为 "test meme text"。recognition 模型不含 detection，需要预裁剪的文字行。
+        let result = extract_text(&fixture("sample_text_line.png")).unwrap();
+        assert!(!result.is_empty(), "OCR 应识别出文字条带中的文字，实际返回空字符串");
     }
 }

@@ -205,8 +205,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "需要 models/clip_text.onnx 和 models/clip_image.onnx"]
     fn test_encode_text_real_model() {
+        if find_model(&["clip_text.onnx", "vit-b-16.txt.fp32.onnx", "vit-b-16.txt.fp16.onnx"]).is_none() {
+            eprintln!("跳过：找不到 CLIP 文本模型（vit-b-16.txt.fp32.onnx 等）");
+            return;
+        }
         let v = ClipEncoder::encode_text("一只可爱的猫").unwrap();
         assert_eq!(v.len(), 512);
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();

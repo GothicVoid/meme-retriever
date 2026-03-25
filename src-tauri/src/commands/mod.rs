@@ -9,12 +9,23 @@ pub type EngineState = Arc<SearchEngine>;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ScoreDebugInfo {
+    pub sem_score: f32,
+    pub kw_score: f32,
+    pub tag_hit: bool,
+    pub sem_weight: f32,
+    pub kw_weight: f32,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub id: String,
     pub file_path: String,
     pub thumbnail_path: String,
     pub score: f32,
     pub tags: Vec<String>,
+    pub debug_info: Option<ScoreDebugInfo>,
 }
 
 #[derive(serde::Serialize)]
@@ -301,11 +312,55 @@ mod tests {
             thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
             score: 0.9,
             tags: vec![],
+            debug_info: None,
         };
         let json = serde_json::to_value(&result).unwrap();
         assert!(json.get("thumbnailPath").is_some(), "should have thumbnailPath");
         assert!(json.get("filePath").is_some(), "should have filePath");
         assert!(json.get("thumbnail_path").is_none(), "should NOT have thumbnail_path");
+        assert!(json.get("debugInfo").is_some(), "should have debugInfo (null)");
+    }
+
+    #[test]
+    fn test_score_debug_info_serializes_camel_case() {
+        let info = ScoreDebugInfo {
+            sem_score: 0.85,
+            kw_score: 0.4,
+            tag_hit: true,
+            sem_weight: 0.4,
+            kw_weight: 0.6,
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert!(json.get("semScore").is_some(), "should have semScore");
+        assert!(json.get("kwScore").is_some(), "should have kwScore");
+        assert!(json.get("tagHit").is_some(), "should have tagHit");
+        assert!(json.get("semWeight").is_some(), "should have semWeight");
+        assert!(json.get("kwWeight").is_some(), "should have kwWeight");
+        assert!(json.get("sem_score").is_none(), "should NOT have sem_score");
+    }
+
+    #[test]
+    fn test_search_result_has_debug_info_field() {
+        let result = SearchResult {
+            id: "uuid-1".into(),
+            file_path: "/path/img.jpg".into(),
+            thumbnail_path: "/path/thumb.jpg".into(),
+            score: 0.9,
+            tags: vec![],
+            debug_info: Some(ScoreDebugInfo {
+                sem_score: 0.8,
+                kw_score: 0.0,
+                tag_hit: false,
+                sem_weight: 0.7,
+                kw_weight: 0.3,
+            }),
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert!(json.get("debugInfo").is_some(), "should have debugInfo");
+        let di = json["debugInfo"].as_object().unwrap();
+        assert!((di["semScore"].as_f64().unwrap() - 0.8).abs() < 1e-5);
+        assert_eq!(di["tagHit"].as_bool().unwrap(), false);
+        assert_eq!(di["kwScore"].as_f64().unwrap(), 0.0);
     }
 
     #[sqlx::test(migrations = "./migrations")]

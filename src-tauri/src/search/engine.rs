@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use crate::commands::SearchResult;
+use crate::commands::{SearchResult, ScoreDebugInfo};
 use crate::db::{DbPool, repo};
 use crate::kb::provider::KnowledgeBaseProvider;
 use crate::ml::clip::ClipEncoder;
@@ -66,6 +66,7 @@ impl SearchEngine {
                         thumbnail_path: img.thumbnail_path.unwrap_or_default(),
                         score: 1.0,
                         tags,
+                        debug_info: None,
                     });
                 }
                 return Ok(results);
@@ -130,6 +131,7 @@ impl SearchEngine {
             .collect();
 
         let mut score_map: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+        let mut debug_map: std::collections::HashMap<String, ScoreDebugInfo> = std::collections::HashMap::new();
 
         for (id, sem_score) in &semantic_hits {
             let kw_score = fts_map.get(id).copied().unwrap_or(0.0);
@@ -140,6 +142,13 @@ impl SearchEngine {
             tracing::debug!("[MERGE] {}  sem={:.4}  kw={:.4}  tag={}  w=({:.1},{:.1})  final={:.4}",
                 id, sem_score, kw_score, tag_ch, sem_weight, kw_weight, score);
             score_map.insert(id.clone(), score);
+            debug_map.insert(id.clone(), ScoreDebugInfo {
+                sem_score: *sem_score,
+                kw_score,
+                tag_hit: tag_hits.contains(id),
+                sem_weight,
+                kw_weight,
+            });
         }
         // FTS 命中但语义未命中的也加入
         for (id, kw_score) in &fts_map {
@@ -150,6 +159,13 @@ impl SearchEngine {
                 tracing::debug!("[MERGE] {}  sem=none  kw={:.4}  tag={}  w=(0.0,{:.1})  final={:.4}",
                     id, kw_score, tag_ch, kw_weight, score);
                 score_map.insert(id.clone(), score);
+                debug_map.insert(id.clone(), ScoreDebugInfo {
+                    sem_score: 0.0,
+                    kw_score: *kw_score,
+                    tag_hit: tag_hits.contains(id),
+                    sem_weight: 0.0,
+                    kw_weight,
+                });
             }
         }
 
@@ -173,11 +189,12 @@ impl SearchEngine {
                 let tags = repo::get_tags_for_image(&self.pool, &id).await?;
                 tracing::debug!("[RESULT] #{} {}  score={:.4}  {}", rank + 1, id, score, img.file_path);
                 results.push(SearchResult {
-                    id,
+                    id: id.clone(),
                     file_path: img.file_path,
                     thumbnail_path: img.thumbnail_path.unwrap_or_default(),
                     score,
                     tags,
+                    debug_info: debug_map.remove(&id),
                 });
             }
         }
@@ -354,5 +371,42 @@ mod tests {
         // 移除向量
         engine.remove_vector("img1");
         assert_eq!(engine.vector_store.read().unwrap().len(), 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_result_contains_debug_info(pool: SqlitePool) {
+        insert_test_image(&pool, "img1", "test content", unit_vec(1)).await;
+
+        let engine = make_engine(pool).await;
+        let results = engine.search("test", 10).await.unwrap();
+
+        assert!(!results.is_empty(), "should have results");
+        for r in &results {
+            let di = r.debug_info.as_ref().expect("debug_info should be Some for search results");
+            assert!(di.sem_score >= 0.0 && di.sem_score <= 1.0, "sem_score out of range: {}", di.sem_score);
+            assert!(di.kw_score >= 0.0 && di.kw_score <= 1.0, "kw_score out of range: {}", di.kw_score);
+            // 权重组合只有三种合法情况
+            let valid = (di.sem_weight == 0.7 && di.kw_weight == 0.3)
+                || (di.sem_weight == 0.4 && di.kw_weight == 0.6)
+                || (di.sem_weight == 0.0 && (di.kw_weight == 0.3 || di.kw_weight == 0.6));
+            assert!(valid, "unexpected weights: sem={} kw={}", di.sem_weight, di.kw_weight);
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_empty_query_debug_info_is_none(pool: SqlitePool) {
+        repo::insert_image(&pool, &repo::ImageRecord {
+            id: "img1".into(), file_path: "/tmp/img1.jpg".into(), file_name: "img1.jpg".into(),
+            format: "jpg".into(), width: Some(100), height: Some(100),
+            added_at: 1000, use_count: 0, thumbnail_path: Some("/tmp/img1_t.jpg".into()),
+        }).await.unwrap();
+
+        let engine = make_engine(pool).await;
+        let results = engine.search("", 10).await.unwrap();
+
+        assert!(!results.is_empty(), "should return latest images for empty query");
+        for r in &results {
+            assert!(r.debug_info.is_none(), "empty query results should have debug_info=None");
+        }
     }
 }

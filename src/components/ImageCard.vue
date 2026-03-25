@@ -9,6 +9,26 @@
       :alt="image.id"
       loading="lazy"
     >
+    <div
+      v-if="showDebugInfo && image.debugInfo"
+      class="debug-overlay"
+    >
+      <div class="debug-score">{{ (image.score * 100).toFixed(1) }}%</div>
+      <div class="debug-row">
+        <span>语义 {{ (image.debugInfo.semScore * 100).toFixed(0) }}%</span>
+        <span class="dim">×{{ image.debugInfo.semWeight.toFixed(1) }}</span>
+      </div>
+      <div class="debug-row">
+        <span>关键词 {{ (image.debugInfo.kwScore * 100).toFixed(0) }}%</span>
+        <span class="dim">×{{ image.debugInfo.kwWeight.toFixed(1) }}</span>
+      </div>
+      <div
+        v-if="image.debugInfo.tagHit"
+        class="debug-tag"
+      >
+        标签命中
+      </div>
+    </div>
     <ul
       v-if="menuVisible"
       class="context-menu"
@@ -32,7 +52,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import type { SearchResult } from "@/stores/search";
 
-const props = defineProps<{ image: SearchResult }>();
+const props = defineProps<{ image: SearchResult; showDebugInfo: boolean }>();
 const emit = defineEmits<{ delete: [id: string] }>();
 const { copyImage } = useClipboard();
 
@@ -79,6 +99,23 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
   display: block;
 }
 .image-card:hover { opacity: 0.85; }
+
+.debug-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.68rem;
+  padding: 0.25rem 0.4rem;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.debug-score { font-size: 0.82rem; font-weight: 600; }
+.debug-row { display: flex; justify-content: space-between; }
+.dim { opacity: 0.7; }
+.debug-tag { color: #ffd700; font-weight: 600; }
 
 .context-menu {
   position: absolute;
