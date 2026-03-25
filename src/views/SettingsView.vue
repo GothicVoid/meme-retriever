@@ -38,7 +38,9 @@
     </div>
 
     <div class="reindex-section">
-      <div class="reindex-desc">重新生成图像索引（更新模型或首次使用时需要）</div>
+      <div class="reindex-desc">
+        重新生成图像索引（更新模型或首次使用时需要）
+      </div>
       <button
         :disabled="reindexing"
         @click="startReindex"

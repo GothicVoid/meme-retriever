@@ -13,7 +13,9 @@
       v-if="showDebugInfo && image.debugInfo"
       class="debug-overlay"
     >
-      <div class="debug-score">{{ (image.score * 100).toFixed(1) }}%</div>
+      <div class="debug-score">
+        {{ (image.score * 100).toFixed(1) }}%
+      </div>
       <div class="debug-row">
         <span>语义 {{ (image.debugInfo.semScore * 100).toFixed(0) }}%</span>
         <span class="dim">×{{ image.debugInfo.semWeight.toFixed(1) }}</span>
