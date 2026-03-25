@@ -35,6 +35,9 @@ impl VectorStore {
         }
     }
 
+    /// 语义相似度最低阈值：低于此值的结果不参与排序
+    const SEMANTIC_THRESHOLD: f32 = 0.15;
+
     /// Returns (id, cosine_similarity) sorted descending.
     pub fn query(&self, query_vec: &[f32], top_k: usize) -> Vec<(String, f32)> {
         let mut scores: Vec<(usize, f32)> = self
@@ -42,6 +45,7 @@ impl VectorStore {
             .iter()
             .enumerate()
             .map(|(i, v)| (i, cosine(v, query_vec)))
+            .filter(|(_, s)| *s >= Self::SEMANTIC_THRESHOLD)
             .collect();
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scores

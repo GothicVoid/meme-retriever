@@ -22,7 +22,8 @@ impl ClipEncoder {
             }
             None => {
                 tracing::debug!("clip: text model not found, using mock");
-                mock_vector(text.len())
+                let seed = text.bytes().fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b as u64));
+                mock_vector(seed as usize)
             }
         };
 

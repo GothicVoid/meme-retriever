@@ -76,10 +76,8 @@ pub async fn add_images(
         while let Some(progress) = rx.recv().await {
             // 成功入库后更新内存向量索引
             if progress.status == "completed" && !progress.id.is_empty() {
-                if let Ok(embs) = repo::get_all_embeddings(engine.pool()).await {
-                    if let Some((_, vec)) = embs.into_iter().find(|(id, _)| id == &progress.id) {
-                        engine.insert_vector(progress.id.clone(), vec);
-                    }
+                if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
+                    engine.insert_vector(progress.id.clone(), vec);
                 }
             }
             // 发送进度事件到前端

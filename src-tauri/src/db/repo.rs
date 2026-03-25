@@ -124,6 +124,19 @@ pub async fn get_all_embeddings(pool: &DbPool) -> anyhow::Result<Vec<(String, Ve
     Ok(result)
 }
 
+pub async fn get_embedding(pool: &DbPool, image_id: &str) -> anyhow::Result<Option<Vec<f32>>> {
+    let row = sqlx::query("SELECT vector FROM embeddings WHERE image_id = ?1")
+        .bind(image_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.map(|r| {
+        let blob: Vec<u8> = r.get("vector");
+        blob.chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect()
+    }))
+}
+
 pub async fn insert_ocr(pool: &DbPool, image_id: &str, content: &str) -> anyhow::Result<()> {
     tracing::debug!("insert_ocr: image_id={image_id}, len={}", content.len());
     sqlx::query("INSERT OR REPLACE INTO ocr_texts(image_id,content) VALUES(?1,?2)")
