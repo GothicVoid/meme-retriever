@@ -96,14 +96,22 @@ fn run_text_inference(session: &mut ort::session::Session, text: &str) -> anyhow
 
 fn run_image_inference(session: &mut ort::session::Session, image_path: &Path) -> anyhow::Result<Vec<f32>> {
     use ort::value::Tensor;
-    // 1. 加载图像，resize 224×224
-    let img = image::open(image_path)?
-        .resize_exact(224, 224, image::imageops::FilterType::Triangle)
-        .to_rgb8();
+    // 1. 加载图像：短边缩放到 224，再中心裁剪 224×224（Chinese-CLIP 标准预处理）
+    let img = image::open(image_path)?.to_rgb8();
+    let (orig_w, orig_h) = img.dimensions();
+    let (new_w, new_h) = if orig_w <= orig_h {
+        (224u32, (orig_h as f32 * 224.0 / orig_w as f32).round() as u32)
+    } else {
+        ((orig_w as f32 * 224.0 / orig_h as f32).round() as u32, 224u32)
+    };
+    let img = image::imageops::resize(&img, new_w, new_h, image::imageops::FilterType::Triangle);
+    let x = (new_w - 224) / 2;
+    let y = (new_h - 224) / 2;
+    let img = image::imageops::crop_imm(&img, x, y, 224, 224).to_image();
 
-    // 2. 归一化：CLIP 标准 mean/std，转换为 CHW f32
-    const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
-    const STD: [f32; 3] = [0.229, 0.224, 0.225];
+    // 2. 归一化：CLIP 专用 mean/std（非 ImageNet），转换为 CHW f32
+    const MEAN: [f32; 3] = [0.48145466, 0.4578275, 0.40821073];
+    const STD: [f32; 3] = [0.26862954, 0.261_302_6, 0.275_777_1];
     let mut data = vec![0f32; 3 * 224 * 224];
     for (idx, pixel) in img.pixels().enumerate() {
         for c in 0..3 {

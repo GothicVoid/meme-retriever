@@ -212,6 +212,56 @@ pub async fn increment_use_count(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn reindex_all(
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<(), String> {
+    tracing::info!("reindex_all: starting");
+    let images = repo::get_all_images(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    let total = images.len();
+    tracing::info!("reindex_all: {} images to reindex", total);
+
+    let pool = db.inner().clone();
+    let engine = Arc::clone(engine.inner());
+
+    tokio::spawn(async move {
+        for (current, img) in images.into_iter().enumerate() {
+            let progress_event = serde_json::json!({
+                "current": current,
+                "total": total,
+                "id": &img.id,
+            });
+            let _ = app.emit("reindex-progress", &progress_event);
+
+            match tokio::task::spawn_blocking({
+                let path = img.file_path.clone();
+                move || crate::ml::clip::ClipEncoder::encode_image(&path)
+            }).await {
+                Ok(Ok(vec)) => {
+                    if let Err(e) = repo::insert_embedding(&pool, &img.id, &vec).await {
+                        tracing::error!("reindex_all: failed to save embedding for {}: {e}", img.id);
+                        continue;
+                    }
+                    engine.insert_vector(img.id.clone(), vec);
+                    tracing::debug!("reindex_all: done {}", img.id);
+                }
+                Ok(Err(e)) => tracing::warn!("reindex_all: encode failed for {}: {e}", img.id),
+                Err(e) => tracing::warn!("reindex_all: task panicked for {}: {e}", img.id),
+            }
+        }
+
+        let done_event = serde_json::json!({ "current": total, "total": total });
+        let _ = app.emit("reindex-progress", &done_event);
+        tracing::info!("reindex_all: completed");
+    });
+
+    Ok(())
+}
+
 // ── 测试 ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

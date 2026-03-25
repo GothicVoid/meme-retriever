@@ -54,6 +54,7 @@ pub fn run() {
             commands::copy_to_clipboard,
             commands::reveal_in_finder,
             commands::increment_use_count,
+            commands::reindex_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
