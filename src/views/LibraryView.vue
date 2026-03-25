@@ -1,9 +1,30 @@
 <template>
   <div class="library-view">
     <div class="toolbar">
-      <button @click="handleAdd">
+      <button
+        :disabled="store.indexing"
+        @click="handleAdd"
+      >
         添加图片
       </button>
+      <button
+        :disabled="store.indexing"
+        @click="handleAddFolder"
+      >
+        添加文件夹
+      </button>
+    </div>
+    <div
+      v-if="store.indexing"
+      class="index-status"
+    >
+      <span>正在入库… {{ store.indexCurrent }}/{{ store.indexTotal }}</span>
+      <div class="progress-bar">
+        <div
+          class="progress-fill"
+          :style="{ width: progressPercent + '%' }"
+        />
+      </div>
     </div>
     <ImageGrid
       :images="store.images as unknown as SearchResult[]"
@@ -15,13 +36,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, computed } from "vue";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import ImageGrid from "@/components/ImageGrid.vue";
 import { useLibraryStore } from "@/stores/library";
 import type { SearchResult } from "@/stores/search";
 
 const store = useLibraryStore();
+
+const progressPercent = computed(() =>
+  store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
+);
 
 onMounted(() => store.fetchImages());
 
@@ -30,6 +55,13 @@ async function handleAdd() {
   if (!selected) return;
   const paths = Array.isArray(selected) ? selected : [selected];
   await store.addImages(paths);
+}
+
+async function handleAddFolder() {
+  const selected = await open({ directory: true });
+  if (!selected) return;
+  const path = Array.isArray(selected) ? selected[0] : selected;
+  await store.addFolder(path);
 }
 
 async function handleDelete(id: string) {
@@ -42,4 +74,7 @@ async function handleDelete(id: string) {
 <style scoped>
 .library-view { padding: 1rem; }
 .toolbar { margin-bottom: 1rem; }
+.index-status { margin-bottom: 0.75rem; font-size: 0.875rem; color: #666; display: flex; flex-direction: column; gap: 0.25rem; }
+.progress-bar { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: #646cff; transition: width 0.3s; }
 </style>

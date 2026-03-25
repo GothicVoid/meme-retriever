@@ -18,6 +18,9 @@ export interface ImageMeta {
 export const useLibraryStore = defineStore("library", () => {
   const images = ref<ImageMeta[]>([]);
   const loading = ref(false);
+  const indexing = ref(false);
+  const indexTotal = ref(0);
+  const indexCurrent = ref(0);
 
   async function fetchImages(page = 0) {
     loading.value = true;
@@ -29,15 +32,16 @@ export const useLibraryStore = defineStore("library", () => {
   }
 
   async function addImages(paths: string[]) {
-    let remaining = paths.length;
+    indexing.value = true;
+    indexTotal.value = paths.length;
+    indexCurrent.value = 0;
     const unlistenPromise = listen("index-progress", () => {
-      remaining--;
+      indexCurrent.value++;
     });
     await invoke("add_images", { paths });
-    // 等待所有进度事件到达
     await new Promise<void>((resolve) => {
       const check = setInterval(() => {
-        if (remaining <= 0) {
+        if (indexCurrent.value >= indexTotal.value) {
           clearInterval(check);
           resolve();
         }
@@ -45,6 +49,7 @@ export const useLibraryStore = defineStore("library", () => {
     });
     const unlisten = await unlistenPromise;
     unlisten();
+    indexing.value = false;
     await fetchImages();
   }
 
@@ -53,5 +58,28 @@ export const useLibraryStore = defineStore("library", () => {
     images.value = images.value.filter((img) => img.id !== id);
   }
 
-  return { images, loading, fetchImages, addImages, deleteImage };
+  async function addFolder(dirPath: string) {
+    const total = await invoke<number>("add_folder", { path: dirPath });
+    if (total === 0) return;
+    indexing.value = true;
+    indexTotal.value = total;
+    indexCurrent.value = 0;
+    const unlistenPromise = listen("index-progress", () => {
+      indexCurrent.value++;
+    });
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        if (indexCurrent.value >= indexTotal.value) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 50);
+    });
+    const unlisten = await unlistenPromise;
+    unlisten();
+    indexing.value = false;
+    await fetchImages();
+  }
+
+  return { images, loading, indexing, indexTotal, indexCurrent, fetchImages, addImages, deleteImage, addFolder };
 });

@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Manager, Emitter, State};
 
@@ -44,6 +45,27 @@ pub struct ImageMeta {
 
 // ── 命令实现 ────────────────────────────────────────────────────────────────
 
+/// 后台启动入库流水线，每张图完成后发送 `index-progress` 事件，并更新内存向量索引。
+fn spawn_index_task(
+    paths: Vec<String>,
+    library_dir: PathBuf,
+    pool: crate::db::DbPool,
+    engine: Arc<crate::search::engine::SearchEngine>,
+    app_handle: tauri::AppHandle,
+) {
+    tokio::spawn(async move {
+        let mut rx = crate::indexer::pipeline::index_images(pool, paths, library_dir);
+        while let Some(progress) = rx.recv().await {
+            if progress.status == "completed" && !progress.id.is_empty() {
+                if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
+                    engine.insert_vector(progress.id.clone(), vec);
+                }
+            }
+            let _ = app_handle.emit("index-progress", &progress);
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn search(
     query: String,
@@ -78,25 +100,31 @@ pub async fn add_images(
         .map_err(|e| e.to_string())?
         .join("library");
 
-    let pool = db.inner().clone();
-    let engine = Arc::clone(engine.inner());
-    let app_handle = app.clone();
-
-    tokio::spawn(async move {
-        let mut rx = crate::indexer::pipeline::index_images(pool, paths, library_dir);
-        while let Some(progress) = rx.recv().await {
-            // 成功入库后更新内存向量索引
-            if progress.status == "completed" && !progress.id.is_empty() {
-                if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
-                    engine.insert_vector(progress.id.clone(), vec);
-                }
-            }
-            // 发送进度事件到前端
-            let _ = app_handle.emit("index-progress", &progress);
-        }
-    });
-
+    spawn_index_task(paths, library_dir, db.inner().clone(), Arc::clone(engine.inner()), app);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn add_folder(
+    path: String,
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<usize, String> {
+    use crate::indexer::pipeline::scan_images_in_dir;
+    let paths = scan_images_in_dir(std::path::Path::new(&path))
+        .map_err(|e| e.to_string())?;
+    let total = paths.len();
+    tracing::info!("add_folder: {path} → {total} images");
+    if total > 0 {
+        let library_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("library");
+        spawn_index_task(paths, library_dir, db.inner().clone(), Arc::clone(engine.inner()), app);
+    }
+    Ok(total)
 }
 
 #[tauri::command]

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
 import type { Event } from "@tauri-apps/api/event";
+import { flushPromises } from "@vue/test-utils";
 import { useLibraryStore, type ImageMeta } from "@/stores/library";
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -113,5 +114,107 @@ describe("useLibraryStore", () => {
 
     expect(store.images).toHaveLength(1);
     expect(store.images[0].id).toBe("uuid-2");
+  });
+
+  it("addFolder 调用 add_folder 并等待返回数量的进度事件后刷新", async () => {
+    vi.useFakeTimers();
+
+    mockListen.mockImplementation((_event, handler) => {
+      handler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
+      handler({ payload: { id: "uuid-2", status: "completed" } } as Event<unknown>);
+      return Promise.resolve(() => {});
+    });
+
+    mockInvoke.mockResolvedValueOnce(2);          // add_folder → 2
+    mockInvoke.mockResolvedValueOnce(mockImages); // get_images → mockImages
+
+    const store = useLibraryStore();
+    const p = store.addFolder("/tmp/memes");
+
+    await vi.runAllTimersAsync();
+    await p;
+    vi.useRealTimers();
+
+    expect(mockInvoke).toHaveBeenCalledWith("add_folder", { path: "/tmp/memes" });
+    expect(store.images).toEqual(mockImages);
+  });
+
+  it("addImages 过程中 indexing 为 true 且 indexCurrent 随进度递增", async () => {
+    vi.useFakeTimers();
+
+    let progressHandler!: (e: Event<unknown>) => void;
+    mockListen.mockImplementation((_event, handler) => {
+      progressHandler = handler as (e: Event<unknown>) => void;
+      return Promise.resolve(() => {});
+    });
+
+    // add_images 先挂起，让我们在中途检查状态
+    let resolveInvoke!: (v: unknown) => void;
+    mockInvoke.mockReturnValueOnce(new Promise((r) => { resolveInvoke = r; }));
+    mockInvoke.mockResolvedValueOnce(mockImages); // get_images
+
+    const store = useLibraryStore();
+    const p = store.addImages(["/tmp/a.jpg", "/tmp/b.jpg"]);
+
+    await flushPromises();
+
+    expect(store.indexing).toBe(true);
+    expect(store.indexTotal).toBe(2);
+    expect(store.indexCurrent).toBe(0);
+
+    progressHandler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
+    expect(store.indexCurrent).toBe(1);
+
+    progressHandler({ payload: { id: "uuid-2", status: "completed" } } as Event<unknown>);
+    expect(store.indexCurrent).toBe(2);
+
+    resolveInvoke(undefined);
+    await vi.runAllTimersAsync();
+    await p;
+    vi.useRealTimers();
+
+    expect(store.indexing).toBe(false);
+  });
+
+  it("addFolder 过程中 indexing 为 true 且 indexCurrent 随进度递增", async () => {
+    vi.useFakeTimers();
+
+    let progressHandler!: (e: Event<unknown>) => void;
+    mockListen.mockImplementation((_event, handler) => {
+      progressHandler = handler as (e: Event<unknown>) => void;
+      return Promise.resolve(() => {});
+    });
+
+    mockInvoke.mockResolvedValueOnce(2);          // add_folder → total=2
+    mockInvoke.mockResolvedValueOnce(mockImages); // get_images
+
+    const store = useLibraryStore();
+    const p = store.addFolder("/tmp/memes");
+
+    await flushPromises();
+
+    expect(store.indexing).toBe(true);
+    expect(store.indexTotal).toBe(2);
+    expect(store.indexCurrent).toBe(0);
+
+    progressHandler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
+    expect(store.indexCurrent).toBe(1);
+
+    progressHandler({ payload: { id: "uuid-2", status: "completed" } } as Event<unknown>);
+    expect(store.indexCurrent).toBe(2);
+
+    await vi.runAllTimersAsync();
+    await p;
+    vi.useRealTimers();
+
+    expect(store.indexing).toBe(false);
+  });
+
+  it("addFolder 目录为空时（total=0）不监听进度事件", async () => {
+    mockInvoke.mockResolvedValueOnce(0); // add_folder → 0 images
+    const store = useLibraryStore();
+    await store.addFolder("/tmp/empty");
+    expect(mockListen).not.toHaveBeenCalled();
+    expect(store.images).toEqual([]);
   });
 });

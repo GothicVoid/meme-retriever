@@ -141,6 +141,36 @@ fn now_secs() -> i64 {
         .as_secs() as i64
 }
 
+/// 递归扫描目录，收集所有支持格式（jpg/jpeg/png/gif/webp）的图片路径（已排序）。
+pub fn scan_images_in_dir(dir: &Path) -> anyhow::Result<Vec<String>> {
+    let mut result = Vec::new();
+    scan_recursive(dir, &mut result)?;
+    result.sort();
+    Ok(result)
+}
+
+fn scan_recursive(dir: &Path, result: &mut Vec<String>) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            scan_recursive(&path, result)?;
+        } else if is_supported_image(&path) {
+            result.push(path.to_string_lossy().to_string());
+        }
+    }
+    Ok(())
+}
+
+fn is_supported_image(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref(),
+        Some("jpg" | "jpeg" | "png" | "gif" | "webp")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +264,61 @@ mod tests {
         let rx = index_images(pool.clone(), vec![fixture("sample.jpg")], lib.path().to_path_buf());
         let results = collect(rx).await;
         assert!(results[0].elapsed_ms < 10_000, "should complete in < 10s");
+    }
+
+    // ── scan_images_in_dir 测试 ─────────────────────────────────────────────
+
+    #[test]
+    fn test_scan_dir_finds_images() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::copy(fixture("sample.jpg"), dir.path().join("a.jpg")).unwrap();
+        let result = scan_images_in_dir(dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("a.jpg"));
+    }
+
+    #[test]
+    fn test_scan_dir_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::copy(fixture("sample.jpg"), sub.join("deep.jpg")).unwrap();
+        let result = scan_images_in_dir(dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("deep.jpg"));
+    }
+
+    #[test]
+    fn test_scan_dir_filters_non_images() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.txt"), b"hello").unwrap();
+        std::fs::write(dir.path().join("video.mp4"), b"data").unwrap();
+        std::fs::copy(fixture("sample.jpg"), dir.path().join("img.png")).unwrap();
+        let result = scan_images_in_dir(dir.path()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("img.png"));
+    }
+
+    #[test]
+    fn test_scan_dir_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = scan_images_in_dir(dir.path()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_scan_dir_not_found() {
+        let result = scan_images_in_dir(std::path::Path::new("/nonexistent/dir/xyz"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_scan_dir_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        // 创建大写扩展名的假图片文件（内容不重要，scan 只按扩展名过滤）
+        std::fs::copy(fixture("sample.jpg"), dir.path().join("A.JPG")).unwrap();
+        std::fs::copy(fixture("sample.jpg"), dir.path().join("B.PNG")).unwrap();
+        let result = scan_images_in_dir(dir.path()).unwrap();
+        assert_eq!(result.len(), 2);
     }
 }

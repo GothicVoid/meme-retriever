@@ -47,6 +47,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::search,
             commands::add_images,
+            commands::add_folder,
             commands::delete_image,
             commands::get_images,
             commands::update_tags,
