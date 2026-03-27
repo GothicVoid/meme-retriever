@@ -139,14 +139,25 @@ pub async fn get_embedding(pool: &DbPool, image_id: &str) -> anyhow::Result<Opti
 
 pub async fn insert_ocr(pool: &DbPool, image_id: &str, content: &str) -> anyhow::Result<()> {
     tracing::debug!("insert_ocr: image_id={image_id}, len={}", content.len());
+    let mut tx = pool.begin().await?;
+    // 先删旧 FTS 条目（避免重复索引），再写普通表和 FTS 虚拟表
+    sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
+        .bind(image_id).execute(&mut *tx).await?;
     sqlx::query("INSERT OR REPLACE INTO ocr_texts(image_id,content) VALUES(?1,?2)")
-        .bind(image_id).bind(content)
-        .execute(pool)
-        .await?;
+        .bind(image_id).bind(content).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES(?1,?2)")
-        .bind(image_id).bind(content)
-        .execute(pool)
-        .await?;
+        .bind(image_id).bind(content).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn delete_ocr_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
+        .bind(image_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM ocr_texts WHERE image_id=?1")
+        .bind(image_id).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(())
 }
 

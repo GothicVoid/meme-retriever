@@ -276,21 +276,54 @@ pub async fn reindex_all(
             });
             let _ = app.emit("reindex-progress", &progress_event);
 
-            match tokio::task::spawn_blocking({
-                let path = img.file_path.clone();
-                move || crate::ml::clip::ClipEncoder::encode_image(&path)
-            }).await {
+            let path = img.file_path.clone();
+            let id   = img.id.clone();
+
+            // 并行：CLIP 图像编码 + OCR 重跑
+            let (clip_result, ocr_result) = tokio::join!(
+                tokio::task::spawn_blocking({
+                    let p = path.clone();
+                    move || crate::ml::clip::ClipEncoder::encode_image(&p)
+                }),
+                tokio::task::spawn_blocking({
+                    let p = path.clone();
+                    move || crate::indexer::ocr::extract_text(&p)
+                }),
+            );
+
+            // 更新 embedding
+            match clip_result {
                 Ok(Ok(vec)) => {
-                    if let Err(e) = repo::insert_embedding(&pool, &img.id, &vec).await {
-                        tracing::error!("reindex_all: failed to save embedding for {}: {e}", img.id);
-                        continue;
+                    if let Err(e) = repo::insert_embedding(&pool, &id, &vec).await {
+                        tracing::error!("reindex_all: failed to save embedding for {id}: {e}");
+                    } else {
+                        engine.insert_vector(id.clone(), vec);
                     }
-                    engine.insert_vector(img.id.clone(), vec);
-                    tracing::debug!("reindex_all: done {}", img.id);
                 }
-                Ok(Err(e)) => tracing::warn!("reindex_all: encode failed for {}: {e}", img.id),
-                Err(e) => tracing::warn!("reindex_all: task panicked for {}: {e}", img.id),
+                Ok(Err(e)) => tracing::warn!("reindex_all: clip failed for {id}: {e}"),
+                Err(e)     => tracing::warn!("reindex_all: clip task panicked for {id}: {e}"),
             }
+
+            // 更新 OCR
+            match ocr_result {
+                Ok(Ok(text)) if !text.is_empty() => {
+                    if let Err(e) = repo::insert_ocr(&pool, &id, &text).await {
+                        tracing::error!("reindex_all: failed to save ocr for {id}: {e}");
+                    } else {
+                        tracing::debug!("reindex_all: ocr ok for {id} len={}", text.len());
+                    }
+                }
+                Ok(Ok(_)) => {
+                    // 无文字，清除旧 OCR 数据
+                    if let Err(e) = repo::delete_ocr_for_image(&pool, &id).await {
+                        tracing::warn!("reindex_all: failed to clear old ocr for {id}: {e}");
+                    }
+                }
+                Ok(Err(e)) => tracing::warn!("reindex_all: ocr failed for {id}: {e}"),
+                Err(e)     => tracing::warn!("reindex_all: ocr task panicked for {id}: {e}"),
+            }
+
+            tracing::debug!("reindex_all: done {id}");
         }
 
         let done_event = serde_json::json!({ "current": total, "total": total });
