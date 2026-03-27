@@ -109,22 +109,30 @@ SQLite 单文件，4 张表：
 
 ## 项目当前状态
 
-MVP 已完整实现，共 53 个 Rust 测试 + 24 个前端测试全部通过。
+**MVP 已完整实现**，所有核心功能已上线，53 个 Rust 测试 + 前端测试全部通过。
 
-**已完成：**
-- 搜索引擎（混合检索、KB 扩展、加权合并）、入库流水线、FTS 关键词搜索
-- 数据库 CRUD、向量存储、缩略图生成
-- 全部 9 个 IPC 命令、前端 UI（搜索/图库/设置）
+**已完成功能：**
+- ✅ 混合检索引擎（语义 + 关键词加权合并）
+- ✅ CLIP 真实推理（文本/图像编码，ONNX Runtime）
+- ✅ OCR 文本提取（PaddleOCR-ONNX）
+- ✅ 入库流水线（缩略图 + 进度条）
+- ✅ 知识库查询扩展
+- ✅ FTS5 全文搜索 + 标签系统
+- ✅ 全部 9 个 IPC 命令
+- ✅ 前端 UI（搜索/图库/设置/调试面板）
+- ✅ 批量添加文件夹图片
 
-**剩余 TODO（需要 ONNX 模型文件）：**
-- `src-tauri/src/ml/clip.rs` L68/L77：`run_text_inference` / `run_image_inference` 真实推理
-- `src-tauri/src/indexer/ocr.rs` L30：`run_inference` OCR 真实推理
-- `src-tauri/src/commands/mod.rs` L179：`copy_to_clipboard` 平台特定实现
-
-模型不存在时自动 fallback 到 mock 向量（基于文本长度/文件路径 seed），搜索可运行但语义不准确。
+**重要修复（commit 32fc981 + 6b01f34）：**
+- 修复 CLIP 图像预处理参数错误（使用 CLIP 专用归一化值，非 ImageNet）
+- 修复搜索流程的三个准确性问题
+- 已有图片需通过设置页"重新生成图像索引"按钮重新计算 embedding
 
 **模型文件路径**（通过环境变量 `CLIP_MODEL_DIR` 配置，默认 `./models`）：
-- `models/clip_text.onnx`：Chinese-CLIP ViT-B/16 文本编码器（ONNX INT8）
-- `models/clip_image.onnx`：Chinese-CLIP ViT-B/16 图像编码器（ONNX INT8）
+- `models/clip_text.onnx`：Chinese-CLIP ViT-B/16 文本编码器
+- `models/clip_image.onnx`：Chinese-CLIP ViT-B/16 图像编码器
 - `models/ocr.onnx`：PaddleOCR 文本识别模型
-- `models/bpe_simple_vocab_16e6.txt`：CLIP BPE 分词表
+- `models/vocab.txt`：BERT tokenizer 词表（CLS=101, SEP=102, PAD=0）
+
+**ONNX Runtime 配置：**
+- 需设置环境变量 `ORT_DYLIB_PATH` 指向 `libonnxruntime.so`
+- 测试时示例路径：`/home/void/projects/Chinese-CLIP/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime.so.1.24.4`
