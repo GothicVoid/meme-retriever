@@ -7,46 +7,68 @@ pub async fn fts_search(pool: &DbPool, query: &str, limit: i64) -> anyhow::Resul
     }
     tracing::debug!("fts_search: query={query}");
 
-    // FTS5 默认 tokenizer 将中文视为整体 token，加 * 支持前缀匹配
-    let fts_query = format!("{query}*");
-    let rows = sqlx::query(
-        "SELECT image_id, rank FROM ocr_fts WHERE content MATCH ?1 ORDER BY rank LIMIT ?2"
-    )
-    .bind(&fts_query)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?;
+    // 1. FTS5 trigram 子串匹配（查询 ≥3 字符时可用 trigram index，有 BM25 排名）
+    let fts_rows = if query.chars().count() >= 3 {
+        sqlx::query(
+            "SELECT image_id, rank FROM ocr_fts WHERE content MATCH ?1 ORDER BY rank LIMIT ?2"
+        )
+        .bind(query)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
 
-    if rows.is_empty() {
-        tracing::debug!("[FTS] 0 hits for {query:?}");
-        return Ok(vec![]);
-    }
-
-    // FTS5 rank 为负数（越小越相关），取绝对值后归一化为 0~1
-    let ranks: Vec<f64> = rows.iter().map(|r| {
+    // FTS 排名归一化
+    let ranks: Vec<f64> = fts_rows.iter().map(|r| {
         let rank: f64 = r.get("rank");
         rank.abs()
     }).collect();
     let max_abs = ranks.iter().cloned().fold(0f64, f64::max);
 
-    let results: Vec<(String, f32)> = rows
+    let mut id_score: std::collections::HashMap<String, f32> = fts_rows
         .iter()
         .zip(ranks.iter())
         .map(|(r, &abs_rank)| {
             let image_id: String = r.get("image_id");
-            let score = if max_abs > 0.0 { (abs_rank / max_abs) as f32 } else { 0.0 };
+            let score = if max_abs > 0.0 { (abs_rank / max_abs) as f32 } else { 1.0 };
             (image_id, score)
         })
         .collect();
 
-    {
-        let detail: Vec<String> = rows.iter().zip(ranks.iter()).zip(results.iter())
-            .map(|((_r, &raw), (id, score))| {
-                format!("  {}  raw={:.3}  score={:.3}", id, -raw, score)
-            })
-            .collect();
-        tracing::debug!("[FTS] {} hits for {:?} (max_abs={:.3}):\n{}", results.len(), query, max_abs, detail.join("\n"));
+    // 2. LIKE 兜底：在 ocr_texts 上做子串扫描，捕获 FTS 未命中的情况
+    //    （查询 <3 字符时 trigram 无法建立索引，必须走此路；同时也处理边界情况）
+    let like_pattern = format!("%{query}%");
+    let like_rows = sqlx::query(
+        "SELECT image_id FROM ocr_texts WHERE content LIKE ?1 LIMIT ?2"
+    )
+    .bind(&like_pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    for row in &like_rows {
+        let image_id: String = row.get("image_id");
+        // 已有 FTS 分数的不覆盖；LIKE 新增命中给固定分 1.0（表明确实匹配）
+        id_score.entry(image_id).or_insert(1.0);
     }
+
+    if id_score.is_empty() {
+        tracing::debug!("[FTS] 0 hits for {query:?}");
+        return Ok(vec![]);
+    }
+
+    // 排序（FTS5 命中按归一化分，LIKE 补充命中固定 1.0 排前面）
+    let mut results: Vec<(String, f32)> = id_score.into_iter().collect();
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit as usize);
+
+    tracing::debug!(
+        "[FTS] {} hits for {:?} (fts={} like={})",
+        results.len(), query, fts_rows.len(), like_rows.len()
+    );
     Ok(results)
 }
 
@@ -79,14 +101,20 @@ mod tests {
         .execute(pool).await.unwrap();
     }
 
+    /// 同时插入 ocr_texts 和 ocr_fts，模拟真实入库流程
+    async fn insert_ocr(pool: &SqlitePool, image_id: &str, content: &str) {
+        sqlx::query("INSERT INTO ocr_texts(image_id,content) VALUES(?1,?2)")
+            .bind(image_id).bind(content).execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES(?1,?2)")
+            .bind(image_id).bind(content).execute(pool).await.unwrap();
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn test_fts_basic_match(pool: SqlitePool) {
         insert_image(&pool, "id1").await;
         insert_image(&pool, "id2").await;
-        sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES('id1','hello world')")
-            .execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES('id2','goodbye world')")
-            .execute(&pool).await.unwrap();
+        insert_ocr(&pool, "id1", "hello world").await;
+        insert_ocr(&pool, "id2", "goodbye world").await;
 
         let results = fts_search(&pool, "hello", 10).await.unwrap();
         assert_eq!(results.len(), 1);
@@ -100,12 +128,32 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_fts_chinese(pool: SqlitePool) {
         insert_image(&pool, "id1").await;
-        sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES('id1','蚌埠住了哈哈哈')")
-            .execute(&pool).await.unwrap();
+        insert_ocr(&pool, "id1", "蚌埠住了哈哈哈").await;
 
         let results = fts_search(&pool, "蚌埠住了", 10).await.unwrap();
         assert!(!results.is_empty());
         assert_eq!(results[0].0, "id1");
+    }
+
+    /// 验证中文子串匹配：搜索"操作"能命中"还有这种操作"（原 bug 复现）
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_fts_chinese_mid_string(pool: SqlitePool) {
+        insert_image(&pool, "id1").await;
+        insert_ocr(&pool, "id1", "还有这种操作").await;
+
+        // 搜索句尾 2 字符子串（< 3 字符，走 LIKE 兜底）
+        let results = fts_search(&pool, "操作", 10).await.unwrap();
+        assert!(!results.is_empty(), "2-char mid-string '操作' should match '还有这种操作'");
+        assert_eq!(results[0].0, "id1");
+
+        // 搜索中间 4 字符子串（≥ 3 字符，trigram 直接命中）
+        let results3 = fts_search(&pool, "这种操作", 10).await.unwrap();
+        assert!(!results3.is_empty(), "4-char mid-string '这种操作' should match");
+        assert_eq!(results3[0].0, "id1");
+
+        // 不相关的词不应匹配
+        let none = fts_search(&pool, "搞笑", 10).await.unwrap();
+        assert!(none.is_empty(), "unrelated query should not match");
     }
 
     #[sqlx::test(migrations = "./migrations")]

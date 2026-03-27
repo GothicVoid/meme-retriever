@@ -347,7 +347,8 @@ mod tests {
         let content: String = row.get("content");
         assert_eq!(content, "蚌埠住了哈哈哈");
 
-        let hits = sqlx::query("SELECT image_id FROM ocr_fts WHERE content MATCH '蚌埠住了*'")
+        // trigram tokenizer：子串匹配，无需 * 后缀
+        let hits = sqlx::query("SELECT image_id FROM ocr_fts WHERE content MATCH '蚌埠住了'")
             .fetch_all(&pool).await.unwrap();
         assert!(!hits.is_empty());
     }
