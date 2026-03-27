@@ -8,6 +8,8 @@ export interface ScoreDebugInfo {
   tagHit: boolean;
   semWeight: number;
   kwWeight: number;
+  relevance: number;
+  popularity: number;
 }
 
 export interface SearchResult {

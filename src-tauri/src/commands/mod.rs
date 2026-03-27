@@ -16,6 +16,8 @@ pub struct ScoreDebugInfo {
     pub tag_hit: bool,
     pub sem_weight: f32,
     pub kw_weight: f32,
+    pub relevance: f32,
+    pub popularity: f32,
 }
 
 #[derive(serde::Serialize)]
@@ -357,6 +359,8 @@ mod tests {
             tag_hit: true,
             sem_weight: 0.4,
             kw_weight: 0.6,
+            relevance: 0.3,
+            popularity: 0.5,
         };
         let json = serde_json::to_value(&info).unwrap();
         assert!(json.get("semScore").is_some(), "should have semScore");
@@ -364,6 +368,8 @@ mod tests {
         assert!(json.get("tagHit").is_some(), "should have tagHit");
         assert!(json.get("semWeight").is_some(), "should have semWeight");
         assert!(json.get("kwWeight").is_some(), "should have kwWeight");
+        assert!(json.get("relevance").is_some(), "should have relevance");
+        assert!(json.get("popularity").is_some(), "should have popularity");
         assert!(json.get("sem_score").is_none(), "should NOT have sem_score");
     }
 
@@ -379,8 +385,10 @@ mod tests {
                 sem_score: 0.8,
                 kw_score: 0.0,
                 tag_hit: false,
-                sem_weight: 0.7,
-                kw_weight: 0.3,
+                sem_weight: 0.3,
+                kw_weight: 0.4,
+                relevance: 0.24,
+                popularity: 0.5,
             }),
         };
         let json = serde_json::to_value(&result).unwrap();

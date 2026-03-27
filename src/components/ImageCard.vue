@@ -17,18 +17,27 @@
         {{ (image.score * 100).toFixed(1) }}%
       </div>
       <div class="debug-row">
-        <span>语义 {{ (image.debugInfo.semScore * 100).toFixed(0) }}%</span>
-        <span class="dim">×{{ image.debugInfo.semWeight.toFixed(1) }}</span>
+        <span>相关性 {{ (image.debugInfo.relevance * 100).toFixed(0) }}%</span>
+        <span class="dim">×0.75</span>
       </div>
       <div class="debug-row">
-        <span>关键词 {{ (image.debugInfo.kwScore * 100).toFixed(0) }}%</span>
-        <span class="dim">×{{ image.debugInfo.kwWeight.toFixed(1) }}</span>
+        <span>热度 {{ (image.debugInfo.popularity * 100).toFixed(0) }}%</span>
+        <span class="dim">×0.25</span>
+      </div>
+      <div class="debug-divider" />
+      <div class="debug-row">
+        <span>CLIP {{ (image.debugInfo.semScore * 100).toFixed(0) }}%</span>
+        <span class="dim">×0.3</span>
+      </div>
+      <div class="debug-row">
+        <span>OCR {{ (image.debugInfo.kwScore * 100).toFixed(0) }}%</span>
+        <span class="dim">×0.4</span>
       </div>
       <div
         v-if="image.debugInfo.tagHit"
         class="debug-tag"
       >
-        标签命中
+        标签命中 ×0.3
       </div>
     </div>
     <ul
@@ -117,6 +126,7 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
 .debug-score { font-size: 0.82rem; font-weight: 600; }
 .debug-row { display: flex; justify-content: space-between; }
 .dim { opacity: 0.7; }
+.debug-divider { border-top: 1px solid rgba(255,255,255,0.2); margin: 0.15rem 0; }
 .debug-tag { color: #ffd700; font-weight: 600; }
 
 .context-menu {

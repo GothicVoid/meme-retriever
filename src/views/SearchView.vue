@@ -8,7 +8,7 @@
       v-if="settings.showDebugInfo && store.results.length"
       class="debug-formula"
     >
-      得分 = 语义权重 × 语义得分 + 关键词权重 × 关键词得分（默认 0.7/0.3，标签命中时 0.4/0.6）
+      得分 = 0.75×Relevance + 0.25×Popularity | Relevance = max(0.3×关键词, 0.4×OCR, 0.3×CLIP) | Popularity = log(1+点击)/log(1+最大点击)，冷启动=0.5 | Relevance &lt; 0.2 时过滤
     </div>
     <ImageGrid
       :images="store.results"

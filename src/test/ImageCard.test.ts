@@ -86,7 +86,7 @@ describe("ImageCard", () => {
   it("showDebugInfo=true 且有 debugInfo 时显示叠层", () => {
     const image: SearchResult = {
       ...mockImage,
-      debugInfo: { semScore: 0.8, kwScore: 0.3, tagHit: false, semWeight: 0.7, kwWeight: 0.3 },
+      debugInfo: { semScore: 0.8, kwScore: 0.3, tagHit: false, semWeight: 0.3, kwWeight: 0.4, relevance: 0.24, popularity: 0.5 },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     const overlay = wrapper.find(".debug-overlay");
@@ -98,7 +98,7 @@ describe("ImageCard", () => {
   it("标签命中时显示标签命中标记", () => {
     const image: SearchResult = {
       ...mockImage,
-      debugInfo: { semScore: 0.5, kwScore: 0.9, tagHit: true, semWeight: 0.4, kwWeight: 0.6 },
+      debugInfo: { semScore: 0.5, kwScore: 0.9, tagHit: true, semWeight: 0.3, kwWeight: 0.4, relevance: 0.36, popularity: 0.8 },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     expect(wrapper.find(".debug-overlay").text()).toContain("标签命中");

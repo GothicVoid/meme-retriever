@@ -124,48 +124,98 @@ impl SearchEngine {
             tracing::debug!("[VEC] {} semantic hits:\n{}", semantic_hits.len(), detail.join("\n"));
         }
 
-        // 5. 加权合并：score = 0.7×semantic + 0.3×keyword（标签命中时 keyword 权重升至 0.6）
+        // 5. 按 docs/scoring.md 新公式合并得分
+        //    Final_Score = 0.75·Relevance + 0.25·Popularity
+        //    Relevance   = max(0.3·S_kw, 0.4·S_ocr, 0.3·S_clip)
+        //    Popularity  = log(1+use_count)/log(1+max_use_count)，冷启动 → 0.5
+        //    低相关过滤：relevance < 0.2 → 不计入结果
         let fts_map: std::collections::HashMap<String, f32> = fts_result
             .unwrap_or_default()
             .into_iter()
             .collect();
 
+        // 预查 max_use_count 及候选集的 use_count
+        let max_use_count = repo::get_max_use_count(&self.pool).await?.max(1);
+        let all_candidate_ids: Vec<&str> = {
+            let mut ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for (id, _) in &semantic_hits { ids.insert(id.as_str()); }
+            for id in fts_map.keys() { ids.insert(id.as_str()); }
+            ids.into_iter().collect()
+        };
+        let use_count_map = repo::get_use_counts(&self.pool, &all_candidate_ids).await?;
+
         let mut score_map: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
         let mut debug_map: std::collections::HashMap<String, ScoreDebugInfo> = std::collections::HashMap::new();
 
-        for (id, sem_score) in &semantic_hits {
-            let kw_score = fts_map.get(id).copied().unwrap_or(0.0);
-            let kw_weight = if tag_hits.contains(id) { 0.6 } else { 0.3 };
-            let sem_weight = 1.0 - kw_weight;
-            let score = sem_weight * sem_score + kw_weight * kw_score;
-            let tag_ch = if tag_hits.contains(id) { 'Y' } else { 'N' };
-            tracing::debug!("[MERGE] {}  sem={:.4}  kw={:.4}  tag={}  w=({:.1},{:.1})  final={:.4}",
-                id, sem_score, kw_score, tag_ch, sem_weight, kw_weight, score);
-            score_map.insert(id.clone(), score);
-            debug_map.insert(id.clone(), ScoreDebugInfo {
-                sem_score: *sem_score,
-                kw_score,
-                tag_hit: tag_hits.contains(id),
-                sem_weight,
-                kw_weight,
-            });
+        let merge_one = |id: &str, raw_cosine: f32, fts_score: f32, tag_hit: bool,
+                         use_count_map: &std::collections::HashMap<String, i64>, max_uc: i64|
+                         -> (f32, ScoreDebugInfo) {
+            // 三路得分
+            let s_clip: f32 = (raw_cosine + 1.0) / 2.0;   // cosine → [0,1]
+            let s_ocr:  f32 = fts_score;                    // FTS score 已归一化 [0,1]
+            let s_kw:   f32 = if tag_hit { 0.8 } else { 0.0 };
+
+            let relevance = (0.3_f32 * s_kw)
+                .max(0.4_f32 * s_ocr)
+                .max(0.3_f32 * s_clip);
+
+            let use_count = use_count_map.get(id).copied().unwrap_or(0);
+            let popularity: f32 = if use_count == 0 {
+                0.5
+            } else {
+                ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
+            };
+
+            let final_score = if relevance < 0.2 {
+                0.0
+            } else {
+                (0.75 * relevance + 0.25 * popularity).clamp(0.0, 1.0)
+            };
+
+            let dbg = ScoreDebugInfo {
+                sem_score: s_clip,
+                kw_score: s_ocr,
+                tag_hit,
+                sem_weight: 0.3,
+                kw_weight: 0.4,
+                relevance,
+                popularity,
+            };
+            (final_score, dbg)
+        };
+
+        for (id, raw_cosine) in &semantic_hits {
+            let fts_score = fts_map.get(id).copied().unwrap_or(0.0);
+            let tag_hit = tag_hits.contains(id);
+            let (score, dbg) = merge_one(id, *raw_cosine, fts_score, tag_hit,
+                                         &use_count_map, max_use_count);
+            tracing::debug!(
+                "[MERGE] {}  clip={:.4}(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  tag={}  rel={:.4}  pop={:.4}  final={:.4}",
+                id, dbg.sem_score, dbg.kw_score, if tag_hit { 0.8 } else { 0.0 },
+                if tag_hit { 'Y' } else { 'N' },
+                dbg.relevance, dbg.popularity, score
+            );
+            if score > 0.0 {
+                score_map.insert(id.clone(), score);
+                debug_map.insert(id.clone(), dbg);
+            }
         }
         // FTS 命中但语义未命中的也加入
-        for (id, kw_score) in &fts_map {
+        for (id, fts_score) in &fts_map {
             if !score_map.contains_key(id) {
-                let kw_weight = if tag_hits.contains(id) { 0.6 } else { 0.3 };
-                let score = kw_weight * kw_score;
-                let tag_ch = if tag_hits.contains(id) { 'Y' } else { 'N' };
-                tracing::debug!("[MERGE] {}  sem=none  kw={:.4}  tag={}  w=(0.0,{:.1})  final={:.4}",
-                    id, kw_score, tag_ch, kw_weight, score);
-                score_map.insert(id.clone(), score);
-                debug_map.insert(id.clone(), ScoreDebugInfo {
-                    sem_score: 0.0,
-                    kw_score: *kw_score,
-                    tag_hit: tag_hits.contains(id),
-                    sem_weight: 0.0,
-                    kw_weight,
-                });
+                let tag_hit = tag_hits.contains(id);
+                let (score, dbg) = merge_one(id, -1.0, *fts_score, tag_hit,
+                                             &use_count_map, max_use_count);
+                tracing::debug!(
+                    "[MERGE] {}  clip=none(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  tag={}  rel={:.4}  pop={:.4}  final={:.4}",
+                    id, dbg.kw_score, if tag_hit { 0.8 } else { 0.0 },
+                    if tag_hit { 'Y' } else { 'N' },
+                    dbg.relevance, dbg.popularity, score
+                );
+                if score > 0.0 {
+                    score_map.insert(id.clone(), score);
+                    debug_map.insert(id.clone(), dbg);
+                }
             }
         }
 
@@ -383,13 +433,17 @@ mod tests {
         assert!(!results.is_empty(), "should have results");
         for r in &results {
             let di = r.debug_info.as_ref().expect("debug_info should be Some for search results");
+            // sem_score = (cosine+1)/2 ∈ [0,1]
             assert!(di.sem_score >= 0.0 && di.sem_score <= 1.0, "sem_score out of range: {}", di.sem_score);
+            // kw_score = FTS score ∈ [0,1]
             assert!(di.kw_score >= 0.0 && di.kw_score <= 1.0, "kw_score out of range: {}", di.kw_score);
-            // 权重组合只有三种合法情况
-            let valid = (di.sem_weight == 0.7 && di.kw_weight == 0.3)
-                || (di.sem_weight == 0.4 && di.kw_weight == 0.6)
-                || (di.sem_weight == 0.0 && (di.kw_weight == 0.3 || di.kw_weight == 0.6));
-            assert!(valid, "unexpected weights: sem={} kw={}", di.sem_weight, di.kw_weight);
+            // 新公式固定权重
+            assert_eq!(di.sem_weight, 0.3, "sem_weight should be 0.3 (w3/clip)");
+            assert_eq!(di.kw_weight, 0.4, "kw_weight should be 0.4 (w2/ocr)");
+            // relevance ∈ [0,1]
+            assert!(di.relevance >= 0.0 && di.relevance <= 1.0, "relevance out of range: {}", di.relevance);
+            // popularity ∈ [0,1]（冷启动为 0.5）
+            assert!(di.popularity >= 0.0 && di.popularity <= 1.0, "popularity out of range: {}", di.popularity);
         }
     }
 

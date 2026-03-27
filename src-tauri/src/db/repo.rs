@@ -194,6 +194,32 @@ pub async fn increment_use_count(pool: &DbPool, id: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
+pub async fn get_max_use_count(pool: &DbPool) -> anyhow::Result<i64> {
+    let row = sqlx::query("SELECT COALESCE(MAX(use_count), 0) as m FROM images")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.get("m"))
+}
+
+pub async fn get_use_counts(
+    pool: &DbPool,
+    ids: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, i64>> {
+    // SQLite 不直接支持 IN (?) 参数化多值，逐条查询即可（候选集通常 < 200）
+    let mut map = std::collections::HashMap::new();
+    for id in ids {
+        let row = sqlx::query("SELECT use_count FROM images WHERE id=?1")
+            .bind(*id)
+            .fetch_optional(pool)
+            .await?;
+        if let Some(r) = row {
+            let uc: i64 = r.get("use_count");
+            map.insert(id.to_string(), uc);
+        }
+    }
+    Ok(map)
+}
+
 pub async fn has_any_usage(pool: &DbPool) -> anyhow::Result<bool> {
     let row = sqlx::query("SELECT COUNT(*) as cnt FROM images WHERE use_count > 0")
         .fetch_one(pool)
