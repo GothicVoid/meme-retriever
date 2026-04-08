@@ -71,16 +71,11 @@ async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Resu
 
     let id = Uuid::new_v4().to_string();
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
-    let dest = library_dir.join(format!("{id}.{ext}"));
     let thumb = library_dir.join("thumbs").join(format!("{id}.jpg"));
 
-    // 1. 复制文件
-    tokio::fs::create_dir_all(library_dir).await?;
-    tokio::fs::copy(src, &dest).await?;
-
-    // 2. 生成缩略图
+    // 1. 生成缩略图
     let t_thumb = Instant::now();
-    thumbnail::generate(src, &thumb, 256)?;
+    thumbnail::generate(src, &thumb, 150)?;
     let thumb_ms = t_thumb.elapsed().as_millis();
 
     // 3. 并行：OCR + CLIP 图像编码
@@ -109,7 +104,7 @@ async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Resu
     // 5. 写入数据库
     let rec = repo::ImageRecord {
         id: id.clone(),
-        file_path: dest.to_string_lossy().to_string(),
+        file_path: src.to_string_lossy().to_string(),
         file_name: src.file_name().unwrap_or_default().to_string_lossy().to_string(),
         format: ext.to_string(),
         width,
@@ -320,5 +315,21 @@ mod tests {
         std::fs::copy(fixture("sample.jpg"), dir.path().join("B.PNG")).unwrap();
         let result = scan_images_in_dir(dir.path()).unwrap();
         assert_eq!(result.len(), 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_pipeline_stores_original_path(pool: SqlitePool) {
+        let lib = tempfile::tempdir().unwrap();
+        let src = fixture("sample.jpg");
+        let rx = index_images(pool.clone(), vec![src.clone()], lib.path().to_path_buf());
+        let results = collect(rx).await;
+        assert_eq!(results[0].status, "completed");
+
+        let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
+        // file_path 必须等于原始路径，不是 library_dir 下的副本
+        assert_eq!(images[0].file_path, src);
+        // library_dir 下不应存在原文件的副本（只有 thumbs/）
+        let copied = lib.path().join(format!("{}.jpg", results[0].id));
+        assert!(!copied.exists(), "不应复制文件到 library_dir");
     }
 }

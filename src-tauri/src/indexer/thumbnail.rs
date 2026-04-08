@@ -25,11 +25,11 @@ mod tests {
     fn test_generate_jpeg() {
         let src = fixture("sample.jpg");
         let dst = std::env::temp_dir().join("thumb_test_jpeg.jpg");
-        generate(&src, &dst, 256).unwrap();
+        generate(&src, &dst, 150).unwrap();
         assert!(dst.exists());
         let img = image::open(&dst).unwrap();
-        assert!(img.width() <= 256);
-        assert!(img.height() <= 256);
+        assert!(img.width() <= 150);
+        assert!(img.height() <= 150);
     }
 
     #[test]
@@ -37,29 +37,29 @@ mod tests {
         // sample.jpg を PNG として保存してテスト
         let src = fixture("sample.jpg");
         let dst = std::env::temp_dir().join("thumb_test_png.png");
-        generate(&src, &dst, 256).unwrap();
+        generate(&src, &dst, 150).unwrap();
         assert!(dst.exists());
         let img = image::open(&dst).unwrap();
-        assert!(img.width() <= 256);
-        assert!(img.height() <= 256);
+        assert!(img.width() <= 150);
+        assert!(img.height() <= 150);
     }
 
     #[test]
     fn test_generate_preserves_aspect_ratio() {
         let src = fixture("sample_wide.jpg"); // 800×400
         let dst = std::env::temp_dir().join("thumb_test_wide.jpg");
-        generate(&src, &dst, 256).unwrap();
+        generate(&src, &dst, 150).unwrap();
         let img = image::open(&dst).unwrap();
-        // 800×400 缩到 256px，宽=256，高=128
-        assert_eq!(img.width(), 256);
-        assert_eq!(img.height(), 128);
+        // 800×400 缩到 150px，宽=150，高=75
+        assert_eq!(img.width(), 150);
+        assert_eq!(img.height(), 75);
     }
 
     #[test]
     fn test_generate_nonexistent_src() {
         let src = PathBuf::from("/nonexistent/path/image.jpg");
         let dst = std::env::temp_dir().join("thumb_test_nonexistent.jpg");
-        assert!(generate(&src, &dst, 256).is_err());
+        assert!(generate(&src, &dst, 150).is_err());
     }
 
     #[test]
@@ -68,7 +68,7 @@ mod tests {
         let dst = std::env::temp_dir()
             .join("thumb_test_subdir_xyz")
             .join("thumb.jpg");
-        generate(&src, &dst, 256).unwrap();
+        generate(&src, &dst, 150).unwrap();
         assert!(dst.exists());
     }
 }
