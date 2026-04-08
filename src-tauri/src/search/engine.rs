@@ -6,6 +6,13 @@ use crate::kb::provider::KnowledgeBaseProvider;
 use crate::ml::clip::ClipEncoder;
 use crate::search::{keyword, vector_store::VectorStore};
 
+fn char_coverage(query: &str, ocr_text: &str) -> f32 {
+    if query.is_empty() { return 0.0; }
+    let q_chars: std::collections::HashSet<char> = query.chars().collect();
+    let o_chars: std::collections::HashSet<char> = ocr_text.chars().collect();
+    q_chars.intersection(&o_chars).count() as f32 / q_chars.len() as f32
+}
+
 pub struct SearchEngine {
     pool: DbPool,
     vector_store: Arc<RwLock<VectorStore>>,
@@ -54,24 +61,21 @@ impl SearchEngine {
 
     pub async fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<SearchResult>> {
         if query.is_empty() {
-            // 无使用记录时返回最新入库的 n 张
-            if !repo::has_any_usage(&self.pool).await? {
-                let images = repo::get_latest_images(&self.pool, limit as i64).await?;
-                let mut results = Vec::with_capacity(images.len());
-                for img in images {
-                    let tags = repo::get_tags_for_image(&self.pool, &img.id).await?;
-                    results.push(SearchResult {
-                        id: img.id,
-                        file_path: img.file_path,
-                        thumbnail_path: img.thumbnail_path.unwrap_or_default(),
-                        score: 1.0,
-                        tags,
-                        debug_info: None,
-                    });
-                }
-                return Ok(results);
+            // PRD §5.2.3: 展示使用频次最高的 N 张
+            let images = repo::get_top_used_images(&self.pool, limit as i64).await?;
+            let mut results = Vec::with_capacity(images.len());
+            for img in images {
+                let tags = repo::get_tags_for_image(&self.pool, &img.id).await?;
+                results.push(SearchResult {
+                    id: img.id,
+                    file_path: img.file_path,
+                    thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+                    score: 1.0,
+                    tags,
+                    debug_info: None,
+                });
             }
-            return Ok(vec![]);
+            return Ok(results);
         }
 
         let start = std::time::Instant::now();
@@ -102,17 +106,24 @@ impl SearchEngine {
             tracing::debug!("[CLIP] vec[:4]=[{}] norm={:.4}", preview.join(", "), norm);
         }
 
-        // 3. 标签搜索
-        let tag_hits: std::collections::HashSet<String> = {
-            let tag_results = keyword::tag_search(&self.pool, query, limit_i64).await?;
-            let ids: std::collections::HashSet<String> = tag_results.into_iter().map(|(id, _)| id).collect();
-            if ids.is_empty() {
+        // 3. 标签搜索（三级评分：精确=1.0 / 部分=0.8 / 关联=0.5）
+        let tag_score_map: std::collections::HashMap<String, f32> = {
+            let mut m = std::collections::HashMap::new();
+            for (id, score) in keyword::tag_search(&self.pool, query, limit_i64).await? {
+                m.insert(id, score);
+            }
+            if expanded != query {
+                for (id, _) in keyword::tag_search(&self.pool, &expanded, limit_i64).await? {
+                    m.entry(id).or_insert(0.5);
+                }
+            }
+            if m.is_empty() {
                 tracing::debug!("[TAG] 0 hits");
             } else {
-                let list: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
-                tracing::debug!("[TAG] {} hits: [{}]", ids.len(), list.join(", "));
+                let list: Vec<&str> = m.keys().map(|s| s.as_str()).collect();
+                tracing::debug!("[TAG] {} hits: [{}]", m.len(), list.join(", "));
             }
-            ids
+            m
         };
 
         // 4. 语义检索
@@ -127,7 +138,7 @@ impl SearchEngine {
         // 5. 按 docs/scoring.md 新公式合并得分
         //    Final_Score = 0.75·Relevance + 0.25·Popularity
         //    Relevance   = max(0.3·S_kw, 0.4·S_ocr, 0.3·S_clip)
-        //    Popularity  = log(1+use_count)/log(1+max_use_count)，冷启动 → 0.5
+        //    Popularity  = log(1+use_count)/log(1+max_use_count)，冷启动 → 0.1
         //    低相关过滤：relevance < 0.2 → 不计入结果
         let fts_map: std::collections::HashMap<String, f32> = fts_result
             .unwrap_or_default()
@@ -143,17 +154,15 @@ impl SearchEngine {
             ids.into_iter().collect()
         };
         let use_count_map = repo::get_use_counts(&self.pool, &all_candidate_ids).await?;
+        let ocr_text_map = repo::get_ocr_texts(&self.pool, &all_candidate_ids).await?;
 
         let mut score_map: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
         let mut debug_map: std::collections::HashMap<String, ScoreDebugInfo> = std::collections::HashMap::new();
 
-        let merge_one = |id: &str, raw_cosine: f32, fts_score: f32, tag_hit: bool,
+        let merge_one = |id: &str, raw_cosine: f32, s_ocr: f32, s_kw: f32,
                          use_count_map: &std::collections::HashMap<String, i64>, max_uc: i64|
                          -> (f32, ScoreDebugInfo) {
-            // 三路得分
             let s_clip: f32 = (raw_cosine + 1.0) / 2.0;   // cosine → [0,1]
-            let s_ocr:  f32 = fts_score;                    // FTS score 已归一化 [0,1]
-            let s_kw:   f32 = if tag_hit { 0.8 } else { 0.0 };
 
             let relevance = (0.3_f32 * s_kw)
                 .max(0.4_f32 * s_ocr)
@@ -161,7 +170,7 @@ impl SearchEngine {
 
             let use_count = use_count_map.get(id).copied().unwrap_or(0);
             let popularity: f32 = if use_count == 0 {
-                0.5
+                0.1  // PRD §4.2.3: 冷启动给予较低初始值
             } else {
                 ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
             };
@@ -175,7 +184,7 @@ impl SearchEngine {
             let dbg = ScoreDebugInfo {
                 sem_score: s_clip,
                 kw_score: s_ocr,
-                tag_hit,
+                tag_score: s_kw,
                 sem_weight: 0.3,
                 kw_weight: 0.4,
                 relevance,
@@ -185,14 +194,13 @@ impl SearchEngine {
         };
 
         for (id, raw_cosine) in &semantic_hits {
-            let fts_score = fts_map.get(id).copied().unwrap_or(0.0);
-            let tag_hit = tag_hits.contains(id);
-            let (score, dbg) = merge_one(id, *raw_cosine, fts_score, tag_hit,
+            let s_ocr = char_coverage(query, ocr_text_map.get(id.as_str()).map(|s| s.as_str()).unwrap_or(""));
+            let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+            let (score, dbg) = merge_one(id, *raw_cosine, s_ocr, s_kw,
                                          &use_count_map, max_use_count);
             tracing::debug!(
-                "[MERGE] {}  clip={:.4}(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  tag={}  rel={:.4}  pop={:.4}  final={:.4}",
-                id, dbg.sem_score, dbg.kw_score, if tag_hit { 0.8 } else { 0.0 },
-                if tag_hit { 'Y' } else { 'N' },
+                "[MERGE] {}  clip={:.4}(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  rel={:.4}  pop={:.4}  final={:.4}",
+                id, dbg.sem_score, dbg.kw_score, dbg.tag_score,
                 dbg.relevance, dbg.popularity, score
             );
             if score > 0.0 {
@@ -201,15 +209,15 @@ impl SearchEngine {
             }
         }
         // FTS 命中但语义未命中的也加入
-        for (id, fts_score) in &fts_map {
+        for id in fts_map.keys() {
             if !score_map.contains_key(id) {
-                let tag_hit = tag_hits.contains(id);
-                let (score, dbg) = merge_one(id, -1.0, *fts_score, tag_hit,
+                let s_ocr = char_coverage(query, ocr_text_map.get(id.as_str()).map(|s| s.as_str()).unwrap_or(""));
+                let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+                let (score, dbg) = merge_one(id, -1.0, s_ocr, s_kw,
                                              &use_count_map, max_use_count);
                 tracing::debug!(
-                    "[MERGE] {}  clip=none(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  tag={}  rel={:.4}  pop={:.4}  final={:.4}",
-                    id, dbg.kw_score, if tag_hit { 0.8 } else { 0.0 },
-                    if tag_hit { 'Y' } else { 'N' },
+                    "[MERGE] {}  clip=none(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  rel={:.4}  pop={:.4}  final={:.4}",
+                    id, dbg.kw_score, dbg.tag_score,
                     dbg.relevance, dbg.popularity, score
                 );
                 if score > 0.0 {
@@ -259,6 +267,26 @@ mod tests {
     use crate::kb::local::LocalKBProvider;
     use sqlx::SqlitePool;
 
+    #[test]
+    fn test_char_coverage_full() {
+        assert!((char_coverage("你好", "你好世界") - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_char_coverage_partial() {
+        assert!((char_coverage("你好", "你坏") - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_char_coverage_none() {
+        assert_eq!(char_coverage("你好", "世界"), 0.0);
+    }
+
+    #[test]
+    fn test_char_coverage_empty_query() {
+        assert_eq!(char_coverage("", "你好"), 0.0);
+    }
+
     async fn make_engine(pool: SqlitePool) -> SearchEngine {
         let kb = LocalKBProvider::load(std::path::Path::new("../app_data/knowledge_base.json"))
             .unwrap_or_else(|_| LocalKBProvider::load(std::path::Path::new("/nonexistent")).unwrap());
@@ -296,32 +324,31 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_search_empty_query_no_usage_returns_latest(pool: SqlitePool) {
-        // 插入 3 张图，added_at 不同，use_count 全为 0
+    async fn test_search_empty_query_returns_top_used(pool: SqlitePool) {
+        // 插入 3 张图，use_count 不同，验证按 use_count 降序返回
         repo::insert_image(&pool, &repo::ImageRecord {
-            id: "old".into(), file_path: "/tmp/old.jpg".into(), file_name: "old.jpg".into(),
+            id: "low".into(), file_path: "/tmp/low.jpg".into(), file_name: "low.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
-            added_at: 1000, use_count: 0, thumbnail_path: Some("/tmp/old_t.jpg".into()),
+            added_at: 1000, use_count: 1, thumbnail_path: Some("/tmp/low_t.jpg".into()),
+        }).await.unwrap();
+        repo::insert_image(&pool, &repo::ImageRecord {
+            id: "high".into(), file_path: "/tmp/high.jpg".into(), file_name: "high.jpg".into(),
+            format: "jpg".into(), width: Some(100), height: Some(100),
+            added_at: 2000, use_count: 10, thumbnail_path: Some("/tmp/high_t.jpg".into()),
         }).await.unwrap();
         repo::insert_image(&pool, &repo::ImageRecord {
             id: "mid".into(), file_path: "/tmp/mid.jpg".into(), file_name: "mid.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
-            added_at: 2000, use_count: 0, thumbnail_path: Some("/tmp/mid_t.jpg".into()),
-        }).await.unwrap();
-        repo::insert_image(&pool, &repo::ImageRecord {
-            id: "new".into(), file_path: "/tmp/new.jpg".into(), file_name: "new.jpg".into(),
-            format: "jpg".into(), width: Some(100), height: Some(100),
-            added_at: 3000, use_count: 0, thumbnail_path: Some("/tmp/new_t.jpg".into()),
+            added_at: 3000, use_count: 5, thumbnail_path: Some("/tmp/mid_t.jpg".into()),
         }).await.unwrap();
 
         let engine = make_engine(pool).await;
         let results = engine.search("", 10).await.unwrap();
 
-        // 应返回 3 张，按 added_at 降序
-        assert_eq!(results.len(), 3, "should return all 3 images");
-        assert_eq!(results[0].id, "new");
-        assert_eq!(results[1].id, "mid");
-        assert_eq!(results[2].id, "old");
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].id, "high");  // use_count=10
+        assert_eq!(results[1].id, "mid");   // use_count=5
+        assert_eq!(results[2].id, "low");   // use_count=1
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -341,8 +368,8 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_search_empty_query_with_usage_returns_empty(pool: SqlitePool) {
-        // 有图片且有使用记录时，空查询返回空（暂不实现按频次排序）
+    async fn test_search_empty_query_with_usage_returns_top_used(pool: SqlitePool) {
+        // 有使用记录时，空查询应返回使用频次最高的图片（PRD §5.2.3）
         repo::insert_image(&pool, &repo::ImageRecord {
             id: "used".into(), file_path: "/tmp/used.jpg".into(), file_name: "used.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
@@ -350,7 +377,8 @@ mod tests {
         }).await.unwrap();
         let engine = make_engine(pool).await;
         let results = engine.search("", 10).await.unwrap();
-        assert!(results.is_empty(), "should return empty when images have been used");
+        assert_eq!(results.len(), 1, "should return top used image");
+        assert_eq!(results[0].id, "used");
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -442,9 +470,20 @@ mod tests {
             assert_eq!(di.kw_weight, 0.4, "kw_weight should be 0.4 (w2/ocr)");
             // relevance ∈ [0,1]
             assert!(di.relevance >= 0.0 && di.relevance <= 1.0, "relevance out of range: {}", di.relevance);
-            // popularity ∈ [0,1]（冷启动为 0.5）
+            // popularity ∈ [0,1]（冷启动为 0.1）
             assert!(di.popularity >= 0.0 && di.popularity <= 1.0, "popularity out of range: {}", di.popularity);
         }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_cold_start_popularity_is_0_1(pool: SqlitePool) {
+        insert_test_image(&pool, "cold", "test", unit_vec(1)).await;
+        let engine = make_engine(pool).await;
+        let results = engine.search("test", 10).await.unwrap();
+        let r = results.iter().find(|r| r.id == "cold").unwrap();
+        let di = r.debug_info.as_ref().unwrap();
+        assert!((di.popularity - 0.1).abs() < 1e-6,
+            "cold start popularity should be 0.1, got {}", di.popularity);
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -458,7 +497,7 @@ mod tests {
         let engine = make_engine(pool).await;
         let results = engine.search("", 10).await.unwrap();
 
-        assert!(!results.is_empty(), "should return latest images for empty query");
+        assert!(!results.is_empty(), "should return top used images for empty query");
         for r in &results {
             assert!(r.debug_info.is_none(), "empty query results should have debug_info=None");
         }
