@@ -103,4 +103,27 @@ describe("ImageCard", () => {
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     expect(wrapper.find(".debug-overlay").text()).toContain("标签命中");
   });
+
+  it("selectable=true 时渲染 checkbox", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false, selectable: true, selected: false },
+    });
+    expect(wrapper.find("input[type='checkbox']").exists()).toBe(true);
+  });
+
+  it("selectable 未传时不渲染 checkbox", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+    });
+    expect(wrapper.find("input[type='checkbox']").exists()).toBe(false);
+  });
+
+  it("点击 checkbox 触发 select 事件", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false, selectable: true, selected: false },
+    });
+    await wrapper.find("input[type='checkbox']").trigger("change");
+    expect(wrapper.emitted("select")).toBeTruthy();
+    expect(wrapper.emitted("select")![0]).toEqual(["uuid-1"]);
+  });
 });

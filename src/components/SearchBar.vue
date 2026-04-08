@@ -1,6 +1,7 @@
 <template>
   <div class="search-bar">
     <input
+      ref="inputRef"
       :value="modelValue"
       placeholder="搜索表情包..."
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
@@ -16,8 +17,22 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from "vue";
+
 defineProps<{ modelValue: string }>();
 defineEmits<{ "update:modelValue": [value: string] }>();
+
+const inputRef = ref<HTMLInputElement>();
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+    e.preventDefault();
+    inputRef.value?.focus();
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", handleGlobalKeydown));
+onUnmounted(() => window.removeEventListener("keydown", handleGlobalKeydown));
 </script>
 
 <style scoped>

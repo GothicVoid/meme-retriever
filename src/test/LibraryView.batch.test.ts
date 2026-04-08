@@ -1,0 +1,74 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mount, flushPromises } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
+import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import LibraryView from "@/views/LibraryView.vue";
+import { useLibraryStore } from "@/stores/library";
+import type { ImageMeta } from "@/stores/library";
+
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  convertFileSrc: (path: string) => `asset://${path}`,
+}));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+  confirm: vi.fn(),
+}));
+vi.mock("@/composables/useClipboard", () => ({
+  useClipboard: () => ({ copyImage: vi.fn() }),
+}));
+
+const mockInvoke = vi.mocked(invoke);
+const mockConfirm = vi.mocked(confirm);
+
+const mockImages: ImageMeta[] = [
+  { id: "uuid-1", filePath: "/img1.jpg", fileName: "img1.jpg", thumbnailPath: "/t1.jpg", width: 100, height: 100, addedAt: 0, useCount: 0, tags: [] },
+  { id: "uuid-2", filePath: "/img2.jpg", fileName: "img2.jpg", thumbnailPath: "/t2.jpg", width: 100, height: 100, addedAt: 0, useCount: 0, tags: [] },
+];
+
+describe("LibraryView 批量删除", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockConfirm.mockReset();
+  });
+
+  it("无选中时不显示批量删除按钮", async () => {
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+    expect(wrapper.find("[data-action='delete-selected']").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("有选中时显示批量删除按钮", async () => {
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+    const store = useLibraryStore();
+    store.toggleSelection("uuid-1");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find("[data-action='delete-selected']").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("批量删除确认框显示选中数量", async () => {
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockConfirm.mockResolvedValueOnce(false);
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+    const store = useLibraryStore();
+    store.toggleSelection("uuid-1");
+    store.toggleSelection("uuid-2");
+    await wrapper.vm.$nextTick();
+    await wrapper.find("[data-action='delete-selected']").trigger("click");
+    await flushPromises();
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("2"),
+      expect.anything()
+    );
+    wrapper.unmount();
+  });
+});

@@ -14,21 +14,33 @@
       :images="store.results"
       :loading="store.loading"
       :show-debug-info="settings.showDebugInfo"
+      :empty-message="emptyMessage"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, computed } from "vue";
 import SearchBar from "@/components/SearchBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import { useSearch } from "@/composables/useSearch";
 import { useSettingsStore } from "@/stores/settings";
+import { useLibraryStore } from "@/stores/library";
 
 const { store, debouncedSearch } = useSearch();
 const settings = useSettingsStore();
+const libraryStore = useLibraryStore();
 
-onMounted(() => store.search(""));
+const emptyMessage = computed(() =>
+  libraryStore.images.length === 0
+    ? "还没有图片哦，点击添加开始使用吧"
+    : "没找到相关图片，试试其他描述？"
+);
+
+onMounted(() => {
+  store.search("");
+  libraryStore.fetchImages();
+});
 </script>
 
 <style scoped>

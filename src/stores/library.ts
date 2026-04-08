@@ -21,11 +21,12 @@ export const useLibraryStore = defineStore("library", () => {
   const indexing = ref(false);
   const indexTotal = ref(0);
   const indexCurrent = ref(0);
+  const selectedIds = ref<Set<string>>(new Set());
 
   async function fetchImages(page = 0) {
     loading.value = true;
     try {
-      images.value = await invoke<ImageMeta[]>("get_images", { page });
+      images.value = (await invoke<ImageMeta[]>("get_images", { page })) ?? [];
     } finally {
       loading.value = false;
     }
@@ -58,6 +59,28 @@ export const useLibraryStore = defineStore("library", () => {
     images.value = images.value.filter((img) => img.id !== id);
   }
 
+  function toggleSelection(id: string) {
+    if (selectedIds.value.has(id)) {
+      selectedIds.value.delete(id);
+    } else {
+      selectedIds.value.add(id);
+    }
+  }
+
+  function clearSelection() {
+    selectedIds.value = new Set();
+  }
+
+  async function deleteSelected() {
+    const ids = [...selectedIds.value];
+    for (const id of ids) {
+      await invoke("delete_image", { id });
+    }
+    const idSet = new Set(ids);
+    images.value = images.value.filter((img) => !idSet.has(img.id));
+    clearSelection();
+  }
+
   async function addFolder(dirPath: string) {
     const total = await invoke<number>("add_folder", { path: dirPath });
     if (total === 0) return;
@@ -81,5 +104,5 @@ export const useLibraryStore = defineStore("library", () => {
     await fetchImages();
   }
 
-  return { images, loading, indexing, indexTotal, indexCurrent, fetchImages, addImages, deleteImage, addFolder };
+  return { images, loading, indexing, indexTotal, indexCurrent, selectedIds, fetchImages, addImages, deleteImage, addFolder, toggleSelection, clearSelection, deleteSelected };
 });

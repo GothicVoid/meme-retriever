@@ -1,4 +1,5 @@
 <template>
+  <GlobalProgressBar />
   <nav class="nav">
     <RouterLink to="/">
       搜索
@@ -12,6 +13,10 @@
   </nav>
   <RouterView />
 </template>
+
+<script setup lang="ts">
+import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
+</script>
 
 <style>
 :root {
