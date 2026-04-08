@@ -13,7 +13,7 @@ pub type EngineState = Arc<SearchEngine>;
 pub struct ScoreDebugInfo {
     pub sem_score: f32,
     pub kw_score: f32,
-    pub tag_hit: bool,
+    pub tag_score: f32,
     pub sem_weight: f32,
     pub kw_weight: f32,
     pub relevance: f32,
@@ -389,7 +389,7 @@ mod tests {
         let info = ScoreDebugInfo {
             sem_score: 0.85,
             kw_score: 0.4,
-            tag_hit: true,
+            tag_score: 1.0,
             sem_weight: 0.4,
             kw_weight: 0.6,
             relevance: 0.3,
@@ -398,7 +398,7 @@ mod tests {
         let json = serde_json::to_value(&info).unwrap();
         assert!(json.get("semScore").is_some(), "should have semScore");
         assert!(json.get("kwScore").is_some(), "should have kwScore");
-        assert!(json.get("tagHit").is_some(), "should have tagHit");
+        assert!(json.get("tagScore").is_some(), "should have tagScore");
         assert!(json.get("semWeight").is_some(), "should have semWeight");
         assert!(json.get("kwWeight").is_some(), "should have kwWeight");
         assert!(json.get("relevance").is_some(), "should have relevance");
@@ -417,7 +417,7 @@ mod tests {
             debug_info: Some(ScoreDebugInfo {
                 sem_score: 0.8,
                 kw_score: 0.0,
-                tag_hit: false,
+                tag_score: 0.0,
                 sem_weight: 0.3,
                 kw_weight: 0.4,
                 relevance: 0.24,
@@ -428,7 +428,7 @@ mod tests {
         assert!(json.get("debugInfo").is_some(), "should have debugInfo");
         let di = json["debugInfo"].as_object().unwrap();
         assert!((di["semScore"].as_f64().unwrap() - 0.8).abs() < 1e-5);
-        assert_eq!(di["tagHit"].as_bool().unwrap(), false);
+        assert_eq!(di["tagScore"].as_f64().unwrap(), 0.0);
         assert_eq!(di["kwScore"].as_f64().unwrap(), 0.0);
     }
 
