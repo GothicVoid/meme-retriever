@@ -4,6 +4,14 @@
     @click="handleClick"
     @contextmenu.prevent="showMenu"
   >
+    <input
+      v-if="selectable"
+      type="checkbox"
+      class="select-checkbox"
+      :checked="selected"
+      @change.stop="emit('select', image.id)"
+      @click.stop
+    >
     <img
       :src="convertFileSrc(image.thumbnailPath || image.filePath)"
       :alt="image.id"
@@ -63,8 +71,13 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import type { SearchResult } from "@/stores/search";
 
-const props = defineProps<{ image: SearchResult; showDebugInfo: boolean }>();
-const emit = defineEmits<{ delete: [id: string] }>();
+const props = defineProps<{
+  image: SearchResult;
+  showDebugInfo: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+}>();
+const emit = defineEmits<{ delete: [id: string]; select: [id: string] }>();
 const { copyImage } = useClipboard();
 
 const menuVisible = ref(false);
@@ -110,6 +123,17 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
   display: block;
 }
 .image-card:hover { opacity: 0.85; }
+
+.select-checkbox {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  z-index: 10;
+  accent-color: #646cff;
+}
 
 .debug-overlay {
   position: absolute;

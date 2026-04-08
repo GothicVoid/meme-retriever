@@ -49,7 +49,10 @@ describe("SearchView 初始加载", () => {
   });
 
   it("空查询无结果时显示提示文案", async () => {
-    mockInvoke.mockResolvedValueOnce([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_images") return Promise.resolve([{ id: "x", filePath: "/x.jpg", fileName: "x.jpg", thumbnailPath: "/x_t.jpg", width: 100, height: 100, addedAt: 0, useCount: 0, tags: [] }]);
+      return Promise.resolve([]);
+    });
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 

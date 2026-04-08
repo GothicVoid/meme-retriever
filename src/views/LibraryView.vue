@@ -13,6 +13,15 @@
       >
         添加文件夹
       </button>
+      <template v-if="store.selectedIds.size > 0">
+        <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
+        <button
+          data-action="delete-selected"
+          @click="handleDeleteSelected"
+        >
+          删除选中
+        </button>
+      </template>
     </div>
     <div
       v-if="store.indexing"
@@ -30,7 +39,10 @@
       :images="store.images as unknown as SearchResult[]"
       :loading="store.loading"
       :show-debug-info="false"
+      :selectable="true"
+      :selected-ids="store.selectedIds"
       @delete="handleDelete"
+      @select="store.toggleSelection"
     />
   </div>
 </template>
@@ -69,11 +81,19 @@ async function handleDelete(id: string) {
   if (!ok) return;
   await store.deleteImage(id);
 }
+
+async function handleDeleteSelected() {
+  const count = store.selectedIds.size;
+  const ok = await confirm(`确认删除 ${count} 张图片？此操作不可撤销。`, { title: "批量删除" });
+  if (!ok) return;
+  await store.deleteSelected();
+}
 </script>
 
 <style scoped>
 .library-view { padding: 1rem; }
-.toolbar { margin-bottom: 1rem; }
+.toolbar { margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.selection-count { font-size: 0.875rem; color: #666; }
 .index-status { margin-bottom: 0.75rem; font-size: 0.875rem; color: #666; display: flex; flex-direction: column; gap: 0.25rem; }
 .progress-bar { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: #646cff; transition: width 0.3s; }

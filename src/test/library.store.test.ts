@@ -218,3 +218,52 @@ describe("useLibraryStore", () => {
     expect(store.images).toEqual([]);
   });
 });
+
+describe("useLibraryStore 批量选择", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+  });
+
+  it("初始 selectedIds 为空", () => {
+    const store = useLibraryStore();
+    expect(store.selectedIds.size).toBe(0);
+  });
+
+  it("toggleSelection 添加 ID", () => {
+    const store = useLibraryStore();
+    store.toggleSelection("uuid-1");
+    expect(store.selectedIds.has("uuid-1")).toBe(true);
+  });
+
+  it("toggleSelection 再次调用移除 ID", () => {
+    const store = useLibraryStore();
+    store.toggleSelection("uuid-1");
+    store.toggleSelection("uuid-1");
+    expect(store.selectedIds.has("uuid-1")).toBe(false);
+  });
+
+  it("clearSelection 清空所有选中", () => {
+    const store = useLibraryStore();
+    store.toggleSelection("uuid-1");
+    store.toggleSelection("uuid-2");
+    store.clearSelection();
+    expect(store.selectedIds.size).toBe(0);
+  });
+
+  it("deleteSelected 删除选中项并清空选择", async () => {
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    const store = useLibraryStore();
+    await store.fetchImages();
+
+    mockInvoke.mockResolvedValue(undefined);
+    store.toggleSelection("uuid-1");
+    await store.deleteSelected();
+
+    expect(mockInvoke).toHaveBeenCalledWith("delete_image", { id: "uuid-1" });
+    expect(store.images).toHaveLength(1);
+    expect(store.images[0].id).toBe("uuid-2");
+    expect(store.selectedIds.size).toBe(0);
+  });
+});
