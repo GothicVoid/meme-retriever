@@ -302,6 +302,8 @@ mod tests {
             width: Some(100), height: Some(100),
             added_at: 1000, use_count: 0,
             thumbnail_path: Some(format!("/tmp/{id}_thumb.jpg")),
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         repo::insert_embedding(pool, id, &embedding).await.unwrap();
         if !ocr.is_empty() {
@@ -330,16 +332,22 @@ mod tests {
             id: "low".into(), file_path: "/tmp/low.jpg".into(), file_name: "low.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
             added_at: 1000, use_count: 1, thumbnail_path: Some("/tmp/low_t.jpg".into()),
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         repo::insert_image(&pool, &repo::ImageRecord {
             id: "high".into(), file_path: "/tmp/high.jpg".into(), file_name: "high.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
             added_at: 2000, use_count: 10, thumbnail_path: Some("/tmp/high_t.jpg".into()),
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         repo::insert_image(&pool, &repo::ImageRecord {
             id: "mid".into(), file_path: "/tmp/mid.jpg".into(), file_name: "mid.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
             added_at: 3000, use_count: 5, thumbnail_path: Some("/tmp/mid_t.jpg".into()),
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
 
         let engine = make_engine(pool).await;
@@ -360,6 +368,8 @@ mod tests {
                 width: Some(100), height: Some(100),
                 added_at: i * 1000, use_count: 0,
                 thumbnail_path: Some(format!("/tmp/img{i}_t.jpg")),
+                file_hash: None, file_size: None, file_modified_time: None,
+                file_status: "normal".to_string(), last_check_time: None,
             }).await.unwrap();
         }
         let engine = make_engine(pool).await;
@@ -374,6 +384,8 @@ mod tests {
             id: "used".into(), file_path: "/tmp/used.jpg".into(), file_name: "used.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
             added_at: 1000, use_count: 3, thumbnail_path: None,
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         let engine = make_engine(pool).await;
         let results = engine.search("", 10).await.unwrap();
@@ -492,6 +504,8 @@ mod tests {
             id: "img1".into(), file_path: "/tmp/img1.jpg".into(), file_name: "img1.jpg".into(),
             format: "jpg".into(), width: Some(100), height: Some(100),
             added_at: 1000, use_count: 0, thumbnail_path: Some("/tmp/img1_t.jpg".into()),
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
 
         let engine = make_engine(pool).await;

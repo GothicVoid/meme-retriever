@@ -13,6 +13,11 @@ pub struct ImageRecord {
     pub added_at: i64,
     pub use_count: i64,
     pub thumbnail_path: Option<String>,
+    pub file_hash: Option<String>,
+    pub file_size: Option<i64>,
+    pub file_modified_time: Option<i64>,
+    pub file_status: String,
+    pub last_check_time: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -24,12 +29,15 @@ pub struct TagRecord {
 pub async fn insert_image(pool: &DbPool, rec: &ImageRecord) -> anyhow::Result<()> {
     tracing::debug!("insert_image: id={}", rec.id);
     sqlx::query(
-        "INSERT OR IGNORE INTO images(id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)"
+        "INSERT OR IGNORE INTO images(id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+                              file_hash,file_size,file_modified_time,file_status,last_check_time)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"
     )
     .bind(&rec.id).bind(&rec.file_path).bind(&rec.file_name).bind(&rec.format)
     .bind(rec.width).bind(rec.height).bind(rec.added_at).bind(rec.use_count)
     .bind(&rec.thumbnail_path)
+    .bind(&rec.file_hash).bind(rec.file_size).bind(rec.file_modified_time)
+    .bind(&rec.file_status).bind(rec.last_check_time)
     .execute(pool)
     .await?;
     Ok(())
@@ -38,7 +46,8 @@ pub async fn insert_image(pool: &DbPool, rec: &ImageRecord) -> anyhow::Result<()
 pub async fn get_image(pool: &DbPool, id: &str) -> anyhow::Result<Option<ImageRecord>> {
     tracing::debug!("get_image: id={id}");
     let row = sqlx::query(
-        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time
          FROM images WHERE id=?1"
     )
     .bind(id)
@@ -55,6 +64,38 @@ pub async fn get_image(pool: &DbPool, id: &str) -> anyhow::Result<Option<ImageRe
         added_at: r.get("added_at"),
         use_count: r.get("use_count"),
         thumbnail_path: r.get("thumbnail_path"),
+        file_hash: r.get("file_hash"),
+        file_size: r.get("file_size"),
+        file_modified_time: r.get("file_modified_time"),
+        file_status: r.get("file_status"),
+        last_check_time: r.get("last_check_time"),
+    }))
+}
+
+pub async fn get_image_by_hash(pool: &DbPool, hash: &str) -> anyhow::Result<Option<ImageRecord>> {
+    let row = sqlx::query(
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time
+         FROM images WHERE file_hash=?1"
+    )
+    .bind(hash)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| ImageRecord {
+        id: r.get("id"),
+        file_path: r.get("file_path"),
+        file_name: r.get("file_name"),
+        format: r.get("format"),
+        width: r.get("width"),
+        height: r.get("height"),
+        added_at: r.get("added_at"),
+        use_count: r.get("use_count"),
+        thumbnail_path: r.get("thumbnail_path"),
+        file_hash: r.get("file_hash"),
+        file_size: r.get("file_size"),
+        file_modified_time: r.get("file_modified_time"),
+        file_status: r.get("file_status"),
+        last_check_time: r.get("last_check_time"),
     }))
 }
 
@@ -177,7 +218,8 @@ pub async fn get_images_paged(pool: &DbPool, page: i64, page_size: i64) -> anyho
     tracing::debug!("get_images_paged: page={page}");
     let offset = page * page_size;
     let rows = sqlx::query(
-        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time
          FROM images ORDER BY added_at DESC LIMIT ?1 OFFSET ?2"
     )
     .bind(page_size).bind(offset)
@@ -193,6 +235,11 @@ pub async fn get_images_paged(pool: &DbPool, page: i64, page_size: i64) -> anyho
         added_at: r.get("added_at"),
         use_count: r.get("use_count"),
         thumbnail_path: r.get("thumbnail_path"),
+        file_hash: r.get("file_hash"),
+        file_size: r.get("file_size"),
+        file_modified_time: r.get("file_modified_time"),
+        file_status: r.get("file_status"),
+        last_check_time: r.get("last_check_time"),
     }).collect())
 }
 
@@ -241,7 +288,8 @@ pub async fn has_any_usage(pool: &DbPool) -> anyhow::Result<bool> {
 
 pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
-        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time
          FROM images ORDER BY added_at DESC LIMIT ?1"
     )
     .bind(limit)
@@ -257,12 +305,18 @@ pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<
         added_at: r.get("added_at"),
         use_count: r.get("use_count"),
         thumbnail_path: r.get("thumbnail_path"),
+        file_hash: r.get("file_hash"),
+        file_size: r.get("file_size"),
+        file_modified_time: r.get("file_modified_time"),
+        file_status: r.get("file_status"),
+        last_check_time: r.get("last_check_time"),
     }).collect())
 }
 
 pub async fn get_all_images(pool: &DbPool) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
-        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time
          FROM images ORDER BY added_at ASC"
     )
     .fetch_all(pool)
@@ -277,7 +331,30 @@ pub async fn get_all_images(pool: &DbPool) -> anyhow::Result<Vec<ImageRecord>> {
         added_at: r.get("added_at"),
         use_count: r.get("use_count"),
         thumbnail_path: r.get("thumbnail_path"),
+        file_hash: r.get("file_hash"),
+        file_size: r.get("file_size"),
+        file_modified_time: r.get("file_modified_time"),
+        file_status: r.get("file_status"),
+        last_check_time: r.get("last_check_time"),
     }).collect())
+}
+
+pub async fn update_file_status(
+    pool: &DbPool,
+    id: &str,
+    status: &str,
+    check_time: i64,
+) -> anyhow::Result<()> {
+    let rows = sqlx::query(
+        "UPDATE images SET file_status=?1, last_check_time=?2 WHERE id=?3"
+    )
+    .bind(status).bind(check_time).bind(id)
+    .execute(pool)
+    .await?;
+    if rows.rows_affected() == 0 {
+        anyhow::bail!("image not found: {id}");
+    }
+    Ok(())
 }
 
 pub async fn get_ocr_texts(
@@ -299,7 +376,8 @@ pub async fn get_ocr_texts(
 
 pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
-        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time
          FROM images ORDER BY use_count DESC, added_at DESC LIMIT ?1"
     )
     .bind(limit)
@@ -315,6 +393,11 @@ pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Ve
         added_at: r.get("added_at"),
         use_count: r.get("use_count"),
         thumbnail_path: r.get("thumbnail_path"),
+        file_hash: r.get("file_hash"),
+        file_size: r.get("file_size"),
+        file_modified_time: r.get("file_modified_time"),
+        file_status: r.get("file_status"),
+        last_check_time: r.get("last_check_time"),
     }).collect())
 }
 
@@ -342,6 +425,11 @@ mod tests {
             added_at: 1000,
             use_count: 0,
             thumbnail_path: None,
+            file_hash: None,
+            file_size: None,
+            file_modified_time: None,
+            file_status: "normal".to_string(),
+            last_check_time: None,
         }
     }
 
@@ -451,5 +539,72 @@ mod tests {
         assert_eq!(page0.len(), 3);
         let page1 = get_images_paged(&pool, 1, 3).await.unwrap();
         assert_eq!(page1.len(), 2);
+    }
+
+    // ── Phase B：SHA-256 去重 ──────────────────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_insert_image_with_hash(pool: SqlitePool) {
+        let mut rec = make_image("img1");
+        rec.file_hash = Some("abc123".to_string());
+        rec.file_size = Some(204800);
+        rec.file_modified_time = Some(1700000000);
+        insert_image(&pool, &rec).await.unwrap();
+
+        let got = get_image(&pool, "img1").await.unwrap().unwrap();
+        assert_eq!(got.file_hash, Some("abc123".to_string()));
+        assert_eq!(got.file_size, Some(204800));
+        assert_eq!(got.file_modified_time, Some(1700000000));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_image_by_hash_found(pool: SqlitePool) {
+        let mut rec = make_image("img1");
+        rec.file_hash = Some("deadbeef".to_string());
+        insert_image(&pool, &rec).await.unwrap();
+
+        let got = get_image_by_hash(&pool, "deadbeef").await.unwrap();
+        assert!(got.is_some());
+        assert_eq!(got.unwrap().id, "img1");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_image_by_hash_not_found(pool: SqlitePool) {
+        let got = get_image_by_hash(&pool, "nonexistent_hash").await.unwrap();
+        assert!(got.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_null_hash_allows_multiple(pool: SqlitePool) {
+        insert_image(&pool, &make_image("img1")).await.unwrap();
+        insert_image(&pool, &make_image("img2")).await.unwrap();
+        let all = get_images_paged(&pool, 0, 10).await.unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    // ── Phase C：文件状态管理 ──────────────────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_default_file_status_is_normal(pool: SqlitePool) {
+        insert_image(&pool, &make_image("img1")).await.unwrap();
+        let got = get_image(&pool, "img1").await.unwrap().unwrap();
+        assert_eq!(got.file_status, "normal");
+        assert!(got.last_check_time.is_none());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_update_file_status(pool: SqlitePool) {
+        insert_image(&pool, &make_image("img1")).await.unwrap();
+        update_file_status(&pool, "img1", "missing", 1700000001).await.unwrap();
+        let got = get_image(&pool, "img1").await.unwrap().unwrap();
+        assert_eq!(got.file_status, "missing");
+        assert_eq!(got.last_check_time, Some(1700000001));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_update_file_status_not_found(pool: SqlitePool) {
+        let result = update_file_status(&pool, "nonexistent", "missing", 0).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 }

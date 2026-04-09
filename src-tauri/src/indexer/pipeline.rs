@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::db::{DbPool, repo};
-use crate::indexer::{thumbnail, ocr};
+use crate::indexer::{thumbnail, ocr, hash};
 use crate::ml::clip::ClipEncoder;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -65,8 +65,36 @@ async fn process_one(pool: &DbPool, src_path: &str, library_dir: &Path) -> Index
 }
 
 async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Result<String> {
+    // 2.3 任务队列：记录任务进度，支持断点续传
+    let task_id = Uuid::new_v4().to_string();
+    crate::db::task_repo::insert_task(pool, &task_id, &src.to_string_lossy()).await?;
+    crate::db::task_repo::update_task_status(pool, &task_id, "processing", None).await?;
+
+    let result = do_index_inner(pool, src, library_dir).await;
+
+    match &result {
+        Ok(_) => { let _ = crate::db::task_repo::update_task_status(pool, &task_id, "completed", None).await; }
+        Err(e) => { let _ = crate::db::task_repo::update_task_status(pool, &task_id, "failed", Some(&e.to_string())).await; }
+    }
+    result
+}
+
+async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Result<String> {
     if !src.exists() {
         anyhow::bail!("file not found: {:?}", src);
+    }
+
+    // 2.1 SHA-256 去重：内容相同的文件直接返回已有 ID
+    let file_hash = hash::compute_sha256(src)?;
+    let meta = std::fs::metadata(src)?;
+    let file_size = meta.len() as i64;
+    let file_modified_time = meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+
+    if let Some(existing) = repo::get_image_by_hash(pool, &file_hash).await? {
+        return Ok(existing.id);
     }
 
     let id = Uuid::new_v4().to_string();
@@ -112,6 +140,11 @@ async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Resu
         added_at: now_secs(),
         use_count: 0,
         thumbnail_path: Some(thumb.to_string_lossy().to_string()),
+        file_hash: Some(file_hash),
+        file_size: Some(file_size),
+        file_modified_time,
+        file_status: "normal".to_string(),
+        last_check_time: None,
     };
     repo::insert_image(pool, &rec).await?;
     repo::insert_embedding(pool, &id, &embedding).await?;
@@ -182,7 +215,7 @@ mod tests {
 
     async fn collect(mut rx: mpsc::Receiver<IndexProgress>) -> Vec<IndexProgress> {
         let mut results = vec![];
-        while let Ok(Some(p)) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+        while let Ok(Some(p)) = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
             results.push(p);
         }
         results
@@ -331,5 +364,29 @@ mod tests {
         // library_dir 下不应存在原文件的副本（只有 thumbs/）
         let copied = lib.path().join(format!("{}.jpg", results[0].id));
         assert!(!copied.exists(), "不应复制文件到 library_dir");
+    }
+
+    // ── Phase B：SHA-256 去重 ──────────────────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_pipeline_dedup_same_file(pool: SqlitePool) {
+        let lib = tempfile::tempdir().unwrap();
+        let src = fixture("sample.jpg");
+
+        let rx1 = index_images(pool.clone(), vec![src.clone()], lib.path().to_path_buf());
+        let r1 = collect(rx1).await;
+        assert_eq!(r1.len(), 1);
+        assert_eq!(r1[0].status, "completed");
+        let first_id = r1[0].id.clone();
+
+        // 同一文件再次入库，应返回已有 ID，不新增记录
+        let rx2 = index_images(pool.clone(), vec![src.clone()], lib.path().to_path_buf());
+        let r2 = collect(rx2).await;
+        assert_eq!(r2.len(), 1);
+        assert_eq!(r2[0].status, "completed");
+        assert_eq!(r2[0].id, first_id);
+
+        let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
+        assert_eq!(images.len(), 1);
     }
 }

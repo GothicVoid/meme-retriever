@@ -334,6 +334,60 @@ pub async fn reindex_all(
     Ok(())
 }
 
+// ── Phase C：文件状态管理 ────────────────────────────────────────────────────
+
+/// 批量检查所有图片文件是否存在，更新 file_status 和 last_check_time。
+/// 返回状态发生变化的图片数量。
+#[tauri::command]
+pub async fn check_file_statuses(db: State<'_, DbPool>) -> Result<u64, String> {
+    let images = repo::get_all_images(db.inner()).await.map_err(|e| e.to_string())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let mut updated = 0u64;
+    for img in &images {
+        let status = if std::path::Path::new(&img.file_path).exists() { "normal" } else { "missing" };
+        if status != img.file_status {
+            repo::update_file_status(db.inner(), &img.id, status, now)
+                .await.map_err(|e| e.to_string())?;
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+// ── Phase D：任务队列 ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_pending_tasks(
+    db: State<'_, DbPool>,
+) -> Result<Vec<crate::db::task_repo::TaskRecord>, String> {
+    crate::db::task_repo::get_pending_tasks(db.inner()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn resume_pending_tasks(
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<usize, String> {
+    crate::db::task_repo::reset_stale_tasks(db.inner()).await.map_err(|e| e.to_string())?;
+    let pending = crate::db::task_repo::get_pending_tasks(db.inner()).await.map_err(|e| e.to_string())?;
+    let count = pending.len();
+    if count > 0 {
+        let paths: Vec<String> = pending.into_iter().map(|t| t.file_path).collect();
+        let library_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("library");
+        spawn_index_task(paths, library_dir, db.inner().clone(), Arc::clone(engine.inner()), app);
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+pub async fn clear_task_queue(db: State<'_, DbPool>) -> Result<(), String> {
+    crate::db::task_repo::clear_task_queue(db.inner()).await.map_err(|e| e.to_string())
+}
+
 // ── 测试 ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -439,6 +493,8 @@ mod tests {
             id: "img1".into(), file_path: "/tmp/img1.jpg".into(),
             file_name: "img1.jpg".into(), format: "jpg".into(),
             width: None, height: None, added_at: 1, use_count: 0, thumbnail_path: None,
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         repo::insert_tags(&pool, "img1", &[
             repo::TagRecord { tag_text: "旧标签".into(), is_auto: false },
@@ -463,6 +519,8 @@ mod tests {
             id: "img1".into(), file_path: "/tmp/img1.jpg".into(),
             file_name: "img1.jpg".into(), format: "jpg".into(),
             width: None, height: None, added_at: 1, use_count: 0, thumbnail_path: None,
+            file_hash: None, file_size: None, file_modified_time: None,
+            file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         repo::insert_tags(&pool, "img1", &[
             repo::TagRecord { tag_text: "搞笑".into(), is_auto: false },
