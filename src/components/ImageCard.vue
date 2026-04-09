@@ -2,6 +2,7 @@
   <div
     class="image-card"
     @click="handleClick"
+    @dblclick="emit('open', image.id)"
     @contextmenu.prevent="showMenu"
   >
     <input
@@ -13,10 +14,22 @@
       @click.stop
     >
     <img
+      v-if="!imgError"
       :src="convertFileSrc(image.thumbnailPath || image.filePath)"
       :alt="image.id"
       loading="lazy"
+      @error="imgError = true"
     >
+    <div
+      v-else
+      class="img-missing"
+    >
+      <span>文件丢失</span>
+    </div>
+    <span
+      v-if="formatBadge"
+      class="format-badge"
+    >{{ formatBadge }}</span>
     <div
       v-if="showDebugInfo && image.debugInfo"
       class="debug-overlay"
@@ -54,8 +67,19 @@
       :style="{ top: menuY + 'px', left: menuX + 'px' }"
     >
       <li>
+        <button @click.stop="handleOpen">
+          查看详情
+        </button>
+      </li>
+      <li>
+        <button @click.stop="handleReveal">
+          在文件夹中显示
+        </button>
+      </li>
+      <li>
         <button
           data-action="delete"
+          class="danger"
           @click.stop="handleDelete"
         >
           删除
@@ -66,8 +90,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import type { SearchResult } from "@/stores/search";
 
@@ -77,15 +101,37 @@ const props = defineProps<{
   selectable?: boolean;
   selected?: boolean;
 }>();
-const emit = defineEmits<{ delete: [id: string]; select: [id: string] }>();
+const emit = defineEmits<{
+  delete: [id: string];
+  select: [id: string];
+  open: [id: string];
+}>();
 const { copyImage } = useClipboard();
 
 const menuVisible = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
+const imgError = ref(false);
+
+const formatBadge = computed(() => {
+  const fmt = props.image.fileFormat?.toLowerCase();
+  if (fmt === "gif") return "GIF";
+  if (fmt === "webp") return "WEBP";
+  return null;
+});
 
 async function handleClick() {
   await copyImage(props.image.id);
+}
+
+function handleOpen() {
+  menuVisible.value = false;
+  emit("open", props.image.id);
+}
+
+async function handleReveal() {
+  menuVisible.value = false;
+  await invoke("reveal_in_finder", { id: props.image.id }).catch(() => {});
 }
 
 function showMenu(e: MouseEvent) {
@@ -124,6 +170,31 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
 }
 .image-card:hover { opacity: 0.85; }
 
+.img-missing {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  color: #aaa;
+  font-size: 0.78rem;
+}
+
+.format-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  pointer-events: none;
+  letter-spacing: 0.03em;
+}
+
 .select-checkbox {
   position: absolute;
   top: 6px;
@@ -161,7 +232,7 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   list-style: none;
   padding: 0.25rem 0;
-  min-width: 120px;
+  min-width: 140px;
   z-index: 100;
 }
 .context-menu li button {
@@ -172,7 +243,8 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
-  color: #c0392b;
+  color: #333;
 }
 .context-menu li button:hover { background: #f5f5f5; }
+.context-menu li button.danger { color: #c0392b; }
 </style>

@@ -1,0 +1,129 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
+import ImageCard from "@/components/ImageCard.vue";
+import type { SearchResult } from "@/stores/search";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  convertFileSrc: (path: string) => `asset://${path}`,
+}));
+vi.mock("@/composables/useClipboard", () => ({
+  useClipboard: () => ({ copyImage: vi.fn() }),
+}));
+
+const base: SearchResult = {
+  id: "img-1",
+  filePath: "/img.jpg",
+  thumbnailPath: "/thumb.jpg",
+  fileFormat: "jpg",
+  score: 0.8,
+  tags: [],
+  debugInfo: null,
+};
+
+describe("ImageCard — 格式角标", () => {
+  beforeEach(() => setActivePinia(createPinia()));
+
+  it("GIF 格式显示 GIF 角标", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: { ...base, fileFormat: "gif" }, showDebugInfo: false },
+    });
+    expect(wrapper.find(".format-badge").exists()).toBe(true);
+    expect(wrapper.find(".format-badge").text()).toBe("GIF");
+  });
+
+  it("WEBP 格式显示 WEBP 角标", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: { ...base, fileFormat: "webp" }, showDebugInfo: false },
+    });
+    expect(wrapper.find(".format-badge").text()).toBe("WEBP");
+  });
+
+  it("JPG 格式不显示角标", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: { ...base, fileFormat: "jpg" }, showDebugInfo: false },
+    });
+    expect(wrapper.find(".format-badge").exists()).toBe(false);
+  });
+
+  it("PNG 格式不显示角标", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: { ...base, fileFormat: "png" }, showDebugInfo: false },
+    });
+    expect(wrapper.find(".format-badge").exists()).toBe(false);
+  });
+
+  it("fileFormat 大写时也能正确匹配", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: { ...base, fileFormat: "GIF" }, showDebugInfo: false },
+    });
+    expect(wrapper.find(".format-badge").text()).toBe("GIF");
+  });
+});
+
+describe("ImageCard — 文件丢失占位图", () => {
+  beforeEach(() => setActivePinia(createPinia()));
+
+  it("图片加载正常时不显示占位图", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: base, showDebugInfo: false },
+    });
+    expect(wrapper.find(".img-missing").exists()).toBe(false);
+    expect(wrapper.find("img").exists()).toBe(true);
+  });
+
+  it("图片 error 事件后显示文件丢失占位图", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: base, showDebugInfo: false },
+    });
+    await wrapper.find("img").trigger("error");
+    expect(wrapper.find(".img-missing").exists()).toBe(true);
+    expect(wrapper.find(".img-missing").text()).toContain("文件丢失");
+    expect(wrapper.find("img").exists()).toBe(false);
+  });
+});
+
+describe("ImageCard — 双击 open 事件", () => {
+  beforeEach(() => setActivePinia(createPinia()));
+
+  it("双击触发 open 事件并携带 id", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: base, showDebugInfo: false },
+    });
+    await wrapper.trigger("dblclick");
+    expect(wrapper.emitted("open")).toBeTruthy();
+    expect(wrapper.emitted("open")![0]).toEqual(["img-1"]);
+  });
+});
+
+describe("ImageCard — 右键菜单新增项", () => {
+  beforeEach(() => setActivePinia(createPinia()));
+
+  it("右键菜单包含「查看详情」", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: base, showDebugInfo: false },
+    });
+    await wrapper.trigger("contextmenu");
+    expect(wrapper.find(".context-menu").text()).toContain("查看详情");
+  });
+
+  it("右键菜单包含「在文件夹中显示」", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: base, showDebugInfo: false },
+    });
+    await wrapper.trigger("contextmenu");
+    expect(wrapper.find(".context-menu").text()).toContain("在文件夹中显示");
+  });
+
+  it("点击「查看详情」触发 open 事件并关闭菜单", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: base, showDebugInfo: false },
+    });
+    await wrapper.trigger("contextmenu");
+    const btn = wrapper.findAll(".context-menu button").find(b => b.text().includes("查看详情"))!;
+    await btn.trigger("click");
+    expect(wrapper.emitted("open")).toBeTruthy();
+    expect(wrapper.find(".context-menu").exists()).toBe(false);
+  });
+});

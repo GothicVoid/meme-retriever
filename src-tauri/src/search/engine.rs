@@ -59,7 +59,7 @@ impl SearchEngine {
         self.vector_store.write().unwrap().remove(id);
     }
 
-    pub async fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<SearchResult>> {
+    pub async fn search(&self, query: &str, limit: usize, w_kw: f32, w_ocr: f32, w_clip: f32) -> anyhow::Result<Vec<SearchResult>> {
         if query.is_empty() {
             // PRD §5.2.3: 展示使用频次最高的 N 张
             let images = repo::get_top_used_images(&self.pool, limit as i64).await?;
@@ -70,6 +70,7 @@ impl SearchEngine {
                     id: img.id,
                     file_path: img.file_path,
                     thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+                    file_format: img.format,
                     score: 1.0,
                     tags,
                     debug_info: None,
@@ -135,9 +136,9 @@ impl SearchEngine {
             tracing::debug!("[VEC] {} semantic hits:\n{}", semantic_hits.len(), detail.join("\n"));
         }
 
-        // 5. 按 docs/scoring.md 新公式合并得分
+        // 5. 按 PRD §5.2.3 公式合并得分
         //    Final_Score = 0.75·Relevance + 0.25·Popularity
-        //    Relevance   = max(0.3·S_kw, 0.4·S_ocr, 0.3·S_clip)
+        //    Relevance   = w_kw·S_kw + w_ocr·S_ocr + w_clip·S_clip  （加权求和）
         //    Popularity  = log(1+use_count)/log(1+max_use_count)，冷启动 → 0.1
         //    低相关过滤：relevance < 0.2 → 不计入结果
         let fts_map: std::collections::HashMap<String, f32> = fts_result
@@ -164,9 +165,7 @@ impl SearchEngine {
                          -> (f32, ScoreDebugInfo) {
             let s_clip: f32 = (raw_cosine + 1.0) / 2.0;   // cosine → [0,1]
 
-            let relevance = (0.3_f32 * s_kw)
-                .max(0.4_f32 * s_ocr)
-                .max(0.3_f32 * s_clip);
+            let relevance = (w_kw * s_kw + w_ocr * s_ocr + w_clip * s_clip).clamp(0.0, 1.0);
 
             let use_count = use_count_map.get(id).copied().unwrap_or(0);
             let popularity: f32 = if use_count == 0 {
@@ -185,8 +184,8 @@ impl SearchEngine {
                 sem_score: s_clip,
                 kw_score: s_ocr,
                 tag_score: s_kw,
-                sem_weight: 0.3,
-                kw_weight: 0.4,
+                sem_weight: w_clip,
+                kw_weight: w_ocr,
                 relevance,
                 popularity,
             };
@@ -250,6 +249,7 @@ impl SearchEngine {
                     id: id.clone(),
                     file_path: img.file_path,
                     thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+                    file_format: img.format,
                     score,
                     tags,
                     debug_info: debug_map.remove(&id),
@@ -321,7 +321,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_search_empty_db(pool: SqlitePool) {
         let engine = make_engine(pool).await;
-        let results = engine.search("test", 10).await.unwrap();
+        let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert!(results.is_empty());
     }
 
@@ -351,7 +351,7 @@ mod tests {
         }).await.unwrap();
 
         let engine = make_engine(pool).await;
-        let results = engine.search("", 10).await.unwrap();
+        let results = engine.search("", 10, 0.3, 0.4, 0.3).await.unwrap();
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].id, "high");  // use_count=10
@@ -373,7 +373,7 @@ mod tests {
             }).await.unwrap();
         }
         let engine = make_engine(pool).await;
-        let results = engine.search("", 3).await.unwrap();
+        let results = engine.search("", 3, 0.3, 0.4, 0.3).await.unwrap();
         assert_eq!(results.len(), 3, "should respect limit");
     }
 
@@ -388,7 +388,7 @@ mod tests {
             file_status: "normal".to_string(), last_check_time: None,
         }).await.unwrap();
         let engine = make_engine(pool).await;
-        let results = engine.search("", 10).await.unwrap();
+        let results = engine.search("", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert_eq!(results.len(), 1, "should return top used image");
         assert_eq!(results[0].id, "used");
     }
@@ -396,7 +396,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_search_empty_query(pool: SqlitePool) {
         let engine = make_engine(pool).await;
-        let results = engine.search("", 10).await.unwrap();
+        let results = engine.search("", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert!(results.is_empty());
     }
 
@@ -407,7 +407,7 @@ mod tests {
         insert_test_image(&pool, "img3", "test image", unit_vec(3)).await;
 
         let engine = make_engine(pool).await;
-        let results = engine.search("hello", 10).await.unwrap();
+        let results = engine.search("hello", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert!(!results.is_empty());
     }
 
@@ -417,7 +417,7 @@ mod tests {
         insert_test_image(&pool, "img2", "test", unit_vec(2)).await;
 
         let engine = make_engine(pool).await;
-        let results = engine.search("test", 10).await.unwrap();
+        let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
         for r in &results {
             assert!(r.score >= 0.0 && r.score <= 1.0, "score out of range: {}", r.score);
         }
@@ -430,7 +430,7 @@ mod tests {
         insert_test_image(&pool, "img3", "test", unit_vec(3)).await;
 
         let engine = make_engine(pool).await;
-        let results = engine.search("test", 10).await.unwrap();
+        let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
         for w in results.windows(2) {
             assert!(w[0].score >= w[1].score, "results not sorted: {} < {}", w[0].score, w[1].score);
         }
@@ -442,7 +442,7 @@ mod tests {
             insert_test_image(&pool, &format!("img{i}"), "test", unit_vec(i)).await;
         }
         let engine = make_engine(pool).await;
-        let results = engine.search("test", 3).await.unwrap();
+        let results = engine.search("test", 3, 0.3, 0.4, 0.3).await.unwrap();
         assert!(results.len() <= 3);
     }
 
@@ -468,7 +468,7 @@ mod tests {
         insert_test_image(&pool, "img1", "test content", unit_vec(1)).await;
 
         let engine = make_engine(pool).await;
-        let results = engine.search("test", 10).await.unwrap();
+        let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
 
         assert!(!results.is_empty(), "should have results");
         for r in &results {
@@ -477,9 +477,9 @@ mod tests {
             assert!(di.sem_score >= 0.0 && di.sem_score <= 1.0, "sem_score out of range: {}", di.sem_score);
             // kw_score = FTS score ∈ [0,1]
             assert!(di.kw_score >= 0.0 && di.kw_score <= 1.0, "kw_score out of range: {}", di.kw_score);
-            // 新公式固定权重
-            assert_eq!(di.sem_weight, 0.3, "sem_weight should be 0.3 (w3/clip)");
-            assert_eq!(di.kw_weight, 0.4, "kw_weight should be 0.4 (w2/ocr)");
+            // 权重反映传入值
+            assert!((di.sem_weight - 0.3).abs() < 1e-5, "sem_weight should be 0.3 (w_clip)");
+            assert!((di.kw_weight - 0.4).abs() < 1e-5, "kw_weight should be 0.4 (w_ocr)");
             // relevance ∈ [0,1]
             assert!(di.relevance >= 0.0 && di.relevance <= 1.0, "relevance out of range: {}", di.relevance);
             // popularity ∈ [0,1]（冷启动为 0.1）
@@ -491,7 +491,7 @@ mod tests {
     async fn test_cold_start_popularity_is_0_1(pool: SqlitePool) {
         insert_test_image(&pool, "cold", "test", unit_vec(1)).await;
         let engine = make_engine(pool).await;
-        let results = engine.search("test", 10).await.unwrap();
+        let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
         let r = results.iter().find(|r| r.id == "cold").unwrap();
         let di = r.debug_info.as_ref().unwrap();
         assert!((di.popularity - 0.1).abs() < 1e-6,
@@ -509,11 +509,58 @@ mod tests {
         }).await.unwrap();
 
         let engine = make_engine(pool).await;
-        let results = engine.search("", 10).await.unwrap();
+        let results = engine.search("", 10, 0.3, 0.4, 0.3).await.unwrap();
 
         assert!(!results.is_empty(), "should return top used images for empty query");
         for r in &results {
             assert!(r.debug_info.is_none(), "empty query results should have debug_info=None");
         }
+    }
+
+    // ── 动态权重测试 ────────────────────────────────────────────────────────
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_dynamic_weights_reflected_in_debug_info(pool: SqlitePool) {
+        // 验证传入的权重被正确记录到 debug_info
+        insert_test_image(&pool, "img1", "test", unit_vec(1)).await;
+        let engine = make_engine(pool).await;
+
+        let results = engine.search("test", 10, 0.5, 0.3, 0.2).await.unwrap();
+        assert!(!results.is_empty());
+        for r in &results {
+            if let Some(di) = &r.debug_info {
+                assert!((di.sem_weight - 0.2).abs() < 1e-5,
+                    "sem_weight (w_clip) should be 0.2, got {}", di.sem_weight);
+                assert!((di.kw_weight - 0.3).abs() < 1e-5,
+                    "kw_weight (w_ocr) should be 0.3, got {}", di.kw_weight);
+            }
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_dynamic_weights_score_range(pool: SqlitePool) {
+        // 不同权重下 score 仍在 [0,1]
+        insert_test_image(&pool, "img1", "test", unit_vec(1)).await;
+        let engine = make_engine(pool).await;
+
+        for (w1, w2, w3) in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (0.5, 0.3, 0.2)] {
+            let results = engine.search("test", 10, w1, w2, w3).await.unwrap();
+            for r in &results {
+                assert!(r.score >= 0.0 && r.score <= 1.0,
+                    "score out of range with weights ({w1},{w2},{w3}): {}", r.score);
+            }
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_input_truncation_200_chars(pool: SqlitePool) {
+        // 超过 200 字符的查询在 engine 层不截断（截断在 command 层），
+        // 但 engine 应能正常处理长查询
+        insert_test_image(&pool, "img1", "test", unit_vec(1)).await;
+        let engine = make_engine(pool).await;
+        let long_query = "测".repeat(250);
+        // 不应 panic，正常返回结果（可能为空）
+        let result = engine.search(&long_query, 10, 0.3, 0.4, 0.3).await;
+        assert!(result.is_ok(), "long query should not error: {:?}", result.err());
     }
 }

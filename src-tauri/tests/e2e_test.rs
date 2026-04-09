@@ -63,7 +63,7 @@ async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
 
     // 搜索不应报错；根据新评分公式，仅有 OCR/关键词命中的图片会出现在结果中
     // 测试图片不含 "test" 文字，因此此查询可能返回空（低相关性被过滤），这是预期行为
-    let hits = engine.search("test", 10).await.unwrap();
+    let hits = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
 
     // score 在合法范围
     for h in &hits {
@@ -179,7 +179,7 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
     // 搜索性能：< 2000ms（真实 CLIP 模型推理）
     let engine = make_engine(pool).await;
     let start = std::time::Instant::now();
-    let _ = engine.search("test", 10).await.unwrap();
+    let _ = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
     let search_ms = start.elapsed().as_millis();
     assert!(search_ms < 2000, "search took too long: {search_ms}ms");
 }

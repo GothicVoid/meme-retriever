@@ -11,6 +11,7 @@
       :selected="selectedIds?.has(img.id) ?? false"
       @delete="$emit('delete', $event)"
       @select="$emit('select', $event)"
+      @open="$emit('open', $event)"
     />
   </div>
 </template>
@@ -26,7 +27,7 @@ defineProps<{
   selectable?: boolean;
   selectedIds?: Set<string>;
 }>();
-defineEmits<{ delete: [id: string]; select: [id: string] }>();
+defineEmits<{ delete: [id: string]; select: [id: string]; open: [id: string] }>();
 </script>
 
 <style scoped>
@@ -34,6 +35,17 @@ defineEmits<{ delete: [id: string]; select: [id: string] }>();
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.75rem;
+}
+/* PRD §7.3: <800px 2列，>1400px 4列 */
+@media (max-width: 799px) {
+  .image-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1400px) {
+  .image-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 .hint { color: #888; padding: 1rem 0; }
 </style>

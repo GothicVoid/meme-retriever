@@ -43,18 +43,27 @@
       :selected-ids="store.selectedIds"
       @delete="handleDelete"
       @select="store.toggleSelection"
+      @open="detailId = $event"
+    />
+    <DetailModal
+      v-if="detailId"
+      :image-id="detailId"
+      :images="store.images as unknown as SearchResult[]"
+      @close="detailId = null"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed } from "vue";
+import { onMounted, computed, ref } from "vue";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import ImageGrid from "@/components/ImageGrid.vue";
+import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore } from "@/stores/library";
 import type { SearchResult } from "@/stores/search";
 
 const store = useLibraryStore();
+const detailId = ref<string | null>(null);
 
 const progressPercent = computed(() =>
   store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0

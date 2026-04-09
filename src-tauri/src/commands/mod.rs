@@ -26,6 +26,7 @@ pub struct SearchResult {
     pub id: String,
     pub file_path: String,
     pub thumbnail_path: String,
+    pub file_format: String,
     pub score: f32,
     pub tags: Vec<String>,
     pub debug_info: Option<ScoreDebugInfo>,
@@ -38,8 +39,10 @@ pub struct ImageMeta {
     pub file_path: String,
     pub file_name: String,
     pub thumbnail_path: String,
+    pub file_format: String,
     pub width: i64,
     pub height: i64,
+    pub file_size: i64,
     pub added_at: i64,
     pub use_count: i64,
     pub tags: Vec<String>,
@@ -72,14 +75,31 @@ fn spawn_index_task(
 pub async fn search(
     query: String,
     limit: usize,
+    w1: Option<f32>,
+    w2: Option<f32>,
+    w3: Option<f32>,
     engine: State<'_, EngineState>,
 ) -> Result<Vec<SearchResult>, String> {
     if limit == 0 {
         return Err("limit must be > 0".into());
     }
-    tracing::info!("search: query={query}, limit={limit}");
+    // PRD §5.2.3: 输入长度截断，超过200字符取前200
+    let query = if query.chars().count() > 200 {
+        query.chars().take(200).collect::<String>()
+    } else {
+        query
+    };
+    // 权重归一化（默认 0.3/0.4/0.3）
+    let (rw1, rw2, rw3) = {
+        let a = w1.unwrap_or(0.3).max(0.0);
+        let b = w2.unwrap_or(0.4).max(0.0);
+        let c = w3.unwrap_or(0.3).max(0.0);
+        let sum = a + b + c;
+        if sum == 0.0 { (0.3, 0.4, 0.3) } else { (a / sum, b / sum, c / sum) }
+    };
+    tracing::info!("search: query={query}, limit={limit}, weights=({rw1:.2},{rw2:.2},{rw3:.2})");
     engine
-        .search(&query, limit)
+        .search(&query, limit, rw1, rw2, rw3)
         .await
         .map_err(|e| { tracing::error!("command search failed: {e}"); e.to_string() })
 }
@@ -143,6 +163,38 @@ pub async fn delete_image(
     Ok(())
 }
 
+/// 获取单张图片的完整元数据（用于详情页）
+#[tauri::command]
+pub async fn get_image_meta(
+    id: String,
+    db: State<'_, DbPool>,
+) -> Result<Option<ImageMeta>, String> {
+    let img = repo::get_image(db.inner(), &id)
+        .await
+        .map_err(|e| e.to_string())?;
+    match img {
+        None => Ok(None),
+        Some(img) => {
+            let tags = repo::get_tags_for_image(db.inner(), &img.id)
+                .await
+                .unwrap_or_default();
+            Ok(Some(ImageMeta {
+                id: img.id,
+                file_path: img.file_path,
+                file_name: img.file_name,
+                thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+                file_format: img.format,
+                width: img.width.unwrap_or(0),
+                height: img.height.unwrap_or(0),
+                file_size: img.file_size.unwrap_or(0),
+                added_at: img.added_at,
+                use_count: img.use_count,
+                tags,
+            }))
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn get_images(
     page: i64,
@@ -163,8 +215,10 @@ pub async fn get_images(
             file_path: img.file_path,
             file_name: img.file_name,
             thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+            file_format: img.format,
             width: img.width.unwrap_or(0),
             height: img.height.unwrap_or(0),
+            file_size: img.file_size.unwrap_or(0),
             added_at: img.added_at,
             use_count: img.use_count,
             tags,
@@ -408,8 +462,10 @@ mod tests {
             file_path: "/library/images/uuid-1.jpg".into(),
             file_name: "sample.jpg".into(),
             thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
+            file_format: "jpg".into(),
             width: 800,
             height: 600,
+            file_size: 0,
             added_at: 1700000000,
             use_count: 0,
             tags: vec![],
@@ -427,6 +483,7 @@ mod tests {
             id: "uuid-1".into(),
             file_path: "/library/images/uuid-1.jpg".into(),
             thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
+            file_format: "jpg".into(),
             score: 0.9,
             tags: vec![],
             debug_info: None,
@@ -466,6 +523,7 @@ mod tests {
             id: "uuid-1".into(),
             file_path: "/path/img.jpg".into(),
             thumbnail_path: "/path/thumb.jpg".into(),
+            file_format: "jpg".into(),
             score: 0.9,
             tags: vec![],
             debug_info: Some(ScoreDebugInfo {
@@ -532,5 +590,85 @@ mod tests {
         assert!(suggestions.contains(&"搞笑".to_string()));
         assert!(suggestions.contains(&"搞怪".to_string()));
         assert!(!suggestions.contains(&"可爱".to_string()));
+    }
+
+    // ── 输入截断测试 ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_query_truncation_at_200_chars() {
+        // 模拟 search 命令中的截断逻辑
+        let long_query = "a".repeat(250);
+        let truncated: String = if long_query.chars().count() > 200 {
+            long_query.chars().take(200).collect()
+        } else {
+            long_query.clone()
+        };
+        assert_eq!(truncated.chars().count(), 200);
+    }
+
+    #[test]
+    fn test_query_not_truncated_when_200_chars() {
+        let query = "b".repeat(200);
+        let result: String = if query.chars().count() > 200 {
+            query.chars().take(200).collect()
+        } else {
+            query.clone()
+        };
+        assert_eq!(result, query);
+    }
+
+    #[test]
+    fn test_query_truncation_multibyte_chars() {
+        // 中文字符（多字节），确保按字符数而非字节数截断
+        let long_query = "测".repeat(250);
+        let truncated: String = if long_query.chars().count() > 200 {
+            long_query.chars().take(200).collect()
+        } else {
+            long_query.clone()
+        };
+        assert_eq!(truncated.chars().count(), 200);
+        // 字节数应为 200 * 3 = 600（UTF-8 中文 3 字节/字符）
+        assert_eq!(truncated.len(), 600);
+    }
+
+    // ── ImageMeta 序列化测试（含新字段）──────────────────────────────────────
+
+    #[test]
+    fn test_image_meta_new_fields_serialize() {
+        let meta = ImageMeta {
+            id: "uuid-1".into(),
+            file_path: "/img.jpg".into(),
+            file_name: "img.jpg".into(),
+            thumbnail_path: "/thumb.jpg".into(),
+            file_format: "gif".into(),
+            width: 800,
+            height: 600,
+            file_size: 102400,
+            added_at: 1700000000,
+            use_count: 5,
+            tags: vec![],
+        };
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(json["fileFormat"].as_str().unwrap(), "gif");
+        assert_eq!(json["fileSize"].as_i64().unwrap(), 102400);
+        assert!(json.get("file_format").is_none(), "should NOT have snake_case field");
+    }
+
+    // ── SearchResult 序列化测试（含 fileFormat）──────────────────────────────
+
+    #[test]
+    fn test_search_result_file_format_serializes() {
+        let result = SearchResult {
+            id: "uuid-1".into(),
+            file_path: "/img.gif".into(),
+            thumbnail_path: "/thumb.gif".into(),
+            file_format: "gif".into(),
+            score: 0.9,
+            tags: vec![],
+            debug_info: None,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["fileFormat"].as_str().unwrap(), "gif");
+        assert!(json.get("file_format").is_none());
     }
 }

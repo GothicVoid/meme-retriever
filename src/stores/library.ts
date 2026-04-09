@@ -8,8 +8,10 @@ export interface ImageMeta {
   filePath: string;
   fileName: string;
   thumbnailPath: string;
+  fileFormat: string;
   width: number;
   height: number;
+  fileSize: number;
   addedAt: number;
   useCount: number;
   tags: string[];

@@ -50,6 +50,7 @@ pub fn run() {
             commands::add_folder,
             commands::delete_image,
             commands::get_images,
+            commands::get_image_meta,
             commands::update_tags,
             commands::get_tag_suggestions,
             commands::copy_to_clipboard,
