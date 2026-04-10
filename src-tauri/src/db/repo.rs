@@ -48,7 +48,7 @@ pub async fn get_image(pool: &DbPool, id: &str) -> anyhow::Result<Option<ImageRe
     let row = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
                file_hash,file_size,file_modified_time,file_status,last_check_time
-         FROM images WHERE id=?1"
+         FROM images WHERE id=?1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -76,7 +76,7 @@ pub async fn get_image_by_hash(pool: &DbPool, hash: &str) -> anyhow::Result<Opti
     let row = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
                file_hash,file_size,file_modified_time,file_status,last_check_time
-         FROM images WHERE file_hash=?1"
+         FROM images WHERE file_hash=?1",
     )
     .bind(hash)
     .fetch_optional(pool)
@@ -111,6 +111,39 @@ pub async fn delete_image(pool: &DbPool, id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub async fn clear_all_images(pool: &DbPool) -> anyhow::Result<u64> {
+    const BATCH_SIZE: i64 = 1000;
+    let mut total_deleted = 0u64;
+
+    loop {
+        let rows = sqlx::query("SELECT id FROM images ORDER BY added_at ASC LIMIT ?1")
+            .bind(BATCH_SIZE)
+            .fetch_all(pool)
+            .await?;
+
+        if rows.is_empty() {
+            break;
+        }
+
+        let ids: Vec<String> = rows.into_iter().map(|row| row.get("id")).collect();
+        let mut tx = pool.begin().await?;
+        for id in &ids {
+            sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM images WHERE id=?1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        total_deleted += ids.len() as u64;
+    }
+
+    Ok(total_deleted)
+}
+
 pub async fn insert_tags(pool: &DbPool, image_id: &str, tags: &[TagRecord]) -> anyhow::Result<()> {
     tracing::debug!("insert_tags: image_id={image_id}, count={}", tags.len());
     let now = std::time::SystemTime::now()
@@ -119,7 +152,10 @@ pub async fn insert_tags(pool: &DbPool, image_id: &str, tags: &[TagRecord]) -> a
     for tag in tags {
         let is_auto = tag.is_auto as i64;
         sqlx::query("INSERT INTO tags(image_id,tag_text,is_auto,created_at) VALUES(?1,?2,?3,?4)")
-            .bind(image_id).bind(&tag.tag_text).bind(is_auto).bind(now)
+            .bind(image_id)
+            .bind(&tag.tag_text)
+            .bind(is_auto)
+            .bind(now)
             .execute(pool)
             .await?;
     }
@@ -136,10 +172,14 @@ pub async fn delete_tags(pool: &DbPool, image_id: &str) -> anyhow::Result<()> {
 }
 
 pub async fn insert_embedding(pool: &DbPool, image_id: &str, vector: &[f32]) -> anyhow::Result<()> {
-    tracing::debug!("insert_embedding: image_id={image_id}, dims={}", vector.len());
+    tracing::debug!(
+        "insert_embedding: image_id={image_id}, dims={}",
+        vector.len()
+    );
     let blob: Vec<u8> = vector.iter().flat_map(|f| f.to_le_bytes()).collect();
     sqlx::query("INSERT OR REPLACE INTO embeddings(image_id,vector) VALUES(?1,?2)")
-        .bind(image_id).bind(&blob)
+        .bind(image_id)
+        .bind(&blob)
         .execute(pool)
         .await?;
     Ok(())
@@ -183,11 +223,19 @@ pub async fn insert_ocr(pool: &DbPool, image_id: &str, content: &str) -> anyhow:
     let mut tx = pool.begin().await?;
     // 先删旧 FTS 条目（避免重复索引），再写普通表和 FTS 虚拟表
     sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
-        .bind(image_id).execute(&mut *tx).await?;
+        .bind(image_id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("INSERT OR REPLACE INTO ocr_texts(image_id,content) VALUES(?1,?2)")
-        .bind(image_id).bind(content).execute(&mut *tx).await?;
+        .bind(image_id)
+        .bind(content)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES(?1,?2)")
-        .bind(image_id).bind(content).execute(&mut *tx).await?;
+        .bind(image_id)
+        .bind(content)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -195,52 +243,69 @@ pub async fn insert_ocr(pool: &DbPool, image_id: &str, content: &str) -> anyhow:
 pub async fn delete_ocr_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
-        .bind(image_id).execute(&mut *tx).await?;
+        .bind(image_id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM ocr_texts WHERE image_id=?1")
-        .bind(image_id).execute(&mut *tx).await?;
+        .bind(image_id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(())
 }
 
-pub async fn get_tag_suggestions(pool: &DbPool, prefix: &str, limit: i64) -> anyhow::Result<Vec<String>> {
+pub async fn get_tag_suggestions(
+    pool: &DbPool,
+    prefix: &str,
+    limit: i64,
+) -> anyhow::Result<Vec<String>> {
     tracing::debug!("get_tag_suggestions: prefix={prefix}");
     let pattern = format!("{prefix}%");
     let rows = sqlx::query(
-        "SELECT DISTINCT tag_text FROM tags WHERE tag_text LIKE ?1 ORDER BY tag_text LIMIT ?2"
+        "SELECT DISTINCT tag_text FROM tags WHERE tag_text LIKE ?1 ORDER BY tag_text LIMIT ?2",
     )
-    .bind(&pattern).bind(limit)
+    .bind(&pattern)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|r| r.get("tag_text")).collect())
 }
 
-pub async fn get_images_paged(pool: &DbPool, page: i64, page_size: i64) -> anyhow::Result<Vec<ImageRecord>> {
+pub async fn get_images_paged(
+    pool: &DbPool,
+    page: i64,
+    page_size: i64,
+) -> anyhow::Result<Vec<ImageRecord>> {
     tracing::debug!("get_images_paged: page={page}");
     let offset = page * page_size;
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
                file_hash,file_size,file_modified_time,file_status,last_check_time
-         FROM images ORDER BY added_at DESC LIMIT ?1 OFFSET ?2"
+         FROM images ORDER BY added_at DESC LIMIT ?1 OFFSET ?2",
     )
-    .bind(page_size).bind(offset)
+    .bind(page_size)
+    .bind(offset)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| ImageRecord {
-        id: r.get("id"),
-        file_path: r.get("file_path"),
-        file_name: r.get("file_name"),
-        format: r.get("format"),
-        width: r.get("width"),
-        height: r.get("height"),
-        added_at: r.get("added_at"),
-        use_count: r.get("use_count"),
-        thumbnail_path: r.get("thumbnail_path"),
-        file_hash: r.get("file_hash"),
-        file_size: r.get("file_size"),
-        file_modified_time: r.get("file_modified_time"),
-        file_status: r.get("file_status"),
-        last_check_time: r.get("last_check_time"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| ImageRecord {
+            id: r.get("id"),
+            file_path: r.get("file_path"),
+            file_name: r.get("file_name"),
+            format: r.get("format"),
+            width: r.get("width"),
+            height: r.get("height"),
+            added_at: r.get("added_at"),
+            use_count: r.get("use_count"),
+            thumbnail_path: r.get("thumbnail_path"),
+            file_hash: r.get("file_hash"),
+            file_size: r.get("file_size"),
+            file_modified_time: r.get("file_modified_time"),
+            file_status: r.get("file_status"),
+            last_check_time: r.get("last_check_time"),
+        })
+        .collect())
 }
 
 pub async fn increment_use_count(pool: &DbPool, id: &str) -> anyhow::Result<()> {
@@ -290,53 +355,59 @@ pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
                file_hash,file_size,file_modified_time,file_status,last_check_time
-         FROM images ORDER BY added_at DESC LIMIT ?1"
+         FROM images ORDER BY added_at DESC LIMIT ?1",
     )
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| ImageRecord {
-        id: r.get("id"),
-        file_path: r.get("file_path"),
-        file_name: r.get("file_name"),
-        format: r.get("format"),
-        width: r.get("width"),
-        height: r.get("height"),
-        added_at: r.get("added_at"),
-        use_count: r.get("use_count"),
-        thumbnail_path: r.get("thumbnail_path"),
-        file_hash: r.get("file_hash"),
-        file_size: r.get("file_size"),
-        file_modified_time: r.get("file_modified_time"),
-        file_status: r.get("file_status"),
-        last_check_time: r.get("last_check_time"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| ImageRecord {
+            id: r.get("id"),
+            file_path: r.get("file_path"),
+            file_name: r.get("file_name"),
+            format: r.get("format"),
+            width: r.get("width"),
+            height: r.get("height"),
+            added_at: r.get("added_at"),
+            use_count: r.get("use_count"),
+            thumbnail_path: r.get("thumbnail_path"),
+            file_hash: r.get("file_hash"),
+            file_size: r.get("file_size"),
+            file_modified_time: r.get("file_modified_time"),
+            file_status: r.get("file_status"),
+            last_check_time: r.get("last_check_time"),
+        })
+        .collect())
 }
 
 pub async fn get_all_images(pool: &DbPool) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
                file_hash,file_size,file_modified_time,file_status,last_check_time
-         FROM images ORDER BY added_at ASC"
+         FROM images ORDER BY added_at ASC",
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| ImageRecord {
-        id: r.get("id"),
-        file_path: r.get("file_path"),
-        file_name: r.get("file_name"),
-        format: r.get("format"),
-        width: r.get("width"),
-        height: r.get("height"),
-        added_at: r.get("added_at"),
-        use_count: r.get("use_count"),
-        thumbnail_path: r.get("thumbnail_path"),
-        file_hash: r.get("file_hash"),
-        file_size: r.get("file_size"),
-        file_modified_time: r.get("file_modified_time"),
-        file_status: r.get("file_status"),
-        last_check_time: r.get("last_check_time"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| ImageRecord {
+            id: r.get("id"),
+            file_path: r.get("file_path"),
+            file_name: r.get("file_name"),
+            format: r.get("format"),
+            width: r.get("width"),
+            height: r.get("height"),
+            added_at: r.get("added_at"),
+            use_count: r.get("use_count"),
+            thumbnail_path: r.get("thumbnail_path"),
+            file_hash: r.get("file_hash"),
+            file_size: r.get("file_size"),
+            file_modified_time: r.get("file_modified_time"),
+            file_status: r.get("file_status"),
+            last_check_time: r.get("last_check_time"),
+        })
+        .collect())
 }
 
 pub async fn update_file_status(
@@ -345,12 +416,12 @@ pub async fn update_file_status(
     status: &str,
     check_time: i64,
 ) -> anyhow::Result<()> {
-    let rows = sqlx::query(
-        "UPDATE images SET file_status=?1, last_check_time=?2 WHERE id=?3"
-    )
-    .bind(status).bind(check_time).bind(id)
-    .execute(pool)
-    .await?;
+    let rows = sqlx::query("UPDATE images SET file_status=?1, last_check_time=?2 WHERE id=?3")
+        .bind(status)
+        .bind(check_time)
+        .bind(id)
+        .execute(pool)
+        .await?;
     if rows.rows_affected() == 0 {
         anyhow::bail!("image not found: {id}");
     }
@@ -378,27 +449,30 @@ pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Ve
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
                file_hash,file_size,file_modified_time,file_status,last_check_time
-         FROM images ORDER BY use_count DESC, added_at DESC LIMIT ?1"
+         FROM images ORDER BY use_count DESC, added_at DESC LIMIT ?1",
     )
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| ImageRecord {
-        id: r.get("id"),
-        file_path: r.get("file_path"),
-        file_name: r.get("file_name"),
-        format: r.get("format"),
-        width: r.get("width"),
-        height: r.get("height"),
-        added_at: r.get("added_at"),
-        use_count: r.get("use_count"),
-        thumbnail_path: r.get("thumbnail_path"),
-        file_hash: r.get("file_hash"),
-        file_size: r.get("file_size"),
-        file_modified_time: r.get("file_modified_time"),
-        file_status: r.get("file_status"),
-        last_check_time: r.get("last_check_time"),
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| ImageRecord {
+            id: r.get("id"),
+            file_path: r.get("file_path"),
+            file_name: r.get("file_name"),
+            format: r.get("format"),
+            width: r.get("width"),
+            height: r.get("height"),
+            added_at: r.get("added_at"),
+            use_count: r.get("use_count"),
+            thumbnail_path: r.get("thumbnail_path"),
+            file_hash: r.get("file_hash"),
+            file_size: r.get("file_size"),
+            file_modified_time: r.get("file_modified_time"),
+            file_status: r.get("file_status"),
+            last_check_time: r.get("last_check_time"),
+        })
+        .collect())
 }
 
 pub async fn get_tags_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<Vec<String>> {
@@ -469,31 +543,55 @@ mod tests {
         insert_ocr(&pool, "img1", "蚌埠住了哈哈哈").await.unwrap();
 
         let row = sqlx::query("SELECT content FROM ocr_texts WHERE image_id='img1'")
-            .fetch_one(&pool).await.unwrap();
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         let content: String = row.get("content");
         assert_eq!(content, "蚌埠住了哈哈哈");
 
         // trigram tokenizer：子串匹配，无需 * 后缀
         let hits = sqlx::query("SELECT image_id FROM ocr_fts WHERE content MATCH '蚌埠住了'")
-            .fetch_all(&pool).await.unwrap();
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         assert!(!hits.is_empty());
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_delete_image_cascade(pool: SqlitePool) {
         insert_image(&pool, &make_image("img1")).await.unwrap();
-        insert_tags(&pool, "img1", &[TagRecord { tag_text: "搞笑".into(), is_auto: false }]).await.unwrap();
-        insert_embedding(&pool, "img1", &vec![0.0f32; 512]).await.unwrap();
+        insert_tags(
+            &pool,
+            "img1",
+            &[TagRecord {
+                tag_text: "搞笑".into(),
+                is_auto: false,
+            }],
+        )
+        .await
+        .unwrap();
+        insert_embedding(&pool, "img1", &vec![0.0f32; 512])
+            .await
+            .unwrap();
         insert_ocr(&pool, "img1", "test").await.unwrap();
 
         delete_image(&pool, "img1").await.unwrap();
 
         assert!(get_image(&pool, "img1").await.unwrap().is_none());
-        let tags = sqlx::query("SELECT id FROM tags WHERE image_id='img1'").fetch_all(&pool).await.unwrap();
+        let tags = sqlx::query("SELECT id FROM tags WHERE image_id='img1'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         assert!(tags.is_empty());
-        let emb = sqlx::query("SELECT image_id FROM embeddings WHERE image_id='img1'").fetch_all(&pool).await.unwrap();
+        let emb = sqlx::query("SELECT image_id FROM embeddings WHERE image_id='img1'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         assert!(emb.is_empty());
-        let ocr = sqlx::query("SELECT image_id FROM ocr_texts WHERE image_id='img1'").fetch_all(&pool).await.unwrap();
+        let ocr = sqlx::query("SELECT image_id FROM ocr_texts WHERE image_id='img1'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         assert!(ocr.is_empty());
     }
 
@@ -505,13 +603,99 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_all_images_empty_db(pool: SqlitePool) {
+        let deleted = clear_all_images(&pool).await.unwrap();
+        assert_eq!(deleted, 0);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_all_images_removes_all(pool: SqlitePool) {
+        for i in 0..3 {
+            let id = format!("img{i}");
+            insert_image(&pool, &make_image(&id)).await.unwrap();
+            insert_tags(
+                &pool,
+                &id,
+                &[TagRecord {
+                    tag_text: format!("tag{i}"),
+                    is_auto: false,
+                }],
+            )
+            .await
+            .unwrap();
+            insert_embedding(&pool, &id, &vec![i as f32; 512])
+                .await
+                .unwrap();
+            insert_ocr(&pool, &id, &format!("ocr-{i}")).await.unwrap();
+        }
+
+        let deleted = clear_all_images(&pool).await.unwrap();
+        assert_eq!(deleted, 3);
+        assert!(get_all_images(&pool).await.unwrap().is_empty());
+
+        let tags: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM tags")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .get("cnt");
+        let embeddings: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM embeddings")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .get("cnt");
+        let ocr_texts: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM ocr_texts")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .get("cnt");
+        let ocr_fts: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM ocr_fts")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .get("cnt");
+
+        assert_eq!(tags, 0);
+        assert_eq!(embeddings, 0);
+        assert_eq!(ocr_texts, 0);
+        assert_eq!(ocr_fts, 0);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_all_images_batch_commits(pool: SqlitePool) {
+        for i in 0..1500 {
+            insert_image(&pool, &make_image(&format!("img{i}")))
+                .await
+                .unwrap();
+        }
+
+        let deleted = clear_all_images(&pool).await.unwrap();
+        assert_eq!(deleted, 1500);
+        assert!(get_all_images(&pool).await.unwrap().is_empty());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_get_tag_suggestions(pool: SqlitePool) {
         insert_image(&pool, &make_image("img1")).await.unwrap();
-        insert_tags(&pool, "img1", &[
-            TagRecord { tag_text: "搞笑".into(), is_auto: false },
-            TagRecord { tag_text: "搞怪".into(), is_auto: false },
-            TagRecord { tag_text: "可爱".into(), is_auto: false },
-        ]).await.unwrap();
+        insert_tags(
+            &pool,
+            "img1",
+            &[
+                TagRecord {
+                    tag_text: "搞笑".into(),
+                    is_auto: false,
+                },
+                TagRecord {
+                    tag_text: "搞怪".into(),
+                    is_auto: false,
+                },
+                TagRecord {
+                    tag_text: "可爱".into(),
+                    is_auto: false,
+                },
+            ],
+        )
+        .await
+        .unwrap();
 
         let suggestions = get_tag_suggestions(&pool, "搞", 10).await.unwrap();
         assert_eq!(suggestions.len(), 2);
@@ -595,7 +779,9 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_update_file_status(pool: SqlitePool) {
         insert_image(&pool, &make_image("img1")).await.unwrap();
-        update_file_status(&pool, "img1", "missing", 1700000001).await.unwrap();
+        update_file_status(&pool, "img1", "missing", 1700000001)
+            .await
+            .unwrap();
         let got = get_image(&pool, "img1").await.unwrap().unwrap();
         assert_eq!(got.file_status, "missing");
         assert_eq!(got.last_check_time, Some(1700000001));

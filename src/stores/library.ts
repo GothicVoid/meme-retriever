@@ -23,6 +23,9 @@ export const useLibraryStore = defineStore("library", () => {
   const indexing = ref(false);
   const indexTotal = ref(0);
   const indexCurrent = ref(0);
+  const clearing = ref(false);
+  const clearTotal = ref(0);
+  const clearCurrent = ref(0);
   const selectedIds = ref<Set<string>>(new Set());
 
   async function fetchImages(page = 0) {
@@ -106,5 +109,60 @@ export const useLibraryStore = defineStore("library", () => {
     await fetchImages();
   }
 
-  return { images, loading, indexing, indexTotal, indexCurrent, selectedIds, fetchImages, addImages, deleteImage, addFolder, toggleSelection, clearSelection, deleteSelected };
+  async function clearGallery() {
+    if (images.value.length === 0) {
+      return;
+    }
+
+    clearing.value = true;
+    clearTotal.value = images.value.length;
+    clearCurrent.value = 0;
+
+    const unlistenPromise = listen<{ current: number; total: number }>("clear-gallery-progress", (event) => {
+      clearCurrent.value = event.payload.current;
+      clearTotal.value = event.payload.total;
+    });
+
+    let completed = false;
+    try {
+      await invoke("clear_gallery");
+      await new Promise<void>((resolve) => {
+        const check = setInterval(() => {
+          if (clearCurrent.value >= clearTotal.value && clearTotal.value > 0) {
+            clearInterval(check);
+            completed = true;
+            resolve();
+          }
+        }, 50);
+      });
+    } finally {
+      const unlisten = await unlistenPromise;
+      unlisten();
+      clearing.value = false;
+      if (completed) {
+        images.value = [];
+        clearSelection();
+      }
+    }
+  }
+
+  return {
+    images,
+    loading,
+    indexing,
+    indexTotal,
+    indexCurrent,
+    clearing,
+    clearTotal,
+    clearCurrent,
+    selectedIds,
+    fetchImages,
+    addImages,
+    deleteImage,
+    addFolder,
+    clearGallery,
+    toggleSelection,
+    clearSelection,
+    deleteSelected,
+  };
 });

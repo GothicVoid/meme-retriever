@@ -12,7 +12,10 @@ impl Default for VectorStore {
 
 impl VectorStore {
     pub fn new() -> Self {
-        Self { ids: vec![], vectors: vec![] }
+        Self {
+            ids: vec![],
+            vectors: vec![],
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -33,6 +36,11 @@ impl VectorStore {
             self.ids.remove(pos);
             self.vectors.remove(pos);
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.ids.clear();
+        self.vectors.clear();
     }
 
     /// 语义相似度最低阈值：低于此值的结果不参与排序
@@ -60,5 +68,9 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na * nb) }
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb)
+    }
 }

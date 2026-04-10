@@ -49,6 +49,7 @@ pub fn run() {
             commands::add_images,
             commands::add_folder,
             commands::delete_image,
+            commands::clear_gallery,
             commands::get_images,
             commands::get_image_meta,
             commands::update_tags,

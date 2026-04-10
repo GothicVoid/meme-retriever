@@ -5,20 +5,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use meme_retriever_lib::{
-    db::{self, repo},
-    indexer::pipeline,
-    kb::local::LocalKBProvider,
-    search::engine::SearchEngine,
+    db::repo, indexer::pipeline, kb::local::LocalKBProvider, search::engine::SearchEngine,
 };
+use sqlx::Row;
 
 /// 检测真实 CLIP 文本模型是否可用（与 ml/clip.rs 的 find_model 逻辑一致）
 fn has_real_clip_model() -> bool {
     let dir = std::env::var("CLIP_MODEL_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("./models"));
-    ["clip_text.onnx", "vit-b-16.txt.fp32.onnx", "vit-b-16.txt.fp16.onnx"]
-        .iter()
-        .any(|name| dir.join(name).exists())
+    [
+        "clip_text.onnx",
+        "vit-b-16.txt.fp32.onnx",
+        "vit-b-16.txt.fp16.onnx",
+    ]
+    .iter()
+    .any(|name| dir.join(name).exists())
 }
 use tokio::sync::mpsc;
 
@@ -56,7 +58,10 @@ async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
     let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
     let results = collect(rx).await;
     assert_eq!(results.len(), 3);
-    assert!(results.iter().all(|r| r.status == "completed"), "all should succeed");
+    assert!(
+        results.iter().all(|r| r.status == "completed"),
+        "all should succeed"
+    );
 
     // 搜索引擎预加载向量
     let engine = make_engine(pool.clone()).await;
@@ -67,7 +72,11 @@ async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
 
     // score 在合法范围
     for h in &hits {
-        assert!(h.score >= 0.0 && h.score <= 1.0, "score out of range: {}", h.score);
+        assert!(
+            h.score >= 0.0 && h.score <= 1.0,
+            "score out of range: {}",
+            h.score
+        );
     }
 
     // 无论有无结果，搜索调用本身成功即可
@@ -105,7 +114,11 @@ async fn test_index_then_delete_then_search(pool: sqlx::SqlitePool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_use_count_increment(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
-    let rx = pipeline::index_images(pool.clone(), vec![fixture("sample.jpg")], lib.path().to_path_buf());
+    let rx = pipeline::index_images(
+        pool.clone(),
+        vec![fixture("sample.jpg")],
+        lib.path().to_path_buf(),
+    );
     let indexed = collect(rx).await;
     assert_eq!(indexed[0].status, "completed");
 
@@ -144,14 +157,26 @@ async fn test_add_images_and_list(pool: sqlx::SqlitePool) {
     for img in &images {
         assert!(!img.id.is_empty(), "id should not be empty");
         assert!(!img.file_name.is_empty(), "file_name should not be empty");
-        assert!(img.width.unwrap_or(0) > 0, "width should be positive: {}", img.file_name);
-        assert!(img.height.unwrap_or(0) > 0, "height should be positive: {}", img.file_name);
+        assert!(
+            img.width.unwrap_or(0) > 0,
+            "width should be positive: {}",
+            img.file_name
+        );
+        assert!(
+            img.height.unwrap_or(0) > 0,
+            "height should be positive: {}",
+            img.file_name
+        );
     }
 
     // 4. 缩略图文件实际存在于磁盘
     for img in &images {
         let thumb = img.thumbnail_path.as_deref().unwrap_or("");
-        assert!(!thumb.is_empty(), "thumbnail_path should be set: {}", img.file_name);
+        assert!(
+            !thumb.is_empty(),
+            "thumbnail_path should be set: {}",
+            img.file_name
+        );
         assert!(
             std::path::Path::new(thumb).exists(),
             "thumbnail should exist at: {thumb}"
@@ -174,7 +199,10 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
     let results = collect(rx).await;
     let total_ms = start.elapsed().as_millis();
     assert!(results.iter().all(|r| r.status == "completed"));
-    assert!(total_ms < 15_000, "indexing 3 images took too long: {total_ms}ms");
+    assert!(
+        total_ms < 15_000,
+        "indexing 3 images took too long: {total_ms}ms"
+    );
 
     // 搜索性能：< 2000ms（真实 CLIP 模型推理）
     let engine = make_engine(pool).await;
@@ -182,4 +210,75 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
     let _ = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
     let search_ms = start.elapsed().as_millis();
     assert!(search_ms < 2000, "search took too long: {search_ms}ms");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_clear_all_images_integration(pool: sqlx::SqlitePool) {
+    let lib = tempfile::tempdir().unwrap();
+    let paths = vec![
+        fixture("sample.jpg"),
+        fixture("sample_blank.jpg"),
+        fixture("sample_wide.jpg"),
+    ];
+
+    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let indexed = collect(rx).await;
+    assert_eq!(indexed.len(), 3);
+
+    let engine = make_engine(pool.clone()).await;
+    assert_eq!(engine.vector_store_len(), 3);
+
+    let deleted = repo::clear_all_images(&pool).await.unwrap();
+    assert_eq!(deleted, 3);
+    engine.clear_all_vectors();
+
+    assert!(repo::get_all_images(&pool).await.unwrap().is_empty());
+    assert_eq!(engine.vector_store_len(), 0);
+
+    let hits = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
+    assert!(hits.is_empty());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_clear_all_images_cleans_ocr_fts(pool: sqlx::SqlitePool) {
+    repo::insert_image(
+        &pool,
+        &repo::ImageRecord {
+            id: "ocr-img".into(),
+            file_path: "/tmp/ocr-img.png".into(),
+            file_name: "ocr-img.png".into(),
+            format: "png".into(),
+            width: Some(100),
+            height: Some(100),
+            added_at: 1000,
+            use_count: 0,
+            thumbnail_path: None,
+            file_hash: None,
+            file_size: None,
+            file_modified_time: None,
+            file_status: "normal".into(),
+            last_check_time: None,
+        },
+    )
+    .await
+    .unwrap();
+    repo::insert_ocr(&pool, "ocr-img", "这是一段 OCR 文本")
+        .await
+        .unwrap();
+
+    let before: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM ocr_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("cnt");
+    assert_eq!(before, 1);
+
+    repo::clear_all_images(&pool).await.unwrap();
+
+    let after: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM ocr_fts")
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("cnt");
+    assert_eq!(after, 0);
 }

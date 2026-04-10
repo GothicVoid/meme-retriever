@@ -1,8 +1,9 @@
+use sqlx::Row;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Manager, Emitter, State};
+use tauri::{Emitter, Manager, State};
 
-use crate::db::{DbPool, repo};
+use crate::db::{repo, DbPool};
 use crate::search::engine::SearchEngine;
 
 // SearchEngine 包在 Arc 里以便 Tauri State 共享
@@ -46,6 +47,13 @@ pub struct ImageMeta {
     pub added_at: i64,
     pub use_count: i64,
     pub tags: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearGalleryProgress {
+    pub current: u64,
+    pub total: u64,
 }
 
 // ── 命令实现 ────────────────────────────────────────────────────────────────
@@ -95,13 +103,20 @@ pub async fn search(
         let b = w2.unwrap_or(0.4).max(0.0);
         let c = w3.unwrap_or(0.3).max(0.0);
         let sum = a + b + c;
-        if sum == 0.0 { (0.3, 0.4, 0.3) } else { (a / sum, b / sum, c / sum) }
+        if sum == 0.0 {
+            (0.3, 0.4, 0.3)
+        } else {
+            (a / sum, b / sum, c / sum)
+        }
     };
     tracing::info!("search: query={query}, limit={limit}, weights=({rw1:.2},{rw2:.2},{rw3:.2})");
     engine
         .search(&query, limit, rw1, rw2, rw3)
         .await
-        .map_err(|e| { tracing::error!("command search failed: {e}"); e.to_string() })
+        .map_err(|e| {
+            tracing::error!("command search failed: {e}");
+            e.to_string()
+        })
 }
 
 #[tauri::command]
@@ -122,7 +137,13 @@ pub async fn add_images(
         .map_err(|e| e.to_string())?
         .join("library");
 
-    spawn_index_task(paths, library_dir, db.inner().clone(), Arc::clone(engine.inner()), app);
+    spawn_index_task(
+        paths,
+        library_dir,
+        db.inner().clone(),
+        Arc::clone(engine.inner()),
+        app,
+    );
     Ok(())
 }
 
@@ -134,8 +155,7 @@ pub async fn add_folder(
     engine: State<'_, EngineState>,
 ) -> Result<usize, String> {
     use crate::indexer::pipeline::scan_images_in_dir;
-    let paths = scan_images_in_dir(std::path::Path::new(&path))
-        .map_err(|e| e.to_string())?;
+    let paths = scan_images_in_dir(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
     let total = paths.len();
     tracing::info!("add_folder: {path} → {total} images");
     if total > 0 {
@@ -144,7 +164,13 @@ pub async fn add_folder(
             .app_data_dir()
             .map_err(|e| e.to_string())?
             .join("library");
-        spawn_index_task(paths, library_dir, db.inner().clone(), Arc::clone(engine.inner()), app);
+        spawn_index_task(
+            paths,
+            library_dir,
+            db.inner().clone(),
+            Arc::clone(engine.inner()),
+            app,
+        );
     }
     Ok(total)
 }
@@ -156,10 +182,111 @@ pub async fn delete_image(
     engine: State<'_, EngineState>,
 ) -> Result<(), String> {
     tracing::info!("delete_image: {id}");
-    repo::delete_image(db.inner(), &id)
-        .await
-        .map_err(|e| { tracing::error!("command delete_image failed: {e}"); e.to_string() })?;
+    repo::delete_image(db.inner(), &id).await.map_err(|e| {
+        tracing::error!("command delete_image failed: {e}");
+        e.to_string()
+    })?;
     engine.remove_vector(&id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_gallery(
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<(), String> {
+    const BATCH_SIZE: i64 = 1000;
+
+    let total = repo::get_all_images(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .len() as u64;
+
+    if total == 0 {
+        return Ok(());
+    }
+
+    let pool = db.inner().clone();
+    let engine = Arc::clone(engine.inner());
+
+    tokio::spawn(async move {
+        let emit_progress = |current: u64| {
+            let progress = ClearGalleryProgress { current, total };
+            let _ = app.emit("clear-gallery-progress", &progress);
+        };
+
+        emit_progress(0);
+
+        let mut deleted = 0u64;
+        loop {
+            let rows = match sqlx::query("SELECT id FROM images ORDER BY added_at ASC LIMIT ?1")
+                .bind(BATCH_SIZE)
+                .fetch_all(&pool)
+                .await
+            {
+                Ok(rows) => rows,
+                Err(err) => {
+                    tracing::error!("clear_gallery: failed to load batch: {err}");
+                    break;
+                }
+            };
+
+            if rows.is_empty() {
+                break;
+            }
+
+            let ids: Vec<String> = rows.into_iter().map(|row| row.get("id")).collect();
+            let mut tx = match pool.begin().await {
+                Ok(tx) => tx,
+                Err(err) => {
+                    tracing::error!("clear_gallery: failed to begin transaction: {err}");
+                    break;
+                }
+            };
+
+            let mut batch_failed = false;
+            for id in &ids {
+                if let Err(err) = sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await
+                {
+                    tracing::error!("clear_gallery: failed to delete ocr_fts for {id}: {err}");
+                    batch_failed = true;
+                    break;
+                }
+                if let Err(err) = sqlx::query("DELETE FROM images WHERE id=?1")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await
+                {
+                    tracing::error!("clear_gallery: failed to delete image {id}: {err}");
+                    batch_failed = true;
+                    break;
+                }
+            }
+
+            if batch_failed {
+                break;
+            }
+
+            if let Err(err) = tx.commit().await {
+                tracing::error!("clear_gallery: failed to commit transaction: {err}");
+                break;
+            }
+
+            deleted += ids.len() as u64;
+            emit_progress(deleted.min(total));
+        }
+
+        if deleted == total {
+            engine.clear_all_vectors();
+            emit_progress(total);
+            tracing::info!("clear_gallery: completed, deleted {deleted} images");
+        }
+    });
+
     Ok(())
 }
 
@@ -196,10 +323,7 @@ pub async fn get_image_meta(
 }
 
 #[tauri::command]
-pub async fn get_images(
-    page: i64,
-    db: State<'_, DbPool>,
-) -> Result<Vec<ImageMeta>, String> {
+pub async fn get_images(page: i64, db: State<'_, DbPool>) -> Result<Vec<ImageMeta>, String> {
     tracing::info!("get_images: page={page}");
     let images = repo::get_images_paged(db.inner(), page, 50)
         .await
@@ -239,7 +363,10 @@ pub async fn update_tags(
         .map_err(|e| e.to_string())?;
     let tag_records: Vec<repo::TagRecord> = tags
         .into_iter()
-        .map(|t| repo::TagRecord { tag_text: t, is_auto: false })
+        .map(|t| repo::TagRecord {
+            tag_text: t,
+            is_auto: false,
+        })
         .collect();
     repo::insert_tags(db.inner(), &image_id, &tag_records)
         .await
@@ -259,10 +386,7 @@ pub async fn get_tag_suggestions(
 }
 
 #[tauri::command]
-pub async fn copy_to_clipboard(
-    id: String,
-    db: State<'_, DbPool>,
-) -> Result<(), String> {
+pub async fn copy_to_clipboard(id: String, db: State<'_, DbPool>) -> Result<(), String> {
     tracing::info!("copy_to_clipboard: {id}");
     let img = repo::get_image(db.inner(), &id)
         .await
@@ -295,10 +419,7 @@ pub async fn reveal_in_finder(
 }
 
 #[tauri::command]
-pub async fn increment_use_count(
-    id: String,
-    db: State<'_, DbPool>,
-) -> Result<(), String> {
+pub async fn increment_use_count(id: String, db: State<'_, DbPool>) -> Result<(), String> {
     tracing::info!("increment_use_count: {id}");
     repo::increment_use_count(db.inner(), &id)
         .await
@@ -331,7 +452,7 @@ pub async fn reindex_all(
             let _ = app.emit("reindex-progress", &progress_event);
 
             let path = img.file_path.clone();
-            let id   = img.id.clone();
+            let id = img.id.clone();
 
             // 并行：CLIP 图像编码 + OCR 重跑
             let (clip_result, ocr_result) = tokio::join!(
@@ -355,7 +476,7 @@ pub async fn reindex_all(
                     }
                 }
                 Ok(Err(e)) => tracing::warn!("reindex_all: clip failed for {id}: {e}"),
-                Err(e)     => tracing::warn!("reindex_all: clip task panicked for {id}: {e}"),
+                Err(e) => tracing::warn!("reindex_all: clip task panicked for {id}: {e}"),
             }
 
             // 更新 OCR
@@ -374,7 +495,7 @@ pub async fn reindex_all(
                     }
                 }
                 Ok(Err(e)) => tracing::warn!("reindex_all: ocr failed for {id}: {e}"),
-                Err(e)     => tracing::warn!("reindex_all: ocr task panicked for {id}: {e}"),
+                Err(e) => tracing::warn!("reindex_all: ocr task panicked for {id}: {e}"),
             }
 
             tracing::debug!("reindex_all: done {id}");
@@ -394,17 +515,24 @@ pub async fn reindex_all(
 /// 返回状态发生变化的图片数量。
 #[tauri::command]
 pub async fn check_file_statuses(db: State<'_, DbPool>) -> Result<u64, String> {
-    let images = repo::get_all_images(db.inner()).await.map_err(|e| e.to_string())?;
+    let images = repo::get_all_images(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
     let mut updated = 0u64;
     for img in &images {
-        let status = if std::path::Path::new(&img.file_path).exists() { "normal" } else { "missing" };
+        let status = if std::path::Path::new(&img.file_path).exists() {
+            "normal"
+        } else {
+            "missing"
+        };
         if status != img.file_status {
             repo::update_file_status(db.inner(), &img.id, status, now)
-                .await.map_err(|e| e.to_string())?;
+                .await
+                .map_err(|e| e.to_string())?;
             updated += 1;
         }
     }
@@ -417,7 +545,9 @@ pub async fn check_file_statuses(db: State<'_, DbPool>) -> Result<u64, String> {
 pub async fn get_pending_tasks(
     db: State<'_, DbPool>,
 ) -> Result<Vec<crate::db::task_repo::TaskRecord>, String> {
-    crate::db::task_repo::get_pending_tasks(db.inner()).await.map_err(|e| e.to_string())
+    crate::db::task_repo::get_pending_tasks(db.inner())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -426,20 +556,36 @@ pub async fn resume_pending_tasks(
     db: State<'_, DbPool>,
     engine: State<'_, EngineState>,
 ) -> Result<usize, String> {
-    crate::db::task_repo::reset_stale_tasks(db.inner()).await.map_err(|e| e.to_string())?;
-    let pending = crate::db::task_repo::get_pending_tasks(db.inner()).await.map_err(|e| e.to_string())?;
+    crate::db::task_repo::reset_stale_tasks(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    let pending = crate::db::task_repo::get_pending_tasks(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
     let count = pending.len();
     if count > 0 {
         let paths: Vec<String> = pending.into_iter().map(|t| t.file_path).collect();
-        let library_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("library");
-        spawn_index_task(paths, library_dir, db.inner().clone(), Arc::clone(engine.inner()), app);
+        let library_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("library");
+        spawn_index_task(
+            paths,
+            library_dir,
+            db.inner().clone(),
+            Arc::clone(engine.inner()),
+            app,
+        );
     }
     Ok(count)
 }
 
 #[tauri::command]
 pub async fn clear_task_queue(db: State<'_, DbPool>) -> Result<(), String> {
-    crate::db::task_repo::clear_task_queue(db.inner()).await.map_err(|e| e.to_string())
+    crate::db::task_repo::clear_task_queue(db.inner())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ── 测试 ────────────────────────────────────────────────────────────────────
@@ -471,10 +617,16 @@ mod tests {
             tags: vec![],
         };
         let json = serde_json::to_value(&meta).unwrap();
-        assert!(json.get("thumbnailPath").is_some(), "should have thumbnailPath");
+        assert!(
+            json.get("thumbnailPath").is_some(),
+            "should have thumbnailPath"
+        );
         assert!(json.get("filePath").is_some(), "should have filePath");
         assert!(json.get("fileName").is_some(), "should have fileName");
-        assert!(json.get("thumbnail_path").is_none(), "should NOT have thumbnail_path");
+        assert!(
+            json.get("thumbnail_path").is_none(),
+            "should NOT have thumbnail_path"
+        );
     }
 
     #[test]
@@ -489,10 +641,19 @@ mod tests {
             debug_info: None,
         };
         let json = serde_json::to_value(&result).unwrap();
-        assert!(json.get("thumbnailPath").is_some(), "should have thumbnailPath");
+        assert!(
+            json.get("thumbnailPath").is_some(),
+            "should have thumbnailPath"
+        );
         assert!(json.get("filePath").is_some(), "should have filePath");
-        assert!(json.get("thumbnail_path").is_none(), "should NOT have thumbnail_path");
-        assert!(json.get("debugInfo").is_some(), "should have debugInfo (null)");
+        assert!(
+            json.get("thumbnail_path").is_none(),
+            "should NOT have thumbnail_path"
+        );
+        assert!(
+            json.get("debugInfo").is_some(),
+            "should have debugInfo (null)"
+        );
     }
 
     #[test]
@@ -515,6 +676,17 @@ mod tests {
         assert!(json.get("relevance").is_some(), "should have relevance");
         assert!(json.get("popularity").is_some(), "should have popularity");
         assert!(json.get("sem_score").is_none(), "should NOT have sem_score");
+    }
+
+    #[test]
+    fn test_clear_gallery_progress_event_serializes() {
+        let progress = ClearGalleryProgress {
+            current: 3,
+            total: 10,
+        };
+        let json = serde_json::to_value(&progress).unwrap();
+        assert_eq!(json.get("current").and_then(|v| v.as_u64()), Some(3));
+        assert_eq!(json.get("total").and_then(|v| v.as_u64()), Some(10));
     }
 
     #[test]
@@ -547,23 +719,54 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_update_tags_replaces(pool: SqlitePool) {
         // 先插入图片和旧标签
-        repo::insert_image(&pool, &repo::ImageRecord {
-            id: "img1".into(), file_path: "/tmp/img1.jpg".into(),
-            file_name: "img1.jpg".into(), format: "jpg".into(),
-            width: None, height: None, added_at: 1, use_count: 0, thumbnail_path: None,
-            file_hash: None, file_size: None, file_modified_time: None,
-            file_status: "normal".to_string(), last_check_time: None,
-        }).await.unwrap();
-        repo::insert_tags(&pool, "img1", &[
-            repo::TagRecord { tag_text: "旧标签".into(), is_auto: false },
-        ]).await.unwrap();
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img1".into(),
+                file_path: "/tmp/img1.jpg".into(),
+                file_name: "img1.jpg".into(),
+                format: "jpg".into(),
+                width: None,
+                height: None,
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_tags(
+            &pool,
+            "img1",
+            &[repo::TagRecord {
+                tag_text: "旧标签".into(),
+                is_auto: false,
+            }],
+        )
+        .await
+        .unwrap();
 
         // update_tags 应替换旧标签
         let new_tags = vec!["新标签1".to_string(), "新标签2".to_string()];
         repo::delete_tags(&pool, "img1").await.unwrap();
-        repo::insert_tags(&pool, "img1", &new_tags.iter().map(|t| repo::TagRecord {
-            tag_text: t.clone(), is_auto: false,
-        }).collect::<Vec<_>>()).await.unwrap();
+        repo::insert_tags(
+            &pool,
+            "img1",
+            &new_tags
+                .iter()
+                .map(|t| repo::TagRecord {
+                    tag_text: t.clone(),
+                    is_auto: false,
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
 
         let tags = repo::get_tags_for_image(&pool, "img1").await.unwrap();
         assert_eq!(tags.len(), 2);
@@ -573,18 +776,47 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_get_tag_suggestions_prefix(pool: SqlitePool) {
-        repo::insert_image(&pool, &repo::ImageRecord {
-            id: "img1".into(), file_path: "/tmp/img1.jpg".into(),
-            file_name: "img1.jpg".into(), format: "jpg".into(),
-            width: None, height: None, added_at: 1, use_count: 0, thumbnail_path: None,
-            file_hash: None, file_size: None, file_modified_time: None,
-            file_status: "normal".to_string(), last_check_time: None,
-        }).await.unwrap();
-        repo::insert_tags(&pool, "img1", &[
-            repo::TagRecord { tag_text: "搞笑".into(), is_auto: false },
-            repo::TagRecord { tag_text: "搞怪".into(), is_auto: false },
-            repo::TagRecord { tag_text: "可爱".into(), is_auto: false },
-        ]).await.unwrap();
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img1".into(),
+                file_path: "/tmp/img1.jpg".into(),
+                file_name: "img1.jpg".into(),
+                format: "jpg".into(),
+                width: None,
+                height: None,
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_tags(
+            &pool,
+            "img1",
+            &[
+                repo::TagRecord {
+                    tag_text: "搞笑".into(),
+                    is_auto: false,
+                },
+                repo::TagRecord {
+                    tag_text: "搞怪".into(),
+                    is_auto: false,
+                },
+                repo::TagRecord {
+                    tag_text: "可爱".into(),
+                    is_auto: false,
+                },
+            ],
+        )
+        .await
+        .unwrap();
 
         let suggestions = repo::get_tag_suggestions(&pool, "搞", 20).await.unwrap();
         assert!(suggestions.contains(&"搞笑".to_string()));
@@ -651,7 +883,10 @@ mod tests {
         let json = serde_json::to_value(&meta).unwrap();
         assert_eq!(json["fileFormat"].as_str().unwrap(), "gif");
         assert_eq!(json["fileSize"].as_i64().unwrap(), 102400);
-        assert!(json.get("file_format").is_none(), "should NOT have snake_case field");
+        assert!(
+            json.get("file_format").is_none(),
+            "should NOT have snake_case field"
+        );
     }
 
     // ── SearchResult 序列化测试（含 fileFormat）──────────────────────────────
