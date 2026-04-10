@@ -15,8 +15,8 @@ pub struct LocalKBProvider {
 
 impl LocalKBProvider {
     pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .unwrap_or_else(|_| r#"{"entries":[]}"#.to_string());
+        let content =
+            std::fs::read_to_string(path).unwrap_or_else(|_| r#"{"entries":[]}"#.to_string());
         let v: serde_json::Value = serde_json::from_str(&content)?;
         let entries = serde_json::from_value(v["entries"].clone()).unwrap_or_default();
         Ok(Self { entries })

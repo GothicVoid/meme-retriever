@@ -28,10 +28,15 @@ fn get_tokenizer() -> &'static BertTokenizer {
                     tracing::info!("tokenizer: loaded BERT vocab from {:?}", vocab_path);
                     return t;
                 }
-                Err(e) => tracing::warn!("tokenizer: failed to load vocab: {e}, falling back to char-level"),
+                Err(e) => tracing::warn!(
+                    "tokenizer: failed to load vocab: {e}, falling back to char-level"
+                ),
             }
         } else {
-            tracing::debug!("tokenizer: vocab not found at {:?}, using char-level fallback", vocab_path);
+            tracing::debug!(
+                "tokenizer: vocab not found at {:?}, using char-level fallback",
+                vocab_path
+            );
         }
         BertTokenizer::char_level()
     })
@@ -50,7 +55,9 @@ struct BertTokenizer {
 impl BertTokenizer {
     /// 字符级 fallback：每个 Unicode 字符映射到其 codepoint（截断到 21127）
     fn char_level() -> Self {
-        Self { encoder: HashMap::new() }
+        Self {
+            encoder: HashMap::new(),
+        }
     }
 
     /// 从 BERT vocab.txt 加载（每行一个 token，行号即 token id）
@@ -108,7 +115,10 @@ mod tests {
         let tokens = tokenize("hello");
         assert_eq!(tokens[0], CLS);
         // SEP 在第一个 PAD 之前
-        let sep_pos = tokens.iter().position(|&t| t == SEP).expect("SEP not found");
+        let sep_pos = tokens
+            .iter()
+            .position(|&t| t == SEP)
+            .expect("SEP not found");
         assert!(sep_pos > 0);
         assert!(sep_pos < CONTEXT_LENGTH);
     }

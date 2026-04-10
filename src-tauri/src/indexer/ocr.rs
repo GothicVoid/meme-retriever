@@ -39,7 +39,11 @@ pub fn extract_text(image_path: &str) -> anyhow::Result<String> {
 
     let start = std::time::Instant::now();
     let text = run_pipeline(path, &det_path, &rec_path, &dict_path)?;
-    tracing::debug!("ocr: {}ms, text_len={}", start.elapsed().as_millis(), text.len());
+    tracing::debug!(
+        "ocr: {}ms, text_len={}",
+        start.elapsed().as_millis(),
+        text.len()
+    );
     Ok(text)
 }
 
@@ -51,7 +55,8 @@ fn model_dir() -> std::path::PathBuf {
 
 fn find_model(candidates: &[&str]) -> Option<std::path::PathBuf> {
     let dir = model_dir();
-    candidates.iter()
+    candidates
+        .iter()
         .map(|name| dir.join(name))
         .find(|p| p.exists())
 }
@@ -65,7 +70,7 @@ fn load_dict(dict_path: &Path) -> anyhow::Result<Vec<String>> {
 
 const DET_LIMIT: u32 = 960;
 const DET_MEAN: [f32; 3] = [0.485, 0.456, 0.406];
-const DET_STD:  [f32; 3] = [0.229, 0.224, 0.225];
+const DET_STD: [f32; 3] = [0.229, 0.224, 0.225];
 
 /// 返回 (scale, padded_w, padded_h, chw_data)
 fn preprocess_det(img: &image::RgbImage) -> (f32, u32, u32, Vec<f32>) {
@@ -98,10 +103,10 @@ fn preprocess_det(img: &image::RgbImage) -> (f32, u32, u32, Vec<f32>) {
 
 // ── Det 后处理（DBNet）──────────────────────────────────────────────────────
 
-const DET_THRESH:     f32 = 0.3;
-const BOX_THRESH:     f32 = 0.6;
-const UNCLIP_RATIO:   f32 = 1.5;
-const MIN_BOX_SIZE:   f32 = 3.0;
+const DET_THRESH: f32 = 0.3;
+const BOX_THRESH: f32 = 0.6;
+const UNCLIP_RATIO: f32 = 1.5;
+const MIN_BOX_SIZE: f32 = 3.0;
 
 /// 返回原图坐标下的文字框列表，每个框为 [x0,y0,x1,y1]（水平轴对齐外接矩形）
 fn dbnet_postprocess(
@@ -152,7 +157,9 @@ fn dbnet_postprocess(
     let mut boxes = Vec::new();
 
     for pixels in components.iter().skip(1) {
-        if pixels.is_empty() { continue; }
+        if pixels.is_empty() {
+            continue;
+        }
 
         // 外接矩形（padded image 坐标）
         let xs: Vec<usize> = pixels.iter().map(|&i| i % prob_w).collect();
@@ -193,9 +200,7 @@ fn dbnet_postprocess(
         let uy1 = (y1 + dist as usize).min(prob_h - 1);
 
         // 坐标映射回原图（除以缩放比，裁剪到原图边界）
-        let map = |v: usize, max: u32| -> u32 {
-            ((v as f32 / scale) as u32).min(max)
-        };
+        let map = |v: usize, max: u32| -> u32 { ((v as f32 / scale) as u32).min(max) };
         let rx0 = map(ux0, orig_w.saturating_sub(1));
         let ry0 = map(uy0, orig_h.saturating_sub(1));
         let rx1 = map(ux1, orig_w.saturating_sub(1));
@@ -214,13 +219,9 @@ fn dbnet_postprocess(
 // ── Rec 推理 ────────────────────────────────────────────────────────────────
 
 const REC_MEAN: f32 = 0.5;
-const REC_STD:  f32 = 0.5;
+const REC_STD: f32 = 0.5;
 
-fn run_rec(
-    line_img: &image::RgbImage,
-    rec_path: &Path,
-    dict: &[String],
-) -> anyhow::Result<String> {
+fn run_rec(line_img: &image::RgbImage, rec_path: &Path, dict: &[String]) -> anyhow::Result<String> {
     use ort::value::Tensor;
 
     let (orig_w, orig_h) = line_img.dimensions();
@@ -230,7 +231,12 @@ fn run_rec(
 
     const TARGET_H: u32 = 48;
     let target_w = ((orig_w as f32 * TARGET_H as f32 / orig_h as f32) as u32).clamp(1, 1920);
-    let resized = image::imageops::resize(line_img, target_w, TARGET_H, image::imageops::FilterType::Triangle);
+    let resized = image::imageops::resize(
+        line_img,
+        target_w,
+        TARGET_H,
+        image::imageops::FilterType::Triangle,
+    );
     let (w, h) = resized.dimensions();
 
     let mut data = vec![0f32; 3 * h as usize * w as usize];
@@ -241,11 +247,13 @@ fn run_rec(
         }
     }
 
-    let tensor = Tensor::from_array(([1usize, 3, h as usize, w as usize], data.into_boxed_slice()))?;
+    let tensor =
+        Tensor::from_array(([1usize, 3, h as usize, w as usize], data.into_boxed_slice()))?;
 
     let session = REC_SESSION.get_or_try_init(|| {
         tracing::info!("ocr: loading rec model {:?}", rec_path);
-        ort::session::Session::builder()?.commit_from_file(rec_path)
+        ort::session::Session::builder()?
+            .commit_from_file(rec_path)
             .map(Mutex::new)
             .map_err(|e| anyhow::anyhow!(e))
     })?;
@@ -264,7 +272,9 @@ fn run_rec(
     for t in 0..seq_len {
         let offset = t * num_classes;
         let frame = &data[offset..offset + num_classes];
-        let best_idx = frame.iter().enumerate()
+        let best_idx = frame
+            .iter()
+            .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
             .map(|(i, _)| i)
             .unwrap_or(0);
@@ -306,7 +316,8 @@ fn run_pipeline(
     // 2. Det 推理
     let det_session = DET_SESSION.get_or_try_init(|| {
         tracing::info!("ocr: loading det model {:?}", det_path);
-        ort::session::Session::builder()?.commit_from_file(det_path)
+        ort::session::Session::builder()?
+            .commit_from_file(det_path)
             .map(Mutex::new)
             .map_err(|e| anyhow::anyhow!(e))
     })?;
@@ -390,6 +401,9 @@ mod tests {
         }
         // sample_text_line.png 是 320×48 单行文字条带
         let result = extract_text(&fixture("sample_text_line.png")).unwrap();
-        assert!(!result.is_empty(), "OCR 应识别出文字条带中的文字，实际返回空字符串");
+        assert!(
+            !result.is_empty(),
+            "OCR 应识别出文字条带中的文字，实际返回空字符串"
+        );
     }
 }

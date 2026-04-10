@@ -13,16 +13,21 @@ impl ClipEncoder {
     pub fn encode_text(text: &str) -> anyhow::Result<Vec<f32>> {
         let start = std::time::Instant::now();
 
-        let result = match find_model(&["clip_text.onnx", "vit-b-16.txt.fp32.onnx", "vit-b-16.txt.fp16.onnx"]) {
+        let result = match find_model(&[
+            "clip_text.onnx",
+            "vit-b-16.txt.fp32.onnx",
+            "vit-b-16.txt.fp16.onnx",
+        ]) {
             Some(model_path) => {
-                let session = TEXT_SESSION.get_or_try_init(|| {
-                    load_session(&model_path).map(Mutex::new)
-                })?;
+                let session =
+                    TEXT_SESSION.get_or_try_init(|| load_session(&model_path).map(Mutex::new))?;
                 run_text_inference(&mut session.lock().unwrap(), text)?
             }
             None => {
                 tracing::debug!("clip: text model not found, using mock");
-                let seed = text.bytes().fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b as u64));
+                let seed = text
+                    .bytes()
+                    .fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b as u64));
                 mock_vector(seed as usize)
             }
         };
@@ -41,16 +46,21 @@ impl ClipEncoder {
 
         let start = std::time::Instant::now();
 
-        let result = match find_model(&["clip_image.onnx", "vit-b-16.img.fp32.onnx", "vit-b-16.img.fp16.onnx"]) {
+        let result = match find_model(&[
+            "clip_image.onnx",
+            "vit-b-16.img.fp32.onnx",
+            "vit-b-16.img.fp16.onnx",
+        ]) {
             Some(model_path) => {
-                let session = IMAGE_SESSION.get_or_try_init(|| {
-                    load_session(&model_path).map(Mutex::new)
-                })?;
+                let session =
+                    IMAGE_SESSION.get_or_try_init(|| load_session(&model_path).map(Mutex::new))?;
                 run_image_inference(&mut session.lock().unwrap(), path)?
             }
             None => {
                 tracing::debug!("clip: image model not found, using mock");
-                let seed = image_path.bytes().fold(0u64, |acc, b| acc.wrapping_add(b as u64));
+                let seed = image_path
+                    .bytes()
+                    .fold(0u64, |acc, b| acc.wrapping_add(b as u64));
                 mock_vector(seed as usize)
             }
         };
@@ -71,7 +81,8 @@ fn model_dir() -> std::path::PathBuf {
 /// 按候选文件名顺序查找第一个存在的模型文件
 fn find_model(candidates: &[&str]) -> Option<std::path::PathBuf> {
     let dir = model_dir();
-    candidates.iter()
+    candidates
+        .iter()
         .map(|name| dir.join(name))
         .find(|p| p.exists())
 }
@@ -95,15 +106,24 @@ fn run_text_inference(session: &mut ort::session::Session, text: &str) -> anyhow
     Ok(vec)
 }
 
-fn run_image_inference(session: &mut ort::session::Session, image_path: &Path) -> anyhow::Result<Vec<f32>> {
+fn run_image_inference(
+    session: &mut ort::session::Session,
+    image_path: &Path,
+) -> anyhow::Result<Vec<f32>> {
     use ort::value::Tensor;
     // 1. 加载图像：短边缩放到 224，再中心裁剪 224×224（Chinese-CLIP 标准预处理）
     let img = image::open(image_path)?.to_rgb8();
     let (orig_w, orig_h) = img.dimensions();
     let (new_w, new_h) = if orig_w <= orig_h {
-        (224u32, (orig_h as f32 * 224.0 / orig_w as f32).round() as u32)
+        (
+            224u32,
+            (orig_h as f32 * 224.0 / orig_w as f32).round() as u32,
+        )
     } else {
-        ((orig_w as f32 * 224.0 / orig_h as f32).round() as u32, 224u32)
+        (
+            (orig_w as f32 * 224.0 / orig_h as f32).round() as u32,
+            224u32,
+        )
     };
     let img = image::imageops::resize(&img, new_w, new_h, image::imageops::FilterType::Triangle);
     let x = (new_w - 224) / 2;
@@ -167,7 +187,10 @@ mod tests {
     fn test_encode_text_normalized() {
         let v = ClipEncoder::encode_text("hello world").unwrap();
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 1e-5, "L2 norm should be ≈1.0, got {norm}");
+        assert!(
+            (norm - 1.0).abs() < 1e-5,
+            "L2 norm should be ≈1.0, got {norm}"
+        );
     }
 
     #[test]
@@ -180,7 +203,10 @@ mod tests {
     fn test_encode_image_normalized() {
         let v = ClipEncoder::encode_image(&fixture("sample.jpg")).unwrap();
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 1e-5, "L2 norm should be ≈1.0, got {norm}");
+        assert!(
+            (norm - 1.0).abs() < 1e-5,
+            "L2 norm should be ≈1.0, got {norm}"
+        );
     }
 
     #[test]
@@ -195,7 +221,10 @@ mod tests {
         let v1 = ClipEncoder::encode_text("hello").unwrap();
         let v2 = ClipEncoder::encode_text("goodbye").unwrap();
         let cosine: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();
-        assert!(cosine < 1.0 - 1e-5, "different inputs should have cosine < 1.0, got {cosine}");
+        assert!(
+            cosine < 1.0 - 1e-5,
+            "different inputs should have cosine < 1.0, got {cosine}"
+        );
     }
 
     #[test]
@@ -206,7 +235,13 @@ mod tests {
 
     #[test]
     fn test_encode_text_real_model() {
-        if find_model(&["clip_text.onnx", "vit-b-16.txt.fp32.onnx", "vit-b-16.txt.fp16.onnx"]).is_none() {
+        if find_model(&[
+            "clip_text.onnx",
+            "vit-b-16.txt.fp32.onnx",
+            "vit-b-16.txt.fp16.onnx",
+        ])
+        .is_none()
+        {
             eprintln!("跳过：找不到 CLIP 文本模型（vit-b-16.txt.fp32.onnx 等）");
             return;
         }

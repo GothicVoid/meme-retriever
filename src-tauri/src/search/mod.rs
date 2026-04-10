@@ -1,3 +1,3 @@
 pub mod engine;
-pub mod vector_store;
 pub mod keyword;
+pub mod vector_store;

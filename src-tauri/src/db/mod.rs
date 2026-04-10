@@ -1,7 +1,7 @@
 pub mod repo;
 pub mod task_repo;
 
-use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use std::path::Path;
 
 pub type DbPool = SqlitePool;

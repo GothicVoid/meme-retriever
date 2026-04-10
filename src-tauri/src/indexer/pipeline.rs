@@ -3,15 +3,15 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::db::{DbPool, repo};
-use crate::indexer::{thumbnail, ocr, hash};
+use crate::db::{repo, DbPool};
+use crate::indexer::{hash, ocr, thumbnail};
 use crate::ml::clip::ClipEncoder;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IndexProgress {
     pub id: String,
     pub file_name: String,
-    pub status: String,   // "completed" | "error"
+    pub status: String, // "completed" | "error"
     pub message: Option<String>,
     pub elapsed_ms: u64,
 }
@@ -73,8 +73,19 @@ async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Resu
     let result = do_index_inner(pool, src, library_dir).await;
 
     match &result {
-        Ok(_) => { let _ = crate::db::task_repo::update_task_status(pool, &task_id, "completed", None).await; }
-        Err(e) => { let _ = crate::db::task_repo::update_task_status(pool, &task_id, "failed", Some(&e.to_string())).await; }
+        Ok(_) => {
+            let _ =
+                crate::db::task_repo::update_task_status(pool, &task_id, "completed", None).await;
+        }
+        Err(e) => {
+            let _ = crate::db::task_repo::update_task_status(
+                pool,
+                &task_id,
+                "failed",
+                Some(&e.to_string()),
+            )
+            .await;
+        }
     }
     result
 }
@@ -88,7 +99,8 @@ async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow
     let file_hash = hash::compute_sha256(src)?;
     let meta = std::fs::metadata(src)?;
     let file_size = meta.len() as i64;
-    let file_modified_time = meta.modified()
+    let file_modified_time = meta
+        .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64);
@@ -123,7 +135,9 @@ async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow
 
     tracing::info!(
         "pipeline: id={id} thumb={}ms ocr_len={} embed_dims={}",
-        thumb_ms, ocr_text.len(), embedding.len()
+        thumb_ms,
+        ocr_text.len(),
+        embedding.len()
     );
 
     // 4. 读取图片尺寸
@@ -133,7 +147,11 @@ async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow
     let rec = repo::ImageRecord {
         id: id.clone(),
         file_path: src.to_string_lossy().to_string(),
-        file_name: src.file_name().unwrap_or_default().to_string_lossy().to_string(),
+        file_name: src
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
         format: ext.to_string(),
         width,
         height,
@@ -224,7 +242,11 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_single_image(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
-        let mut rx = index_images(pool.clone(), vec![fixture("sample.jpg")], lib.path().to_path_buf());
+        let mut rx = index_images(
+            pool.clone(),
+            vec![fixture("sample.jpg")],
+            lib.path().to_path_buf(),
+        );
         let results = collect(rx).await;
 
         assert_eq!(results.len(), 1);
@@ -270,10 +292,7 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_invalid_path(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
-        let paths = vec![
-            "/nonexistent/image.jpg".to_string(),
-            fixture("sample.jpg"),
-        ];
+        let paths = vec!["/nonexistent/image.jpg".to_string(), fixture("sample.jpg")];
         let rx = index_images(pool.clone(), paths, lib.path().to_path_buf());
         let results = collect(rx).await;
 
@@ -289,7 +308,11 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_progress_elapsed(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
-        let rx = index_images(pool.clone(), vec![fixture("sample.jpg")], lib.path().to_path_buf());
+        let rx = index_images(
+            pool.clone(),
+            vec![fixture("sample.jpg")],
+            lib.path().to_path_buf(),
+        );
         let results = collect(rx).await;
         assert!(results[0].elapsed_ms < 10_000, "should complete in < 10s");
     }
