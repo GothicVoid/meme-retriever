@@ -46,6 +46,7 @@ onMounted(async () => {
     }
   } catch {
     // 静默失败，不影响正常使用
+    console.warn('尝试获取未完成任务时失败')
   }
 });
 
@@ -55,6 +56,7 @@ async function resumeTasks() {
     await invoke("resume_pending_tasks");
   } catch {
     // 静默失败
+    console.warn('尝试恢复未完成任务时失败')
   }
 }
 

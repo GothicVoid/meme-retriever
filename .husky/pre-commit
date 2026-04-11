@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+echo "Running lint-staged..."
+npx lint-staged
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+RUST_FILES=$(printf '%s\n' "$STAGED" | grep -E '\.rs$' || true)
+
+if [ -n "$RUST_FILES" ]; then
+  echo "Clippy: checking Rust code..."
+  (cd src-tauri && cargo clippy -- -D warnings)
+fi
+
+echo "Running Rust tests..."
+(cd src-tauri && cargo test)
+
+echo "Running frontend tests..."
+npm run test
