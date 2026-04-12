@@ -20,4 +20,4 @@
 前端测试基于 Vitest + jsdom，公共测试初始化位于 `src/test/setup.ts`。新增测试统一放在 `src/test/`，命名采用 `*.test.ts`，并尽量体现功能范围，例如 `SearchView.pagination.test.ts`。后端测试位于 `src-tauri/tests/`，优先覆盖入库、搜索、删除、数据库迁移等完整流程。提交前至少运行与改动相关的前端或后端测试。
 
 ## 提交与 Pull Request 规范
-Git 历史采用 Conventional Commits 风格，如 `feat: ...`、`fix(search): ...`。请保持单次提交聚焦，前缀优先使用 `feat`、`fix`、`docs`、`refactor`、`test`。提交 PR 时应说明改动目的、影响范围、已执行的验证命令；若涉及界面修改，附截图或录屏；若对应需求文档或问题单，请一并链接。
+Git 历史采用 Conventional Commits 风格，如 `feat: ...`、`fix(search): ...`。请保持单次提交聚焦，前缀优先使用 `feat`、`fix`、`docs`、`refactor`、`test`。提交信息使用中文写。提交 PR 时应说明改动目的、影响范围、已执行的验证命令；若涉及界面修改，附截图或录屏；若对应需求文档或问题单，请一并链接。
