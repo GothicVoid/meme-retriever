@@ -388,16 +388,29 @@ pub async fn get_tag_suggestions(
 
 #[tauri::command]
 pub async fn copy_to_clipboard(id: String, db: State<'_, DbPool>) -> Result<(), String> {
+    copy_to_clipboard_impl(&id, db.inner(), |image_data| {
+        let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+        clipboard.set_image(image_data).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+async fn copy_to_clipboard_impl<F>(id: &str, db: &DbPool, set_image: F) -> Result<(), String>
+where
+    F: FnOnce(arboard::ImageData<'static>) -> Result<(), String>,
+{
     tracing::info!("copy_to_clipboard: {id}");
-    let img = repo::get_image(db.inner(), &id)
+    let img = repo::get_image(db, id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("image not found: {id}"))?;
 
     tracing::debug!("copy_to_clipboard: path={}", img.file_path);
     let image_data = load_image_for_clipboard(&img.file_path)?;
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    clipboard.set_image(image_data).map_err(|e| e.to_string())?;
+    set_image(image_data)?;
+    repo::increment_use_count(db, id)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -733,6 +746,83 @@ mod tests {
     fn test_load_image_for_clipboard_rejects_missing_file() {
         let err = load_image_for_clipboard("/definitely/not/found.png").unwrap_err();
         assert!(err.contains("failed to open image"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_copy_to_clipboard_impl_increments_use_count_on_success(pool: SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("copy-success.png");
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_pixel(1, 1, Rgba([12, 34, 56, 255]));
+        img.save(&path).unwrap();
+
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-copy".into(),
+                file_path: path.to_string_lossy().to_string(),
+                file_name: "copy-success.png".into(),
+                format: "png".into(),
+                width: Some(1),
+                height: Some(1),
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        copy_to_clipboard_impl("img-copy", &pool, |_| Ok(()))
+            .await
+            .unwrap();
+
+        let image = repo::get_image(&pool, "img-copy").await.unwrap().unwrap();
+        assert_eq!(image.use_count, 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_copy_to_clipboard_impl_does_not_increment_on_copy_failure(pool: SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("copy-fail.png");
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_pixel(1, 1, Rgba([78, 90, 12, 255]));
+        img.save(&path).unwrap();
+
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-copy-fail".into(),
+                file_path: path.to_string_lossy().to_string(),
+                file_name: "copy-fail.png".into(),
+                format: "png".into(),
+                width: Some(1),
+                height: Some(1),
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = copy_to_clipboard_impl("img-copy-fail", &pool, |_| Err("clipboard failed".into()))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "clipboard failed");
+
+        let image = repo::get_image(&pool, "img-copy-fail").await.unwrap().unwrap();
+        assert_eq!(image.use_count, 0);
     }
 
     #[test]
