@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import ImageCard from "@/components/ImageCard.vue";
+import Toast from "@/components/Toast.vue";
 import type { SearchResult } from "@/stores/search";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -9,8 +10,9 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
+const copyImageMock = vi.fn();
 vi.mock("@/composables/useClipboard", () => ({
-  useClipboard: () => ({ copyImage: vi.fn() }),
+  useClipboard: () => ({ copyImage: copyImageMock }),
 }));
 
 const mockImage: SearchResult = {
@@ -25,6 +27,7 @@ const mockImage: SearchResult = {
 describe("ImageCard", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    copyImageMock.mockReset();
   });
 
   it("渲染缩略图", () => {
@@ -125,5 +128,38 @@ describe("ImageCard", () => {
     await wrapper.find("input[type='checkbox']").trigger("change");
     expect(wrapper.emitted("select")).toBeTruthy();
     expect(wrapper.emitted("select")![0]).toEqual(["uuid-1"]);
+  });
+
+  it("单击图片时复制到剪贴板并显示成功提示", async () => {
+    copyImageMock.mockResolvedValue(undefined);
+    const wrapper = mount({
+      components: { ImageCard, Toast },
+      template: '<div><ImageCard :image="image" :show-debug-info="false" /><Toast /></div>',
+      data: () => ({ image: mockImage }),
+    }, { attachTo: document.body });
+
+    await wrapper.find(".image-card").trigger("click");
+    expect(copyImageMock).toHaveBeenCalledWith("uuid-1");
+
+    const toast = document.body.querySelector(".toast");
+    expect(toast?.textContent).toContain("已复制");
+
+    wrapper.unmount();
+  });
+
+  it("复制失败时显示失败提示", async () => {
+    copyImageMock.mockRejectedValue(new Error("copy failed"));
+    const wrapper = mount({
+      components: { ImageCard, Toast },
+      template: '<div><ImageCard :image="image" :show-debug-info="false" /><Toast /></div>',
+      data: () => ({ image: mockImage }),
+    }, { attachTo: document.body });
+
+    await wrapper.find(".image-card").trigger("click");
+
+    const toast = document.body.querySelector(".toast.error");
+    expect(toast?.textContent).toContain("复制失败");
+
+    wrapper.unmount();
   });
 });

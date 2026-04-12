@@ -11,13 +11,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
+import { useToast } from "@/composables/useToast";
 
 defineOptions({ name: "AppToast" });
 
 const visible = ref(false);
 const message = ref("");
 const type = ref<"info" | "error">("info");
+const { subscribe } = useToast();
+let unsubscribe: (() => void) | null = null;
 
 function show(msg: string, t: "info" | "error" = "info", duration = 2000) {
   message.value = msg;
@@ -27,6 +30,14 @@ function show(msg: string, t: "info" | "error" = "info", duration = 2000) {
 }
 
 defineExpose({ show });
+
+onMounted(() => {
+  unsubscribe = subscribe(show);
+});
+
+onUnmounted(() => {
+  unsubscribe?.();
+});
 </script>
 
 <style scoped>

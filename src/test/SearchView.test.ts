@@ -3,6 +3,8 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
 import SearchView from "@/views/SearchView.vue";
+import Toast from "@/components/Toast.vue";
+import { useSearchStore } from "@/stores/search";
 import type { ImageMeta } from "@/stores/library";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -10,8 +12,9 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
+const copyImageMock = vi.fn();
 vi.mock("@/composables/useClipboard", () => ({
-  useClipboard: () => ({ copyImage: vi.fn() }),
+  useClipboard: () => ({ copyImage: copyImageMock }),
 }));
 
 const mockInvoke = vi.mocked(invoke);
@@ -32,6 +35,7 @@ describe("SearchView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    copyImageMock.mockReset();
   });
 
   it("图库为空时显示引导文案", async () => {
@@ -49,5 +53,36 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
     expect(wrapper.text()).toContain("没找到相关图片");
+  });
+
+  it("点击搜索结果后显示已复制提示", async () => {
+    copyImageMock.mockResolvedValue(undefined);
+    mockInvoke.mockResolvedValue([]);
+
+    const wrapper = mount({
+      components: { SearchView, Toast },
+      template: "<div><SearchView /><Toast /></div>",
+    }, { attachTo: document.body });
+
+    await flushPromises();
+    const searchStore = useSearchStore();
+    searchStore.results = [{
+      id: "uuid-1",
+      filePath: "/img.jpg",
+      thumbnailPath: "/thumb.jpg",
+      fileFormat: "jpg",
+      score: 1,
+      tags: [],
+      debugInfo: null,
+    }];
+    await wrapper.vm.$nextTick();
+    await wrapper.find(".image-card").trigger("click");
+    await flushPromises();
+
+    const toast = document.body.querySelector(".toast");
+    expect(copyImageMock).toHaveBeenCalledWith("uuid-1");
+    expect(toast?.textContent).toContain("已复制");
+
+    wrapper.unmount();
   });
 });

@@ -1,4 +1,5 @@
 use sqlx::Row;
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
@@ -393,10 +394,25 @@ pub async fn copy_to_clipboard(id: String, db: State<'_, DbPool>) -> Result<(), 
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("image not found: {id}"))?;
 
-    // TODO: 复制图片二进制到剪贴板（需要平台特定实现）
-    // 当前实现：将文件路径写入剪贴板文本
     tracing::debug!("copy_to_clipboard: path={}", img.file_path);
+    let image_data = load_image_for_clipboard(&img.file_path)?;
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard.set_image(image_data).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn load_image_for_clipboard(path: &str) -> Result<arboard::ImageData<'static>, String> {
+    let rgba = image::open(path)
+        .map_err(|e| format!("failed to open image: {e}"))?
+        .to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let bytes = rgba.into_raw();
+
+    Ok(arboard::ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: Cow::Owned(bytes),
+    })
 }
 
 #[tauri::command]
@@ -594,6 +610,7 @@ pub async fn clear_task_queue(db: State<'_, DbPool>) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::kb::local::LocalKBProvider;
+    use image::{ImageBuffer, Rgba};
     use sqlx::SqlitePool;
 
     async fn make_engine(pool: SqlitePool) -> Arc<SearchEngine> {
@@ -687,6 +704,35 @@ mod tests {
         let json = serde_json::to_value(&progress).unwrap();
         assert_eq!(json.get("current").and_then(|v| v.as_u64()), Some(3));
         assert_eq!(json.get("total").and_then(|v| v.as_u64()), Some(10));
+    }
+
+    #[test]
+    fn test_load_image_for_clipboard_reads_rgba_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clipboard-test.png");
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(2, 1, |x, _| {
+            if x == 0 {
+                Rgba([255, 0, 0, 255])
+            } else {
+                Rgba([0, 0, 255, 128])
+            }
+        });
+        img.save(&path).unwrap();
+
+        let data = load_image_for_clipboard(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(data.width, 2);
+        assert_eq!(data.height, 1);
+        assert_eq!(
+            data.bytes.as_ref(),
+            &[255, 0, 0, 255, 0, 0, 255, 128]
+        );
+    }
+
+    #[test]
+    fn test_load_image_for_clipboard_rejects_missing_file() {
+        let err = load_image_for_clipboard("/definitely/not/found.png").unwrap_err();
+        assert!(err.contains("failed to open image"));
     }
 
     #[test]

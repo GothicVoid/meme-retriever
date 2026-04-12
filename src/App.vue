@@ -1,5 +1,6 @@
 <template>
   <GlobalProgressBar />
+  <Toast />
   <nav class="nav">
     <RouterLink to="/">
       搜索
@@ -33,6 +34,7 @@
 import { ref, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
+import Toast from "@/components/Toast.vue";
 
 const showResumeDialog = ref(false);
 const pendingCount = ref(0);

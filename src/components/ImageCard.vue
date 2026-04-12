@@ -93,6 +93,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
+import { showToast } from "@/composables/useToast";
 import type { SearchResult } from "@/stores/search";
 
 const props = defineProps<{
@@ -121,7 +122,12 @@ const formatBadge = computed(() => {
 });
 
 async function handleClick() {
-  await copyImage(props.image.id);
+  try {
+    await copyImage(props.image.id);
+    showToast("已复制", "info", 1500);
+  } catch {
+    showToast("复制失败", "error", 1500);
+  }
 }
 
 function handleOpen() {
