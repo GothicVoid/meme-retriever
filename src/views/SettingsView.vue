@@ -13,21 +13,6 @@
     </label>
     <label>
       <input
-        v-model="settings.deleteOriginalFile"
-        type="checkbox"
-      >
-      删除时同时删除原文件
-    </label>
-    <label>
-      图库路径
-      <input
-        v-model="settings.libraryPath"
-        type="text"
-        placeholder="留空使用默认路径"
-      >
-    </label>
-    <label>
-      <input
         v-model="settings.showDebugInfo"
         type="checkbox"
       >
