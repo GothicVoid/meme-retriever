@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## 项目结构与模块组织
-`src/` 为 Vue 3 前端主目录：`components/` 放可复用组件，`views/` 放页面级视图，`stores/` 管理 Pinia 状态，`composables/` 封装共享逻辑，`test/` 存放前端测试。静态资源位于 `public/` 与 `src/assets/`。`src-tauri/` 为 Rust 后端，包含 `commands/`、`db/`、`indexer/`、`search/`、`kb/`、`ml/` 等核心模块，数据库迁移在 `src-tauri/migrations/`，集成测试在 `src-tauri/tests/`。需求与架构说明见 `docs/`。
+`src/` 为 Vue 3 前端主目录：`components/` 放可复用组件，`views/` 放页面级视图，`stores/` 管理 Pinia 状态，`composables/` 封装共享逻辑，`test/` 存放前端测试。静态资源位于 `public/` 与 `src/assets/`。`src-tauri/` 为 Rust 后端，包含 `commands/`、`db/`、`indexer/`、`search/`、`kb/`、`ml/` 等核心模块，数据库迁移在 `src-tauri/migrations/`，集成测试在 `src-tauri/tests/`。需求与架构说明见 `specs/`。
 
 ## 构建、测试与开发命令
 `npm run dev`：启动 Vite 前端开发环境。  
