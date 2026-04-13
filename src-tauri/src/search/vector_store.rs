@@ -11,6 +11,8 @@ impl Default for VectorStore {
 }
 
 impl VectorStore {
+    pub const SEMANTIC_THRESHOLD: f32 = 0.15;
+
     pub fn new() -> Self {
         Self {
             ids: vec![],
@@ -43,8 +45,9 @@ impl VectorStore {
         self.vectors.clear();
     }
 
-    /// 语义相似度最低阈值：低于此值的结果不参与排序
-    const SEMANTIC_THRESHOLD: f32 = 0.15;
+    pub fn semantic_threshold() -> f32 {
+        Self::SEMANTIC_THRESHOLD
+    }
 
     /// Returns (id, cosine_similarity) sorted descending.
     pub fn query(&self, query_vec: &[f32], top_k: usize) -> Vec<(String, f32)> {

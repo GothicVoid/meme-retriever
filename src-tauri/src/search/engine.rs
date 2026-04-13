@@ -15,6 +15,13 @@ fn char_coverage(query: &str, ocr_text: &str) -> f32 {
     q_chars.intersection(&o_chars).count() as f32 / q_chars.len() as f32
 }
 
+fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32) -> bool {
+    let has_text_signal = s_ocr > 0.0 || s_kw > 0.0;
+    let semantic_pass = raw_cosine >= crate::search::vector_store::VectorStore::semantic_threshold();
+    let text_pass = has_text_signal && (s_ocr >= 0.2 || s_kw >= 0.5);
+    semantic_pass || text_pass
+}
+
 pub struct SearchEngine {
     pool: DbPool,
     vector_store: Arc<RwLock<VectorStore>>,
@@ -202,10 +209,11 @@ impl SearchEngine {
                 ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
             };
 
-            let final_score = if relevance < 0.2 {
-                0.0
-            } else {
+            // 纯语义命中只要通过向量召回阈值就应保留；文本分支仍保留最低质量门槛。
+            let final_score = if passes_result_filter(raw_cosine, s_ocr, s_kw) {
                 (0.75 * relevance + 0.25 * popularity).clamp(0.0, 1.0)
+            } else {
+                0.0
             };
 
             let dbg = ScoreDebugInfo {
@@ -762,6 +770,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_pure_semantic_hit_passes_filter() {
+        assert!(
+            passes_result_filter(
+                crate::search::vector_store::VectorStore::semantic_threshold(),
+                0.0,
+                0.0
+            ),
+            "pure semantic hit should pass even without OCR/tag signals"
+        );
+        assert!(
+            !passes_result_filter(0.0, 0.1, 0.0),
+            "weak OCR-only hit should still be filtered"
+        );
+        assert!(
+            passes_result_filter(0.0, 0.0, 0.5),
+            "strong tag hit should pass filter"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
