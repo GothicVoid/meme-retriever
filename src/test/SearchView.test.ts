@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import SearchView from "@/views/SearchView.vue";
 import Toast from "@/components/Toast.vue";
 import { useSearchStore } from "@/stores/search";
@@ -12,12 +13,16 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  confirm: vi.fn(),
+}));
 const copyImageMock = vi.fn();
 vi.mock("@/composables/useClipboard", () => ({
   useClipboard: () => ({ copyImage: copyImageMock }),
 }));
 
 const mockInvoke = vi.mocked(invoke);
+const mockConfirm = vi.mocked(confirm);
 
 const mockImage: ImageMeta = {
   id: "uuid-1",
@@ -35,6 +40,7 @@ describe("SearchView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockConfirm.mockReset();
     copyImageMock.mockReset();
   });
 
@@ -82,6 +88,51 @@ describe("SearchView", () => {
     const toast = document.body.querySelector(".toast");
     expect(copyImageMock).toHaveBeenCalledWith("uuid-1");
     expect(toast?.textContent).toContain("已复制");
+
+    wrapper.unmount();
+  });
+
+  it("详情页删除事件会调用 delete_image 并关闭弹窗", async () => {
+    mockConfirm.mockResolvedValue(true);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_images") return Promise.resolve([mockImage]);
+      if (cmd === "get_image_meta") {
+        return Promise.resolve({
+          ...mockImage,
+          fileFormat: "jpg",
+          fileStatus: "missing",
+          fileSize: 100,
+        });
+      }
+      if (cmd === "delete_image") return Promise.resolve(undefined);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const searchStore = useSearchStore();
+    searchStore.results = [{
+      id: "uuid-1",
+      filePath: "/img.jpg",
+      thumbnailPath: "/thumb.jpg",
+      fileFormat: "jpg",
+      fileStatus: "missing",
+      score: 1,
+      tags: [],
+      debugInfo: null,
+    }];
+    await wrapper.vm.$nextTick();
+    await wrapper.find(".image-card").trigger("dblclick");
+    await flushPromises();
+
+    await wrapper.find(".delete-btn").trigger("click");
+    await flushPromises();
+
+    expect(mockConfirm).toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledWith("delete_image", { id: "uuid-1" });
+    expect(searchStore.results).toEqual([]);
+    expect(wrapper.findComponent({ name: "DetailModal" }).exists()).toBe(false);
 
     wrapper.unmount();
   });

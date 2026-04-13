@@ -50,6 +50,7 @@
       :image-id="detailId"
       :images="store.images as unknown as SearchResult[]"
       @close="detailId = null"
+      @delete="handleDeleteFromDetail"
     />
   </div>
 </template>
@@ -89,6 +90,11 @@ async function handleDelete(id: string) {
   const ok = await confirm("确定要删除这张图片吗？此操作不可撤销。", { title: "删除图片" });
   if (!ok) return;
   await store.deleteImage(id);
+}
+
+async function handleDeleteFromDetail(id: string) {
+  await handleDelete(id);
+  detailId.value = null;
 }
 
 async function handleDeleteSelected() {

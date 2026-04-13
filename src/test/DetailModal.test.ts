@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import DetailModal from "@/components/DetailModal.vue";
 import type { SearchResult } from "@/stores/search";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string) => `asset://${path}`,
+}));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
 }));
 vi.mock("@/components/TagEditor.vue", () => ({
   default: {
@@ -19,6 +23,7 @@ vi.mock("@/components/TagEditor.vue", () => ({
 }));
 
 const mockInvoke = vi.mocked(invoke);
+const mockOpen = vi.mocked(open);
 
 function makeImages(count = 3): SearchResult[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -41,6 +46,7 @@ const mockMeta = {
   width: 800,
   height: 600,
   fileSize: 102400,
+  fileStatus: "normal",
   addedAt: 1700000000,
   useCount: 3,
   tags: ["tag0"],
@@ -50,6 +56,7 @@ describe("DetailModal — 渲染", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockOpen.mockReset();
     mockInvoke.mockResolvedValue(mockMeta);
   });
 
@@ -101,6 +108,7 @@ describe("DetailModal — 键盘导航", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockOpen.mockReset();
     mockInvoke.mockResolvedValue(mockMeta);
   });
 
@@ -182,6 +190,7 @@ describe("DetailModal — 标签保存", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockOpen.mockReset();
     mockInvoke.mockResolvedValue(mockMeta);
   });
 
@@ -210,6 +219,7 @@ describe("DetailModal — GIF 大文件保护", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockOpen.mockReset();
   });
 
   it("小 GIF（<10MB）不显示播放按钮", async () => {
@@ -235,5 +245,67 @@ describe("DetailModal — GIF 大文件保护", () => {
     await flushPromises();
     expect(wrapper.find(".gif-toggle").exists()).toBe(true);
     expect(wrapper.find(".gif-toggle").text()).toContain("播放");
+  });
+});
+
+describe("DetailModal — 文件丢失", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockOpen.mockReset();
+  });
+
+  it("文件已丢失时显示错误态并禁用保存", async () => {
+    mockInvoke.mockResolvedValue({
+      ...mockMeta,
+      fileStatus: "missing",
+    });
+    const images = [{ ...makeImages(1)[0], fileStatus: "missing" }];
+    const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("原文件已丢失");
+    expect(wrapper.find(".relocate-btn").exists()).toBe(true);
+    expect(wrapper.find(".save-btn").attributes("disabled")).toBeDefined();
+    expect(wrapper.find(".main-img").exists()).toBe(false);
+  });
+
+  it("文件已丢失时显示删除按钮并触发 delete 事件", async () => {
+    mockInvoke.mockResolvedValue({
+      ...mockMeta,
+      fileStatus: "missing",
+    });
+    const images = [{ ...makeImages(1)[0], fileStatus: "missing" }];
+    const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
+    await flushPromises();
+    expect(wrapper.find(".delete-btn").exists()).toBe(true);
+    await wrapper.find(".delete-btn").trigger("click");
+    expect(wrapper.emitted("delete")).toEqual([["img-0"]]);
+  });
+
+  it("点击重新定位后调用 relocate_image", async () => {
+    mockInvoke
+      .mockResolvedValueOnce({
+        ...mockMeta,
+        fileStatus: "missing",
+      })
+      .mockResolvedValueOnce({
+        ...mockMeta,
+        fileStatus: "normal",
+        filePath: "/new.jpg",
+        fileName: "new.jpg",
+      });
+    mockOpen.mockResolvedValue("/new.jpg");
+
+    const images = [{ ...makeImages(1)[0], fileStatus: "missing" }];
+    const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
+    await flushPromises();
+    await wrapper.find(".relocate-btn").trigger("click");
+    await flushPromises();
+
+    expect(mockOpen).toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenLastCalledWith("relocate_image", {
+      id: "img-0",
+      newPath: "/new.jpg",
+    });
   });
 });

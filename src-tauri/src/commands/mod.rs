@@ -1,5 +1,6 @@
 use sqlx::Row;
 use std::borrow::Cow;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
@@ -29,6 +30,7 @@ pub struct SearchResult {
     pub file_path: String,
     pub thumbnail_path: String,
     pub file_format: String,
+    pub file_status: String,
     pub score: f32,
     pub tags: Vec<String>,
     pub debug_info: Option<ScoreDebugInfo>,
@@ -42,6 +44,7 @@ pub struct ImageMeta {
     pub file_name: String,
     pub thumbnail_path: String,
     pub file_format: String,
+    pub file_status: String,
     pub width: i64,
     pub height: i64,
     pub file_size: i64,
@@ -55,6 +58,176 @@ pub struct ImageMeta {
 pub struct ClearGalleryProgress {
     pub current: u64,
     pub total: u64,
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+async fn sync_file_status(
+    db: &DbPool,
+    id: &str,
+    file_path: &str,
+    current_status: &str,
+) -> Result<String, String> {
+    let actual_status = if Path::new(file_path).exists() {
+        "normal"
+    } else {
+        "missing"
+    };
+    if actual_status != current_status {
+        repo::update_file_status(db, id, actual_status, now_secs())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(actual_status.to_string())
+}
+
+fn to_image_meta(img: repo::ImageRecord, tags: Vec<String>, file_status: String) -> ImageMeta {
+    ImageMeta {
+        id: img.id,
+        file_path: img.file_path,
+        file_name: img.file_name,
+        thumbnail_path: img.thumbnail_path.unwrap_or_default(),
+        file_format: img.format,
+        file_status,
+        width: img.width.unwrap_or(0),
+        height: img.height.unwrap_or(0),
+        file_size: img.file_size.unwrap_or(0),
+        added_at: img.added_at,
+        use_count: img.use_count,
+        tags,
+    }
+}
+
+async fn get_image_meta_impl(id: String, db: &DbPool) -> Result<Option<ImageMeta>, String> {
+    let img = repo::get_image(db, &id).await.map_err(|e| e.to_string())?;
+    match img {
+        None => Ok(None),
+        Some(img) => {
+            let file_status = sync_file_status(db, &img.id, &img.file_path, &img.file_status).await?;
+            let tags = repo::get_tags_for_image(db, &img.id)
+                .await
+                .unwrap_or_default();
+            Ok(Some(to_image_meta(img, tags, file_status)))
+        }
+    }
+}
+
+async fn relocate_image_impl(
+    id: &str,
+    new_path: &str,
+    db: &DbPool,
+    engine: &SearchEngine,
+    library_dir: &Path,
+) -> Result<ImageMeta, String> {
+    let mut img = repo::get_image(db, id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("image not found: {id}"))?;
+
+    let src = Path::new(new_path);
+    if !src.exists() {
+        return Err("选择的文件不存在".into());
+    }
+
+    let file_hash = crate::indexer::hash::compute_sha256(src).map_err(|e| e.to_string())?;
+    if let Some(existing) = repo::get_image_by_hash(db, &file_hash)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        if existing.id != id {
+            return Err("已存在相同内容图片".into());
+        }
+    }
+
+    let file_name = src
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| new_path.to_string());
+    let format = src
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("jpg")
+        .to_ascii_lowercase();
+    let metadata = std::fs::metadata(src).map_err(|e| e.to_string())?;
+    let file_size = metadata.len() as i64;
+    let file_modified_time = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    let thumb = img
+        .thumbnail_path
+        .clone()
+        .filter(|path| !path.is_empty())
+        .unwrap_or_else(|| {
+            library_dir
+                .join("thumbs")
+                .join(format!("{id}.jpg"))
+                .to_string_lossy()
+                .to_string()
+        });
+
+    crate::indexer::thumbnail::generate(src, Path::new(&thumb), 150).map_err(|e| e.to_string())?;
+
+    let src_string = src.to_string_lossy().to_string();
+    let (ocr_result, clip_result) = tokio::join!(
+        tokio::task::spawn_blocking({
+            let value = src_string.clone();
+            move || crate::indexer::ocr::extract_text(&value)
+        }),
+        tokio::task::spawn_blocking({
+            let value = src_string.clone();
+            move || crate::ml::clip::ClipEncoder::encode_image(&value)
+        }),
+    );
+    let ocr_text = ocr_result
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let embedding = clip_result
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let (width, height) = match image::image_dimensions(src) {
+        Ok((w, h)) => (Some(w as i64), Some(h as i64)),
+        Err(_) => (None, None),
+    };
+
+    img.file_path = src_string;
+    img.file_name = file_name;
+    img.format = format;
+    img.width = width;
+    img.height = height;
+    img.thumbnail_path = Some(thumb);
+    img.file_hash = Some(file_hash);
+    img.file_size = Some(file_size);
+    img.file_modified_time = file_modified_time;
+    img.file_status = "normal".to_string();
+    img.last_check_time = Some(now_secs());
+
+    repo::update_image_file_info(db, &img)
+        .await
+        .map_err(|e| e.to_string())?;
+    repo::insert_embedding(db, id, &embedding)
+        .await
+        .map_err(|e| e.to_string())?;
+    if ocr_text.is_empty() {
+        repo::delete_ocr_for_image(db, id)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        repo::insert_ocr(db, id, &ocr_text)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    engine.remove_vector(id);
+    engine.insert_vector(id.to_string(), embedding);
+
+    let tags = repo::get_tags_for_image(db, id).await.unwrap_or_default();
+    Ok(to_image_meta(img, tags, "normal".to_string()))
 }
 
 // ── 命令实现 ────────────────────────────────────────────────────────────────
@@ -297,30 +470,7 @@ pub async fn get_image_meta(
     id: String,
     db: State<'_, DbPool>,
 ) -> Result<Option<ImageMeta>, String> {
-    let img = repo::get_image(db.inner(), &id)
-        .await
-        .map_err(|e| e.to_string())?;
-    match img {
-        None => Ok(None),
-        Some(img) => {
-            let tags = repo::get_tags_for_image(db.inner(), &img.id)
-                .await
-                .unwrap_or_default();
-            Ok(Some(ImageMeta {
-                id: img.id,
-                file_path: img.file_path,
-                file_name: img.file_name,
-                thumbnail_path: img.thumbnail_path.unwrap_or_default(),
-                file_format: img.format,
-                width: img.width.unwrap_or(0),
-                height: img.height.unwrap_or(0),
-                file_size: img.file_size.unwrap_or(0),
-                added_at: img.added_at,
-                use_count: img.use_count,
-                tags,
-            }))
-        }
-    }
+    get_image_meta_impl(id, db.inner()).await
 }
 
 #[tauri::command]
@@ -332,22 +482,11 @@ pub async fn get_images(page: i64, db: State<'_, DbPool>) -> Result<Vec<ImageMet
 
     let mut result = Vec::with_capacity(images.len());
     for img in images {
+        let file_status = sync_file_status(db.inner(), &img.id, &img.file_path, &img.file_status).await?;
         let tags = repo::get_tags_for_image(db.inner(), &img.id)
             .await
             .unwrap_or_default();
-        result.push(ImageMeta {
-            id: img.id,
-            file_path: img.file_path,
-            file_name: img.file_name,
-            thumbnail_path: img.thumbnail_path.unwrap_or_default(),
-            file_format: img.format,
-            width: img.width.unwrap_or(0),
-            height: img.height.unwrap_or(0),
-            file_size: img.file_size.unwrap_or(0),
-            added_at: img.added_at,
-            use_count: img.use_count,
-            tags,
-        });
+        result.push(to_image_meta(img, tags, file_status));
     }
     Ok(result)
 }
@@ -404,6 +543,10 @@ where
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("image not found: {id}"))?;
+    let file_status = sync_file_status(db, &img.id, &img.file_path, &img.file_status).await?;
+    if file_status == "missing" {
+        return Err("原文件已丢失，无法复制".into());
+    }
 
     tracing::debug!("copy_to_clipboard: path={}", img.file_path);
     let image_data = load_image_for_clipboard(&img.file_path)?;
@@ -439,12 +582,33 @@ pub async fn reveal_in_finder(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("image not found: {id}"))?;
+    let file_status =
+        sync_file_status(db.inner(), &img.id, &img.file_path, &img.file_status).await?;
+    if file_status == "missing" {
+        return Err("原文件已丢失，无法定位".into());
+    }
 
     use tauri_plugin_opener::OpenerExt;
     app.opener()
         .reveal_item_in_dir(&img.file_path)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn relocate_image(
+    id: String,
+    new_path: String,
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<ImageMeta, String> {
+    let library_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("library");
+    relocate_image_impl(&id, &new_path, db.inner(), engine.inner(), &library_dir).await
 }
 
 #[tauri::command]
@@ -639,6 +803,7 @@ mod tests {
             file_name: "sample.jpg".into(),
             thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
             file_format: "jpg".into(),
+            file_status: "normal".into(),
             width: 800,
             height: 600,
             file_size: 0,
@@ -666,6 +831,7 @@ mod tests {
             file_path: "/library/images/uuid-1.jpg".into(),
             thumbnail_path: "/library/thumbs/uuid-1.jpg".into(),
             file_format: "jpg".into(),
+            file_status: "normal".into(),
             score: 0.9,
             tags: vec![],
             debug_info: None,
@@ -825,6 +991,133 @@ mod tests {
         assert_eq!(image.use_count, 0);
     }
 
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_copy_to_clipboard_impl_marks_missing_file(pool: SqlitePool) {
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-missing".into(),
+                file_path: "/definitely/not/found.png".into(),
+                file_name: "not-found.png".into(),
+                format: "png".into(),
+                width: Some(1),
+                height: Some(1),
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = copy_to_clipboard_impl("img-missing", &pool, |_| Ok(()))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "原文件已丢失，无法复制");
+
+        let image = repo::get_image(&pool, "img-missing").await.unwrap().unwrap();
+        assert_eq!(image.file_status, "missing");
+        assert!(image.last_check_time.is_some());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_image_meta_impl_marks_missing_file(pool: SqlitePool) {
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-meta-missing".into(),
+                file_path: "/definitely/not/found-meta.png".into(),
+                file_name: "not-found-meta.png".into(),
+                format: "png".into(),
+                width: Some(1),
+                height: Some(1),
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let meta = get_image_meta_impl("img-meta-missing".into(), &pool)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(meta.file_status, "missing");
+
+        let image = repo::get_image(&pool, "img-meta-missing").await.unwrap().unwrap();
+        assert_eq!(image.file_status, "missing");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_relocate_image_impl_updates_metadata_and_embedding(pool: SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("replacement.png");
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_pixel(3, 2, Rgba([22, 33, 44, 255]));
+        img.save(&src).unwrap();
+
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-relocate".into(),
+                file_path: "/missing/original.png".into(),
+                file_name: "original.png".into(),
+                format: "png".into(),
+                width: Some(1),
+                height: Some(1),
+                added_at: 1,
+                use_count: 2,
+                thumbnail_path: Some(dir.path().join("thumbs").join("img-relocate.jpg").to_string_lossy().to_string()),
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "missing".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_embedding(&pool, "img-relocate", &[0.1, 0.2, 0.3])
+            .await
+            .unwrap();
+
+        let engine = make_engine(pool.clone()).await;
+        let meta = relocate_image_impl(
+            "img-relocate",
+            src.to_str().unwrap(),
+            &pool,
+            &engine,
+            dir.path(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(meta.file_status, "normal");
+        assert_eq!(meta.file_name, "replacement.png");
+        assert_eq!(meta.width, 3);
+        assert_eq!(meta.height, 2);
+
+        let image = repo::get_image(&pool, "img-relocate").await.unwrap().unwrap();
+        assert_eq!(image.file_status, "normal");
+        assert_eq!(image.file_path, src.to_string_lossy());
+        assert!(Path::new(image.thumbnail_path.as_deref().unwrap()).exists());
+
+        let embedding = repo::get_embedding(&pool, "img-relocate").await.unwrap().unwrap();
+        assert_eq!(embedding.len(), 512);
+        assert_eq!(engine.vector_store_len(), 1);
+    }
+
     #[test]
     fn test_search_result_has_debug_info_field() {
         let result = SearchResult {
@@ -832,6 +1125,7 @@ mod tests {
             file_path: "/path/img.jpg".into(),
             thumbnail_path: "/path/thumb.jpg".into(),
             file_format: "jpg".into(),
+            file_status: "normal".into(),
             score: 0.9,
             tags: vec![],
             debug_info: Some(ScoreDebugInfo {
@@ -1009,6 +1303,7 @@ mod tests {
             file_name: "img.jpg".into(),
             thumbnail_path: "/thumb.jpg".into(),
             file_format: "gif".into(),
+            file_status: "missing".into(),
             width: 800,
             height: 600,
             file_size: 102400,
@@ -1034,6 +1329,7 @@ mod tests {
             file_path: "/img.gif".into(),
             thumbnail_path: "/thumb.gif".into(),
             file_format: "gif".into(),
+            file_status: "normal".into(),
             score: 0.9,
             tags: vec![],
             debug_info: None,

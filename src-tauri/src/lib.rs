@@ -52,6 +52,7 @@ pub fn run() {
             commands::clear_gallery,
             commands::get_images,
             commands::get_image_meta,
+            commands::relocate_image,
             commands::update_tags,
             commands::get_tag_suggestions,
             commands::copy_to_clipboard,
