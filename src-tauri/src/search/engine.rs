@@ -5,6 +5,8 @@ use crate::db::{repo, DbPool};
 use crate::kb::provider::KnowledgeBaseProvider;
 use crate::ml::clip::ClipEncoder;
 use crate::search::{keyword, vector_store::VectorStore};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn char_coverage(query: &str, ocr_text: &str) -> f32 {
     if query.is_empty() {
@@ -20,6 +22,13 @@ fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32) -> bool {
     let semantic_pass = raw_cosine >= crate::search::vector_store::VectorStore::semantic_threshold();
     let text_pass = has_text_signal && (s_ocr >= 0.2 || s_kw >= 0.5);
     semantic_pass || text_pass
+}
+
+fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 pub struct SearchEngine {
@@ -83,12 +92,24 @@ impl SearchEngine {
             let images = repo::get_top_used_images(&self.pool, limit as i64).await?;
             let mut results = Vec::with_capacity(images.len());
             for img in images {
+                let actual_status = if Path::new(&img.file_path).exists() {
+                    "normal"
+                } else {
+                    "missing"
+                };
+                if actual_status != img.file_status {
+                    repo::update_file_status(&self.pool, &img.id, actual_status, now_secs()).await?;
+                }
+                if actual_status == "missing" {
+                    continue;
+                }
                 let tags = repo::get_tags_for_image(&self.pool, &img.id).await?;
                 results.push(SearchResult {
                     id: img.id,
                     file_path: img.file_path,
                     thumbnail_path: img.thumbnail_path.unwrap_or_default(),
                     file_format: img.format,
+                    file_status: actual_status.to_string(),
                     score: 1.0,
                     tags,
                     debug_info: None,
@@ -274,6 +295,17 @@ impl SearchEngine {
         let mut results = Vec::with_capacity(ranked.len());
         for (rank, (id, score)) in ranked.into_iter().enumerate() {
             if let Some(img) = repo::get_image(&self.pool, &id).await? {
+                let actual_status = if Path::new(&img.file_path).exists() {
+                    "normal"
+                } else {
+                    "missing"
+                };
+                if actual_status != img.file_status {
+                    repo::update_file_status(&self.pool, &img.id, actual_status, now_secs()).await?;
+                }
+                if actual_status == "missing" {
+                    continue;
+                }
                 let tags = repo::get_tags_for_image(&self.pool, &id).await?;
                 tracing::info!(
                     "[RESULT] #{} {} score={:.4}",
@@ -286,6 +318,7 @@ impl SearchEngine {
                     file_path: img.file_path,
                     thumbnail_path: img.thumbnail_path.unwrap_or_default(),
                     file_format: img.format,
+                    file_status: actual_status.to_string(),
                     score,
                     tags,
                     debug_info: debug_map.remove(&id),
@@ -302,6 +335,7 @@ mod tests {
     use super::*;
     use crate::kb::local::LocalKBProvider;
     use sqlx::SqlitePool;
+    use std::path::PathBuf;
 
     #[test]
     fn test_char_coverage_full() {
@@ -331,12 +365,20 @@ mod tests {
         SearchEngine::new(pool, Box::new(kb)).await.unwrap()
     }
 
+    fn fixture_path(name: &str) -> String {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name)
+            .to_string_lossy()
+            .to_string()
+    }
+
     async fn insert_test_image(pool: &SqlitePool, id: &str, ocr: &str, embedding: Vec<f32>) {
         repo::insert_image(
             pool,
             &repo::ImageRecord {
                 id: id.to_string(),
-                file_path: format!("/tmp/{id}.jpg"),
+                file_path: fixture_path("sample.jpg"),
                 file_name: format!("{id}.jpg"),
                 format: "jpg".to_string(),
                 width: Some(100),
@@ -382,7 +424,7 @@ mod tests {
             &pool,
             &repo::ImageRecord {
                 id: "low".into(),
-                file_path: "/tmp/low.jpg".into(),
+                file_path: fixture_path("sample.jpg"),
                 file_name: "low.jpg".into(),
                 format: "jpg".into(),
                 width: Some(100),
@@ -403,7 +445,7 @@ mod tests {
             &pool,
             &repo::ImageRecord {
                 id: "high".into(),
-                file_path: "/tmp/high.jpg".into(),
+                file_path: fixture_path("sample.jpg"),
                 file_name: "high.jpg".into(),
                 format: "jpg".into(),
                 width: Some(100),
@@ -424,7 +466,7 @@ mod tests {
             &pool,
             &repo::ImageRecord {
                 id: "mid".into(),
-                file_path: "/tmp/mid.jpg".into(),
+                file_path: fixture_path("sample.jpg"),
                 file_name: "mid.jpg".into(),
                 format: "jpg".into(),
                 width: Some(100),
@@ -458,7 +500,7 @@ mod tests {
                 &pool,
                 &repo::ImageRecord {
                     id: format!("img{i}"),
-                    file_path: format!("/tmp/img{i}.jpg"),
+                    file_path: fixture_path("sample.jpg"),
                     file_name: format!("img{i}.jpg"),
                     format: "jpg".into(),
                     width: Some(100),
@@ -488,7 +530,7 @@ mod tests {
             &pool,
             &repo::ImageRecord {
                 id: "used".into(),
-                file_path: "/tmp/used.jpg".into(),
+                file_path: fixture_path("sample.jpg"),
                 file_name: "used.jpg".into(),
                 format: "jpg".into(),
                 width: Some(100),
@@ -527,6 +569,42 @@ mod tests {
         let engine = make_engine(pool).await;
         let results = engine.search("hello", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert!(!results.is_empty());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_filters_missing_files(pool: SqlitePool) {
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img1".into(),
+                file_path: "/definitely/not/found-search.jpg".into(),
+                file_name: "img1.jpg".into(),
+                format: "jpg".into(),
+                width: Some(100),
+                height: Some(100),
+                added_at: 1000,
+                use_count: 0,
+                thumbnail_path: Some("/tmp/img1_t.jpg".into()),
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_embedding(&pool, "img1", &unit_vec(1))
+            .await
+            .unwrap();
+        repo::insert_ocr(&pool, "img1", "hello world").await.unwrap();
+
+        let engine = make_engine(pool.clone()).await;
+        let results = engine.search("hello", 10, 0.3, 0.4, 0.3).await.unwrap();
+        assert!(results.is_empty());
+
+        let image = repo::get_image(&pool, "img1").await.unwrap().unwrap();
+        assert_eq!(image.file_status, "missing");
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -671,7 +749,7 @@ mod tests {
             &pool,
             &repo::ImageRecord {
                 id: "img1".into(),
-                file_path: "/tmp/img1.jpg".into(),
+                file_path: fixture_path("sample.jpg"),
                 file_name: "img1.jpg".into(),
                 format: "jpg".into(),
                 width: Some(100),

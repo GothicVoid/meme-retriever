@@ -19,6 +19,7 @@ const mockImage: SearchResult = {
   id: "uuid-1",
   filePath: "/library/images/uuid-1.jpg",
   thumbnailPath: "/library/thumbs/uuid-1.jpg",
+  fileFormat: "jpg",
   score: 0.9,
   tags: ["搞笑"],
   debugInfo: null,

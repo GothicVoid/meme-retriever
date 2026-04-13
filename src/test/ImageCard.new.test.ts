@@ -79,7 +79,17 @@ describe("ImageCard — 文件丢失占位图", () => {
     });
     await wrapper.find("img").trigger("error");
     expect(wrapper.find(".img-missing").exists()).toBe(true);
-    expect(wrapper.find(".img-missing").text()).toContain("文件丢失");
+    expect(wrapper.find(".img-missing").text()).toContain("加载失败");
+    expect(wrapper.find("img").exists()).toBe(false);
+  });
+
+  it("fileStatus 为 missing 时直接显示图片不存在占位图和状态标记", () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: { ...base, fileStatus: "missing" }, showDebugInfo: false },
+    });
+    expect(wrapper.find(".img-missing").text()).toContain("图片不存在");
+    expect(wrapper.find(".img-missing").attributes("title")).toBe("原文件已丢失");
+    expect(wrapper.find(".status-badge").text()).toContain("文件已丢失");
     expect(wrapper.find("img").exists()).toBe(false);
   });
 });

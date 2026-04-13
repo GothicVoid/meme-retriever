@@ -17,6 +17,7 @@ export interface SearchResult {
   filePath: string;
   thumbnailPath: string;
   fileFormat: string;
+  fileStatus?: string;
   score: number;
   tags: string[];
   debugInfo: ScoreDebugInfo | null;

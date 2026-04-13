@@ -25,13 +25,41 @@
       <div class="modal-body">
         <!-- 图片区 -->
         <div class="img-area">
-          <img
-            :src="imgSrc"
-            :alt="currentImage.id"
-            class="main-img"
+          <template v-if="!isMissing">
+            <img
+              :src="imgSrc"
+              :alt="currentImage.id"
+              class="main-img"
+            >
+          </template>
+          <div
+            v-else
+            class="missing-state"
           >
+            <p class="missing-title">
+              原文件已丢失
+            </p>
+            <p class="missing-desc">
+              你可以重新定位图片文件以恢复详情和复制能力。
+            </p>
+            <div class="missing-actions">
+              <button
+                class="relocate-btn"
+                :disabled="relocating"
+                @click="handleRelocate"
+              >
+                {{ relocating ? "重新定位中..." : "重新定位" }}
+              </button>
+              <button
+                class="delete-btn"
+                @click="emit('delete', currentImage.id)"
+              >
+                删除图片
+              </button>
+            </div>
+          </div>
           <button
-            v-if="isLargeGif"
+            v-if="isLargeGif && !isMissing"
             class="gif-toggle"
             @click="gifPlaying = !gifPlaying"
           >
@@ -46,12 +74,16 @@
             <span>{{ meta?.fileFormat?.toUpperCase() ?? currentImage.fileFormat?.toUpperCase() ?? '—' }}</span>
           </div>
           <div class="meta-row">
+            <span class="meta-label">状态</span>
+            <span>{{ isMissing ? "文件已丢失" : "正常" }}</span>
+          </div>
+          <div class="meta-row">
             <span class="meta-label">尺寸</span>
             <span>{{ meta ? `${meta.width} × ${meta.height}` : '—' }}</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">大小</span>
-            <span>{{ meta ? formatSize(meta.fileSize) : '—' }}</span>
+            <span>{{ meta ? formatSize(meta.fileSize ?? 0) : '—' }}</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">添加时间</span>
@@ -70,7 +102,7 @@
             />
             <button
               class="save-btn"
-              :disabled="saving"
+              :disabled="saving || isMissing"
               @click="saveTags"
             >
               {{ saving ? '保存中...' : '保存标签' }}
@@ -85,15 +117,17 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import TagEditor from "@/components/TagEditor.vue";
 import type { SearchResult } from "@/stores/search";
 import type { ImageMeta } from "@/stores/library";
+import { showToast } from "@/composables/useToast";
 
 const props = defineProps<{
   imageId: string;
   images: SearchResult[];
 }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; delete: [id: string] }>();
 
 const currentIndex = ref(props.images.findIndex((i) => i.id === props.imageId));
 const currentImage = computed(() => props.images[currentIndex.value]);
@@ -103,6 +137,8 @@ const hasNext = computed(() => currentIndex.value < props.images.length - 1);
 const meta = ref<ImageMeta | null>(null);
 const editTags = ref<string[]>([]);
 const saving = ref(false);
+const relocating = ref(false);
+const isMissing = computed(() => meta.value?.fileStatus === "missing");
 
 const isGif = computed(() => {
   const fmt = (meta.value?.fileFormat ?? currentImage.value?.fileFormat ?? "").toLowerCase();
@@ -114,10 +150,12 @@ const gifPlaying = ref(false);
 
 // 大文件 GIF 未播放时显示缩略图，否则显示原图
 const imgSrc = computed(() => {
+  const previewPath = meta.value?.thumbnailPath || currentImage.value.thumbnailPath || currentImage.value.filePath;
+  const originalPath = meta.value?.filePath || currentImage.value.filePath;
   if (isLargeGif.value && !gifPlaying.value) {
-    return convertFileSrc(currentImage.value.thumbnailPath || currentImage.value.filePath);
+    return convertFileSrc(previewPath);
   }
-  return convertFileSrc(currentImage.value.filePath);
+  return convertFileSrc(originalPath);
 });
 
 async function loadMeta(id: string) {
@@ -144,6 +182,7 @@ function navigate(dir: -1 | 1) {
 }
 
 async function saveTags() {
+  if (isMissing.value) return;
   saving.value = true;
   try {
     await invoke("update_tags", { imageId: currentImage.value.id, tags: editTags.value });
@@ -168,6 +207,28 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === "ArrowLeft") navigate(-1);
   else if (e.key === "ArrowRight") navigate(1);
   else if (e.key === "Escape") emit("close");
+}
+
+async function handleRelocate() {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "gif", "webp"] }],
+  });
+  if (!selected || Array.isArray(selected)) return;
+
+  relocating.value = true;
+  try {
+    meta.value = await invoke<ImageMeta>("relocate_image", {
+      id: currentImage.value.id,
+      newPath: selected,
+    });
+    gifPlaying.value = isGif.value && !isLargeGif.value;
+    showToast("已重新定位图片", "info", 1500);
+  } catch (error) {
+    showToast(String(error), "error", 2000);
+  } finally {
+    relocating.value = false;
+  }
 }
 
 onMounted(() => document.addEventListener("keydown", onKeydown));
@@ -248,6 +309,32 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   min-height: 300px;
 }
 
+.missing-state {
+  color: #fff;
+  text-align: center;
+  padding: 2rem;
+  max-width: 26rem;
+}
+
+.missing-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.missing-desc {
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0 0 1rem;
+  line-height: 1.5;
+}
+
+.missing-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 .main-img {
   max-width: 100%;
   max-height: 70vh;
@@ -266,6 +353,29 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   padding: 0.3rem 0.8rem;
   cursor: pointer;
   font-size: 0.85rem;
+}
+
+.relocate-btn {
+  border: 1px solid #fff;
+  background: transparent;
+  color: #fff;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.relocate-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.delete-btn {
+  border: 1px solid #c0392b;
+  background: #c0392b;
+  color: #fff;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 .meta-area {

@@ -428,6 +428,45 @@ pub async fn update_file_status(
     Ok(())
 }
 
+pub async fn update_image_file_info(
+    pool: &DbPool,
+    rec: &ImageRecord,
+) -> anyhow::Result<()> {
+    let rows = sqlx::query(
+        "UPDATE images
+         SET file_path=?1,
+             file_name=?2,
+             format=?3,
+             width=?4,
+             height=?5,
+             thumbnail_path=?6,
+             file_hash=?7,
+             file_size=?8,
+             file_modified_time=?9,
+             file_status=?10,
+             last_check_time=?11
+         WHERE id=?12",
+    )
+    .bind(&rec.file_path)
+    .bind(&rec.file_name)
+    .bind(&rec.format)
+    .bind(rec.width)
+    .bind(rec.height)
+    .bind(&rec.thumbnail_path)
+    .bind(&rec.file_hash)
+    .bind(rec.file_size)
+    .bind(rec.file_modified_time)
+    .bind(&rec.file_status)
+    .bind(rec.last_check_time)
+    .bind(&rec.id)
+    .execute(pool)
+    .await?;
+    if rows.rows_affected() == 0 {
+        anyhow::bail!("image not found: {}", rec.id);
+    }
+    Ok(())
+}
+
 pub async fn get_ocr_texts(
     pool: &DbPool,
     ids: &[&str],

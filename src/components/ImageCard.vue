@@ -14,22 +14,27 @@
       @click.stop
     >
     <img
-      v-if="!imgError"
+      v-if="placeholderState === 'normal'"
       :src="convertFileSrc(image.thumbnailPath || image.filePath)"
       :alt="image.id"
       loading="lazy"
-      @error="imgError = true"
+      @error="handleImageError"
     >
     <div
       v-else
       class="img-missing"
+      :title="placeholderTitle"
     >
-      <span>文件丢失</span>
+      <span>{{ placeholderText }}</span>
     </div>
     <span
       v-if="formatBadge"
       class="format-badge"
     >{{ formatBadge }}</span>
+    <span
+      v-if="image.fileStatus === 'missing'"
+      class="status-badge"
+    >文件已丢失</span>
     <div
       v-if="showDebugInfo && image.debugInfo"
       class="debug-overlay"
@@ -112,7 +117,9 @@ const { copyImage } = useClipboard();
 const menuVisible = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
-const imgError = ref(false);
+const imgError = ref<"normal" | "missing" | "load-failed" | "gif-damaged">(
+  props.image.fileStatus === "missing" ? "missing" : "normal",
+);
 
 const formatBadge = computed(() => {
   const fmt = props.image.fileFormat?.toLowerCase();
@@ -121,12 +128,28 @@ const formatBadge = computed(() => {
   return null;
 });
 
+const placeholderState = computed(() => imgError.value);
+const placeholderText = computed(() => {
+  if (placeholderState.value === "missing") return "图片不存在";
+  return "加载失败";
+});
+const placeholderTitle = computed(() => {
+  if (placeholderState.value === "missing") return "原文件已丢失";
+  if (placeholderState.value === "gif-damaged") return "GIF文件损坏";
+  return "";
+});
+
 async function handleClick() {
   try {
     await copyImage(props.image.id);
     showToast("已复制", "info", 1500);
-  } catch {
-    showToast("复制失败", "error", 1500);
+  } catch (error) {
+    const message = String(error);
+    showToast(
+      message.includes("原文件已丢失") ? "原文件已丢失，无法复制" : "复制失败",
+      "error",
+      1500,
+    );
   }
 }
 
@@ -137,7 +160,11 @@ function handleOpen() {
 
 async function handleReveal() {
   menuVisible.value = false;
-  await invoke("reveal_in_finder", { id: props.image.id }).catch(() => {});
+  await invoke("reveal_in_finder", { id: props.image.id }).catch((error) => {
+    if (String(error).includes("原文件已丢失")) {
+      showToast("原文件已丢失，无法定位", "error", 1500);
+    }
+  });
 }
 
 function showMenu(e: MouseEvent) {
@@ -153,6 +180,14 @@ function closeMenu() {
 function handleDelete() {
   menuVisible.value = false;
   emit("delete", props.image.id);
+}
+
+function handleImageError() {
+  if (props.image.fileStatus === "missing") {
+    imgError.value = "missing";
+    return;
+  }
+  imgError.value = props.image.fileFormat?.toLowerCase() === "gif" ? "gif-damaged" : "load-failed";
 }
 
 onMounted(() => document.addEventListener("click", closeMenu));
@@ -199,6 +234,18 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
   border-radius: 3px;
   pointer-events: none;
   letter-spacing: 0.03em;
+}
+
+.status-badge {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  background: rgba(192, 57, 43, 0.86);
+  color: #fff;
+  font-size: 0.64rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 .select-checkbox {

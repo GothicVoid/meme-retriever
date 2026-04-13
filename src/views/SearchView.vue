@@ -30,12 +30,15 @@
       :image-id="detailId"
       :images="store.results"
       @close="detailId = null"
+      @delete="handleDeleteFromDetail"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, computed, ref, watch } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import SearchBar from "@/components/SearchBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
@@ -77,6 +80,15 @@ const detailId = ref<string | null>(null);
 
 function openDetail(id: string) {
   detailId.value = id;
+}
+
+async function handleDeleteFromDetail(id: string) {
+  const ok = await confirm("确定要删除这张图片吗？此操作不可撤销。", { title: "删除图片" });
+  if (!ok) return;
+  await invoke("delete_image", { id });
+  store.results = store.results.filter((img) => img.id !== id);
+  libraryStore.images = libraryStore.images.filter((img) => img.id !== id);
+  detailId.value = null;
 }
 
 onMounted(() => {
