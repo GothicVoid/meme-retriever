@@ -52,7 +52,7 @@ async fn process_one(pool: &DbPool, src_path: &str, library_dir: &Path) -> Index
             elapsed_ms: start.elapsed().as_millis() as u64,
         },
         Err(e) => {
-            tracing::warn!("pipeline: failed {src_path}: {e}");
+            tracing::warn!("[INDEX] Failed to process {}: {e}", src_path);
             IndexProgress {
                 id: String::new(),
                 file_name,
@@ -133,12 +133,7 @@ async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow
     let ocr_text = ocr_result??;
     let embedding = clip_result??;
 
-    tracing::info!(
-        "pipeline: id={id} thumb={}ms ocr_len={} embed_dims={}",
-        thumb_ms,
-        ocr_text.len(),
-        embedding.len()
-    );
+    tracing::info!("[INDEX] {} processed: thumb={}ms ocr={}chars embed={}", id, thumb_ms, ocr_text.len(), embedding.len());
 
     // 4. 读取图片尺寸
     let (width, height) = image_dimensions(src);

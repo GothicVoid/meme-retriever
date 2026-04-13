@@ -145,7 +145,7 @@ pub async fn clear_all_images(pool: &DbPool) -> anyhow::Result<u64> {
 }
 
 pub async fn insert_tags(pool: &DbPool, image_id: &str, tags: &[TagRecord]) -> anyhow::Result<()> {
-    tracing::debug!("insert_tags: image_id={image_id}, count={}", tags.len());
+    tracing::info!("[TAGS] Inserting {} tags for {}", tags.len(), image_id);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
@@ -163,7 +163,7 @@ pub async fn insert_tags(pool: &DbPool, image_id: &str, tags: &[TagRecord]) -> a
 }
 
 pub async fn delete_tags(pool: &DbPool, image_id: &str) -> anyhow::Result<()> {
-    tracing::debug!("delete_tags: image_id={image_id}");
+    tracing::info!("[TAGS] Deleting all tags for {}", image_id);
     sqlx::query("DELETE FROM tags WHERE image_id=?1")
         .bind(image_id)
         .execute(pool)

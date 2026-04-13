@@ -99,12 +99,10 @@ impl SearchEngine {
 
         let start = std::time::Instant::now();
 
-        // 1. KB 查询扩展
+        // KB 查询扩展
         let expanded = self.kb.expand_query(query);
         if expanded != query {
-            tracing::debug!("[KB] {:?} → {:?} (expanded)", query, expanded);
-        } else {
-            tracing::debug!("[KB] {:?} → no match, using as-is", query);
+            tracing::info!("[KB] Query expanded: {:?} → {:?}", query, expanded);
         }
 
         // 2. 并行：CLIP 文本编码 + FTS 搜索
@@ -121,8 +119,7 @@ impl SearchEngine {
         // CLIP 向量摘要
         {
             let norm: f32 = text_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-            let preview: Vec<String> = text_vec.iter().take(4).map(|x| format!("{x:.3}")).collect();
-            tracing::debug!("[CLIP] vec[:4]=[{}] norm={:.4}", preview.join(", "), norm);
+            tracing::info!("[CLIP] Text vector norm={:.4}", norm);
         }
 
         // 3. 标签搜索（三级评分：精确=1.0 / 部分=0.8 / 关联=0.5）
@@ -136,11 +133,8 @@ impl SearchEngine {
                     m.entry(id).or_insert(0.5);
                 }
             }
-            if m.is_empty() {
-                tracing::debug!("[TAG] 0 hits");
-            } else {
-                let list: Vec<&str> = m.keys().map(|s| s.as_str()).collect();
-                tracing::debug!("[TAG] {} hits: [{}]", m.len(), list.join(", "));
+            if !m.is_empty() {
+                tracing::info!("[TAG] Found {} tag matches", m.len());
             }
             m
         };
@@ -151,17 +145,7 @@ impl SearchEngine {
             .read()
             .unwrap()
             .query(&text_vec, limit * 2);
-        {
-            let detail: Vec<String> = semantic_hits
-                .iter()
-                .map(|(id, cos)| format!("  {}  cos={:.4}", id, cos))
-                .collect();
-            tracing::debug!(
-                "[VEC] {} semantic hits:\n{}",
-                semantic_hits.len(),
-                detail.join("\n")
-            );
-        }
+        tracing::info!("[VEC] Found {} semantic matches", semantic_hits.len());
 
         // 5. 按 PRD §5.2.3 公式合并得分
         //    Final_Score = 0.75·Relevance + 0.25·Popularity
@@ -239,10 +223,9 @@ impl SearchEngine {
             let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
             let (score, dbg) =
                 merge_one(id, *raw_cosine, s_ocr, s_kw, &use_count_map, max_use_count);
-            tracing::debug!(
-                "[MERGE] {}  clip={:.4}(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  rel={:.4}  pop={:.4}  final={:.4}",
-                id, dbg.sem_score, dbg.kw_score, dbg.tag_score,
-                dbg.relevance, dbg.popularity, score
+            tracing::info!(
+                "[MERGE] {} relevance={:.4} popularity={:.4} final={:.4}",
+                id, dbg.relevance, dbg.popularity, score
             );
             if score > 0.0 {
                 score_map.insert(id.clone(), score);
@@ -261,10 +244,9 @@ impl SearchEngine {
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
                 let (score, dbg) = merge_one(id, -1.0, s_ocr, s_kw, &use_count_map, max_use_count);
-                tracing::debug!(
-                    "[MERGE] {}  clip=none(w=0.3)  ocr={:.4}(w=0.4)  kw={:.4}(w=0.3)  rel={:.4}  pop={:.4}  final={:.4}",
-                    id, dbg.kw_score, dbg.tag_score,
-                    dbg.relevance, dbg.popularity, score
+                tracing::info!(
+                    "[MERGE] {} (no semantic) relevance={:.4} popularity={:.4} final={:.4}",
+                    id, dbg.relevance, dbg.popularity, score
                 );
                 if score > 0.0 {
                     score_map.insert(id.clone(), score);
@@ -293,12 +275,11 @@ impl SearchEngine {
         for (rank, (id, score)) in ranked.into_iter().enumerate() {
             if let Some(img) = repo::get_image(&self.pool, &id).await? {
                 let tags = repo::get_tags_for_image(&self.pool, &id).await?;
-                tracing::debug!(
-                    "[RESULT] #{} {}  score={:.4}  {}",
+                tracing::info!(
+                    "[RESULT] #{} {} score={:.4}",
                     rank + 1,
                     id,
-                    score,
-                    img.file_path
+                    score
                 );
                 results.push(SearchResult {
                     id: id.clone(),

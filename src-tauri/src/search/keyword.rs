@@ -9,7 +9,7 @@ pub async fn fts_search(
     if query.is_empty() {
         return Ok(vec![]);
     }
-    tracing::debug!("fts_search: query={query}");
+    tracing::info!("[FTS] Searching for: {:?}", query);
 
     // 1. FTS5 trigram 子串匹配（查询 ≥3 字符时可用 trigram index，有 BM25 排名）
     let fts_rows = if query.chars().count() >= 3 {
@@ -65,7 +65,7 @@ pub async fn fts_search(
     }
 
     if id_score.is_empty() {
-        tracing::debug!("[FTS] 0 hits for {query:?}");
+        tracing::info!("[FTS] No matches for: {:?}", query);
         return Ok(vec![]);
     }
 
@@ -74,8 +74,8 @@ pub async fn fts_search(
     results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     results.truncate(limit as usize);
 
-    tracing::debug!(
-        "[FTS] {} hits for {:?} (fts={} like={})",
+    tracing::info!(
+        "[FTS] {} matches for: {:?} (trigram={}, fallback={})",
         results.len(),
         query,
         fts_rows.len(),
