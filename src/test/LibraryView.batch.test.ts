@@ -74,4 +74,40 @@ describe("LibraryView 批量删除", () => {
     );
     wrapper.unmount();
   });
+
+  it("显示清除失效图片按钮", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
+    mockInvoke.mockResolvedValueOnce(mockImages);
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.find("[data-action='clear-missing']").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("确认后调用 clear_missing_images 并刷新图库", async () => {
+    mockInvoke
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(mockImages)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce([mockImages[0]]);
+    mockConfirm.mockResolvedValueOnce(true);
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='clear-missing']").trigger("click");
+    await flushPromises();
+
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("清除所有失效图片"),
+      expect.objectContaining({ title: "清除失效图片" })
+    );
+    expect(mockInvoke).toHaveBeenCalledWith("clear_missing_images");
+    expect(mockInvoke).toHaveBeenLastCalledWith("get_images", { page: 0 });
+
+    wrapper.unmount();
+  });
 });

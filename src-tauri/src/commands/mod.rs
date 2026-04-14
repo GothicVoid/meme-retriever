@@ -464,6 +464,39 @@ pub async fn clear_gallery(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn clear_missing_images(
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<u64, String> {
+    clear_missing_images_impl(db.inner(), engine.inner()).await
+}
+
+async fn clear_missing_images_impl(
+    db: &DbPool,
+    engine: &EngineState,
+) -> Result<u64, String> {
+    let images = repo::get_all_images(db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut removed = 0u64;
+    for img in images {
+        let is_missing = img.file_status == "missing" || !Path::new(&img.file_path).exists();
+        if !is_missing {
+            continue;
+        }
+
+        repo::delete_image(db, &img.id)
+            .await
+            .map_err(|e| e.to_string())?;
+        engine.remove_vector(&img.id);
+        removed += 1;
+    }
+
+    Ok(removed)
+}
+
 /// 获取单张图片的完整元数据（用于详情页）
 #[tauri::command]
 pub async fn get_image_meta(
@@ -1123,6 +1156,69 @@ mod tests {
 
         let embedding = repo::get_embedding(&pool, "img-relocate").await.unwrap().unwrap();
         assert_eq!(embedding.len(), 512);
+        assert_eq!(engine.vector_store_len(), 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_missing_images_removes_only_missing_files(pool: SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let existing_path = dir.path().join("exists.png");
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_pixel(2, 2, Rgba([100, 120, 140, 255]));
+        img.save(&existing_path).unwrap();
+
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-normal".into(),
+                file_path: existing_path.to_string_lossy().to_string(),
+                file_name: "exists.png".into(),
+                format: "png".into(),
+                width: Some(2),
+                height: Some(2),
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-missing".into(),
+                file_path: "/definitely/not/found-clear-missing.png".into(),
+                file_name: "missing.png".into(),
+                format: "png".into(),
+                width: Some(2),
+                height: Some(2),
+                added_at: 2,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let engine = make_engine(pool.clone()).await;
+        engine.insert_vector("img-normal".into(), vec![0.1, 0.2, 0.3]);
+        engine.insert_vector("img-missing".into(), vec![0.4, 0.5, 0.6]);
+
+        let removed = clear_missing_images_impl(&pool, &engine).await.unwrap();
+
+        assert_eq!(removed, 1);
+        assert!(repo::get_image(&pool, "img-normal").await.unwrap().is_some());
+        assert!(repo::get_image(&pool, "img-missing").await.unwrap().is_none());
         assert_eq!(engine.vector_store_len(), 1);
     }
 

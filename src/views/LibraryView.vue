@@ -14,6 +14,13 @@
         >
           添加文件夹
         </button>
+        <button
+          :disabled="store.indexing || clearingMissing"
+          data-action="clear-missing"
+          @click="handleClearMissing"
+        >
+          {{ clearingMissing ? "正在清除失效图片" : "清除失效图片" }}
+        </button>
         <template v-if="store.selectedIds.size > 0">
           <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
           <button
@@ -119,6 +126,7 @@
 
 <script setup lang="ts">
 import { onMounted, computed, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
@@ -133,6 +141,7 @@ const isPaging = ref(false);
 const loadError = ref(false);
 const pagingError = ref(false);
 const showBackToTop = ref(false);
+const clearingMissing = ref(false);
 
 const progressPercent = computed(() =>
   store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
@@ -249,6 +258,24 @@ async function handleDeleteSelected() {
   if (!ok) return;
   await store.deleteSelected();
   store.total = Math.max(0, store.total - count);
+}
+
+async function handleClearMissing() {
+  const ok = await confirm("确认清除所有失效图片？此操作会删除原文件已丢失的图片记录，且不可撤销。", {
+    title: "清除失效图片",
+  });
+  if (!ok) return;
+
+  clearingMissing.value = true;
+  try {
+    const removed = await invoke<number>("clear_missing_images");
+    if (removed > 0) {
+      store.clearSelection();
+    }
+    await reloadGallery();
+  } finally {
+    clearingMissing.value = false;
+  }
 }
 </script>
 

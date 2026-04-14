@@ -23,6 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
+.codex
+
 # ONNX model files (large binaries, download separately)
 src-tauri/models/
 
