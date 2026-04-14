@@ -70,6 +70,23 @@ describe("LibraryView 图片列表展示", () => {
     wrapper.unmount();
   });
 
+  it("顶部显示按路径引用图片的使用提示", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_image_count") return 1;
+      if (cmd === "get_images" && args?.page === 0) return makeImages(1);
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.find(".usage-notice").exists()).toBe(true);
+    expect(wrapper.text()).toContain("图库按原文件路径引用");
+    expect(wrapper.text()).toContain("影响复制和定位");
+
+    wrapper.unmount();
+  });
+
   it("滚动到底部时自动加载下一页并显示已到底部提示", async () => {
     const page0 = makeImages(15);
     const page1 = makeImages(5).map((image, index) => ({ ...image, id: `img-next-${index}` }));

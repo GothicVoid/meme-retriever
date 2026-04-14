@@ -31,6 +31,9 @@
           </button>
         </template>
       </div>
+      <div class="usage-notice">
+        图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
+      </div>
       <div class="gallery-total">
         共 {{ store.total }} 张
       </div>
@@ -281,6 +284,14 @@ async function handleClearMissing() {
 
 <style scoped>
 .library-view { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.usage-notice {
+  flex: 1 1 360px;
+  min-width: 240px;
+  color: #8a6a2f;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: center;
+}
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .selection-count { font-size: 0.875rem; color: #666; }
