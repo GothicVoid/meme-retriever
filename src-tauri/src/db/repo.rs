@@ -308,6 +308,13 @@ pub async fn get_images_paged(
         .collect())
 }
 
+pub async fn get_image_count(pool: &DbPool) -> anyhow::Result<i64> {
+    let row = sqlx::query("SELECT COUNT(*) as cnt FROM images")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.get("cnt"))
+}
+
 pub async fn increment_use_count(pool: &DbPool, id: &str) -> anyhow::Result<()> {
     tracing::debug!("increment_use_count: id={id}");
     sqlx::query("UPDATE images SET use_count = use_count + 1 WHERE id=?1")
@@ -762,6 +769,16 @@ mod tests {
         assert_eq!(page0.len(), 3);
         let page1 = get_images_paged(&pool, 1, 3).await.unwrap();
         assert_eq!(page1.len(), 2);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_image_count(pool: SqlitePool) {
+        assert_eq!(get_image_count(&pool).await.unwrap(), 0);
+
+        insert_image(&pool, &make_image("img1")).await.unwrap();
+        insert_image(&pool, &make_image("img2")).await.unwrap();
+
+        assert_eq!(get_image_count(&pool).await.unwrap(), 2);
     }
 
     // ── Phase B：SHA-256 去重 ──────────────────────────────────────────────

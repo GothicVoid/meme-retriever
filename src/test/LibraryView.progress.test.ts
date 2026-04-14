@@ -34,6 +34,7 @@ describe("LibraryView 进度条", () => {
   });
 
   it("添加图片过程中显示进度条和计数", async () => {
+    mockInvoke.mockResolvedValueOnce(0); // get_image_count
     mockInvoke.mockResolvedValueOnce([]); // get_images
     // add_images 永不 resolve → indexing 持续为 true
     mockInvoke.mockReturnValueOnce(new Promise(() => {}));
@@ -53,6 +54,7 @@ describe("LibraryView 进度条", () => {
   });
 
   it("添加文件夹过程中显示进度条和计数", async () => {
+    mockInvoke.mockResolvedValueOnce(0); // get_image_count
     mockInvoke.mockResolvedValueOnce([]); // get_images
     mockInvoke.mockResolvedValueOnce(3);  // add_folder → total=3，之后 listen 永不触发
 
@@ -71,6 +73,7 @@ describe("LibraryView 进度条", () => {
   });
 
   it("未入库时不显示进度条", async () => {
+    mockInvoke.mockResolvedValueOnce(0);
     mockInvoke.mockResolvedValueOnce([]);
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();

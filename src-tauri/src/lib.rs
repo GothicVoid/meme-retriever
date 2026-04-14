@@ -51,6 +51,7 @@ pub fn run() {
             commands::delete_image,
             commands::clear_gallery,
             commands::get_images,
+            commands::get_image_count,
             commands::get_image_meta,
             commands::relocate_image,
             commands::update_tags,

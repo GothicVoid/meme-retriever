@@ -50,6 +50,7 @@ describe("useLibraryStore", () => {
     const store = useLibraryStore();
     expect(store.images).toEqual([]);
     expect(store.loading).toBe(false);
+    expect(store.total).toBe(0);
   });
 
   it("fetchImages 调用 invoke 并更新 images 列表", async () => {
@@ -61,6 +62,28 @@ describe("useLibraryStore", () => {
     expect(mockInvoke).toHaveBeenCalledWith("get_images", { page: 0 });
     expect(store.images).toEqual(mockImages);
     expect(store.loading).toBe(false);
+  });
+
+  it("fetchImages 在 append=true 时追加图片", async () => {
+    mockInvoke.mockResolvedValueOnce([mockImages[0]]);
+    mockInvoke.mockResolvedValueOnce([mockImages[1]]);
+
+    const store = useLibraryStore();
+    await store.fetchImages(0);
+    await store.fetchImages(1, true);
+
+    expect(store.images).toEqual(mockImages);
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_images", { page: 1 });
+  });
+
+  it("fetchImageCount 调用 get_image_count 并更新 total", async () => {
+    mockInvoke.mockResolvedValueOnce(23);
+
+    const store = useLibraryStore();
+    await store.fetchImageCount();
+
+    expect(mockInvoke).toHaveBeenCalledWith("get_image_count");
+    expect(store.total).toBe(23);
   });
 
   it("fetchImages 过程中 loading 为 true", async () => {

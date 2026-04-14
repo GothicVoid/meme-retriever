@@ -21,6 +21,7 @@ export interface ImageMeta {
 export const useLibraryStore = defineStore("library", () => {
   const images = ref<ImageMeta[]>([]);
   const loading = ref(false);
+  const total = ref(0);
   const indexing = ref(false);
   const indexTotal = ref(0);
   const indexCurrent = ref(0);
@@ -29,13 +30,18 @@ export const useLibraryStore = defineStore("library", () => {
   const clearCurrent = ref(0);
   const selectedIds = ref<Set<string>>(new Set());
 
-  async function fetchImages(page = 0) {
+  async function fetchImages(page = 0, append = false) {
     loading.value = true;
     try {
-      images.value = (await invoke<ImageMeta[]>("get_images", { page })) ?? [];
+      const nextImages = (await invoke<ImageMeta[]>("get_images", { page })) ?? [];
+      images.value = append ? [...images.value, ...nextImages] : nextImages;
     } finally {
       loading.value = false;
     }
+  }
+
+  async function fetchImageCount() {
+    total.value = await invoke<number>("get_image_count");
   }
 
   async function addImages(paths: string[]) {
@@ -142,6 +148,7 @@ export const useLibraryStore = defineStore("library", () => {
       clearing.value = false;
       if (completed) {
         images.value = [];
+        total.value = 0;
         clearSelection();
       }
     }
@@ -150,6 +157,7 @@ export const useLibraryStore = defineStore("library", () => {
   return {
     images,
     loading,
+    total,
     indexing,
     indexTotal,
     indexCurrent,
@@ -158,6 +166,7 @@ export const useLibraryStore = defineStore("library", () => {
     clearCurrent,
     selectedIds,
     fetchImages,
+    fetchImageCount,
     addImages,
     deleteImage,
     addFolder,

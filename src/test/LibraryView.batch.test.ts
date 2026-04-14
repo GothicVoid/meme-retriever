@@ -36,6 +36,7 @@ describe("LibraryView 批量删除", () => {
   });
 
   it("无选中时不显示批量删除按钮", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
@@ -44,6 +45,7 @@ describe("LibraryView 批量删除", () => {
   });
 
   it("有选中时显示批量删除按钮", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
@@ -55,6 +57,7 @@ describe("LibraryView 批量删除", () => {
   });
 
   it("批量删除确认框显示选中数量", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
     mockConfirm.mockResolvedValueOnce(false);
     const wrapper = mount(LibraryView, { attachTo: document.body });

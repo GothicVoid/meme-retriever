@@ -60,6 +60,7 @@ describe("LibraryView 删除功能", () => {
   });
 
   it("图库加载后显示图片列表", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
@@ -68,6 +69,7 @@ describe("LibraryView 删除功能", () => {
   });
 
   it("ImageCard 触发 delete 事件后弹出确认对话框", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
     mockConfirm.mockResolvedValueOnce(false); // 用户取消
 
@@ -89,6 +91,7 @@ describe("LibraryView 删除功能", () => {
   });
 
   it("确认删除后调用 delete_image 并从列表移除", async () => {
+    mockInvoke.mockResolvedValueOnce(2); // get_image_count
     mockInvoke.mockResolvedValueOnce(mockImages); // get_images
     mockConfirm.mockResolvedValueOnce(true); // 用户确认
     mockInvoke.mockResolvedValueOnce(undefined); // delete_image
@@ -108,6 +111,7 @@ describe("LibraryView 删除功能", () => {
   });
 
   it("取消确认不删除图片", async () => {
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
     mockConfirm.mockResolvedValueOnce(false); // 用户取消
 

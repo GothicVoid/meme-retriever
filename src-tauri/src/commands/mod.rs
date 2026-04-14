@@ -476,7 +476,7 @@ pub async fn get_image_meta(
 #[tauri::command]
 pub async fn get_images(page: i64, db: State<'_, DbPool>) -> Result<Vec<ImageMeta>, String> {
     tracing::info!("get_images: page={page}");
-    let images = repo::get_images_paged(db.inner(), page, 50)
+    let images = repo::get_images_paged(db.inner(), page, 15)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -489,6 +489,14 @@ pub async fn get_images(page: i64, db: State<'_, DbPool>) -> Result<Vec<ImageMet
         result.push(to_image_meta(img, tags, file_status));
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_image_count(db: State<'_, DbPool>) -> Result<i64, String> {
+    tracing::info!("get_image_count");
+    repo::get_image_count(db.inner())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
