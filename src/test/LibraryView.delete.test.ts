@@ -77,7 +77,8 @@ describe("LibraryView 删除功能", () => {
     // 触发第一张图片的 delete 事件
     const card = wrapper.findAllComponents({ name: "ImageCard" })[0];
     await card.trigger("contextmenu");
-    await card.find("[data-action='delete']").trigger("click");
+    const deleteButton = document.body.querySelector("[data-action='delete']") as HTMLButtonElement;
+    deleteButton.click();
     await flushPromises();
 
     expect(mockConfirm).toHaveBeenCalledWith(
@@ -97,7 +98,8 @@ describe("LibraryView 删除功能", () => {
 
     const card = wrapper.findAllComponents({ name: "ImageCard" })[0];
     await card.trigger("contextmenu");
-    await card.find("[data-action='delete']").trigger("click");
+    const deleteButton = document.body.querySelector("[data-action='delete']") as HTMLButtonElement;
+    deleteButton.click();
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("delete_image", { id: "uuid-1" });
@@ -114,7 +116,8 @@ describe("LibraryView 删除功能", () => {
 
     const card = wrapper.findAllComponents({ name: "ImageCard" })[0];
     await card.trigger("contextmenu");
-    await card.find("[data-action='delete']").trigger("click");
+    const deleteButton = document.body.querySelector("[data-action='delete']") as HTMLButtonElement;
+    deleteButton.click();
     await flushPromises();
 
     expect(mockInvoke).not.toHaveBeenCalledWith("delete_image", expect.anything());

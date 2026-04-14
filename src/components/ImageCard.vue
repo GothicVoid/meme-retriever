@@ -66,40 +66,45 @@
         标签命中 ×0.3
       </div>
     </div>
-    <ul
-      v-if="menuVisible"
-      class="context-menu"
-      :style="{ top: menuY + 'px', left: menuX + 'px' }"
-    >
-      <li>
-        <button @click.stop="handleOpen">
-          查看详情
-        </button>
-      </li>
-      <li>
-        <button @click.stop="handleReveal">
-          在文件夹中显示
-        </button>
-      </li>
-      <li>
-        <button
-          data-action="delete"
-          class="danger"
-          @click.stop="handleDelete"
-        >
-          删除
-        </button>
-      </li>
-    </ul>
+    <Teleport to="body">
+      <ul
+        v-if="menuVisible"
+        ref="menuRef"
+        class="context-menu"
+        :style="{ top: `${menuY}px`, left: `${menuX}px` }"
+      >
+        <li>
+          <button @click.stop="handleOpen">
+            查看详情
+          </button>
+        </li>
+        <li>
+          <button @click.stop="handleReveal">
+            在文件夹中显示
+          </button>
+        </li>
+        <li>
+          <button
+            data-action="delete"
+            class="danger"
+            @click.stop="handleDelete"
+          >
+            删除
+          </button>
+        </li>
+      </ul>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
 import type { SearchResult } from "@/stores/search";
+
+const CLOSE_CONTEXT_MENU_EVENT = "image-card:close-context-menu";
 
 const props = defineProps<{
   image: SearchResult;
@@ -117,6 +122,7 @@ const { copyImage } = useClipboard();
 const menuVisible = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
+const menuRef = ref<HTMLElement | null>(null);
 const imgError = ref<"normal" | "missing" | "load-failed" | "gif-damaged">(
   props.image.fileStatus === "missing" ? "missing" : "normal",
 );
@@ -168,9 +174,24 @@ async function handleReveal() {
 }
 
 function showMenu(e: MouseEvent) {
-  menuX.value = e.offsetX;
-  menuY.value = e.offsetY;
+  e.stopPropagation();
+  document.dispatchEvent(new CustomEvent(CLOSE_CONTEXT_MENU_EVENT));
+  menuX.value = e.clientX;
+  menuY.value = e.clientY;
   menuVisible.value = true;
+  void nextTick(() => {
+    const menu = menuRef.value;
+    if (!menu) return;
+
+    const padding = 8;
+    const { innerWidth, innerHeight } = window;
+    const { width, height } = menu.getBoundingClientRect();
+
+    menuX.value = Math.min(menuX.value, innerWidth - width - padding);
+    menuY.value = Math.min(menuY.value, innerHeight - height - padding);
+    menuX.value = Math.max(padding, menuX.value);
+    menuY.value = Math.max(padding, menuY.value);
+  });
 }
 
 function closeMenu() {
@@ -191,7 +212,9 @@ function handleImageError() {
 }
 
 onMounted(() => document.addEventListener("click", closeMenu));
+onMounted(() => document.addEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu));
 onUnmounted(() => document.removeEventListener("click", closeMenu));
+onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu));
 </script>
 
 <style scoped>
@@ -278,7 +301,7 @@ onUnmounted(() => document.removeEventListener("click", closeMenu));
 .debug-tag { color: #ffd700; font-weight: 600; }
 
 .context-menu {
-  position: absolute;
+  position: fixed;
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 6px;

@@ -113,27 +113,35 @@ describe("ImageCard — 右键菜单新增项", () => {
   it("右键菜单包含「查看详情」", async () => {
     const wrapper = mount(ImageCard, {
       props: { image: base, showDebugInfo: false },
+      attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
-    expect(wrapper.find(".context-menu").text()).toContain("查看详情");
+    expect(document.body.querySelector(".context-menu")?.textContent).toContain("查看详情");
+    wrapper.unmount();
   });
 
   it("右键菜单包含「在文件夹中显示」", async () => {
     const wrapper = mount(ImageCard, {
       props: { image: base, showDebugInfo: false },
+      attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
-    expect(wrapper.find(".context-menu").text()).toContain("在文件夹中显示");
+    expect(document.body.querySelector(".context-menu")?.textContent).toContain("在文件夹中显示");
+    wrapper.unmount();
   });
 
   it("点击「查看详情」触发 open 事件并关闭菜单", async () => {
     const wrapper = mount(ImageCard, {
       props: { image: base, showDebugInfo: false },
+      attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
-    const btn = wrapper.findAll(".context-menu button").find(b => b.text().includes("查看详情"))!;
-    await btn.trigger("click");
+    const btn = Array.from(document.body.querySelectorAll(".context-menu button"))
+      .find(button => button.textContent?.includes("查看详情")) as HTMLButtonElement;
+    btn.click();
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("open")).toBeTruthy();
-    expect(wrapper.find(".context-menu").exists()).toBe(false);
+    expect(document.body.querySelector(".context-menu")).toBeNull();
+    wrapper.unmount();
   });
 });

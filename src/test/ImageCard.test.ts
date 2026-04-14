@@ -39,25 +39,36 @@ describe("ImageCard", () => {
   });
 
   it("右键点击显示上下文菜单", async () => {
-    const wrapper = mount(ImageCard, { props: { image: mockImage, showDebugInfo: false } });
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
     await wrapper.trigger("contextmenu");
-    expect(wrapper.find(".context-menu").exists()).toBe(true);
+    expect(document.body.querySelector(".context-menu")).not.toBeNull();
+    wrapper.unmount();
   });
 
   it("上下文菜单包含删除选项", async () => {
-    const wrapper = mount(ImageCard, { props: { image: mockImage, showDebugInfo: false } });
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
     await wrapper.trigger("contextmenu");
-    const menu = wrapper.find(".context-menu");
-    expect(menu.text()).toContain("删除");
+    expect(document.body.querySelector(".context-menu")?.textContent).toContain("删除");
+    wrapper.unmount();
   });
 
   it("点击删除菜单项触发 delete 事件", async () => {
-    const wrapper = mount(ImageCard, { props: { image: mockImage, showDebugInfo: false } });
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
     await wrapper.trigger("contextmenu");
-    const deleteBtn = wrapper.find("[data-action='delete']");
-    await deleteBtn.trigger("click");
+    const deleteBtn = document.body.querySelector("[data-action='delete']") as HTMLElement;
+    deleteBtn.click();
     expect(wrapper.emitted("delete")).toBeTruthy();
     expect(wrapper.emitted("delete")![0]).toEqual(["uuid-1"]);
+    wrapper.unmount();
   });
 
   it("点击其他区域关闭上下文菜单", async () => {
@@ -66,13 +77,40 @@ describe("ImageCard", () => {
       attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
-    expect(wrapper.find(".context-menu").exists()).toBe(true);
+    expect(document.body.querySelector(".context-menu")).not.toBeNull();
 
     await document.dispatchEvent(new MouseEvent("click"));
     await wrapper.vm.$nextTick();
-    expect(wrapper.find(".context-menu").exists()).toBe(false);
+    expect(document.body.querySelector(".context-menu")).toBeNull();
 
     wrapper.unmount();
+  });
+
+  it("打开第二个右键菜单时关闭前一个菜单", async () => {
+    const first = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
+    const second = mount(ImageCard, {
+      props: {
+        image: { ...mockImage, id: "uuid-2", filePath: "/library/images/uuid-2.jpg", thumbnailPath: "/library/thumbs/uuid-2.jpg" },
+        showDebugInfo: false,
+      },
+      attachTo: document.body,
+    });
+
+    await first.trigger("contextmenu", { clientX: 20, clientY: 30 });
+    expect(document.body.querySelectorAll(".context-menu")).toHaveLength(1);
+
+    await second.trigger("contextmenu", { clientX: 60, clientY: 70 });
+    expect(document.body.querySelectorAll(".context-menu")).toHaveLength(1);
+
+    const menu = document.body.querySelector(".context-menu") as HTMLElement;
+    expect(menu.style.left).toBe("60px");
+    expect(menu.style.top).toBe("70px");
+
+    first.unmount();
+    second.unmount();
   });
 
   it("showDebugInfo=false 时不显示调试叠层", () => {
