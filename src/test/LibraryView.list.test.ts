@@ -6,9 +6,13 @@ import LibraryView from "@/views/LibraryView.vue";
 import type { ImageMeta } from "@/stores/library";
 
 function pageOf(args: unknown): number | undefined {
-  return typeof args === "object" && args !== null && "page" in args
-    ? (args as { page?: number }).page
-    : undefined;
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return undefined;
+  }
+  if (args instanceof ArrayBuffer || args instanceof Uint8Array) {
+    return undefined;
+  }
+  return "page" in args ? (args as { page?: number }).page : undefined;
 }
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -45,7 +49,10 @@ function makeImages(count: number): ImageMeta[] {
   }));
 }
 
-function setScrollMetrics(el: Element, metrics: { clientHeight: number; scrollHeight: number; scrollTop: number }) {
+function setScrollMetrics(
+  el: Element,
+  metrics: { clientHeight: number; scrollHeight: number; scrollTop: number }
+) {
   Object.defineProperty(el, "clientHeight", { value: metrics.clientHeight, configurable: true });
   Object.defineProperty(el, "scrollHeight", { value: metrics.scrollHeight, configurable: true });
   Object.defineProperty(el, "scrollTop", { value: metrics.scrollTop, writable: true, configurable: true });

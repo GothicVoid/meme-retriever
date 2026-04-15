@@ -11,6 +11,12 @@
     <RouterLink to="/settings">
       设置
     </RouterLink>
+    <RouterLink
+      v-if="isDev"
+      to="/kb-maintenance"
+    >
+      知识库维护
+    </RouterLink>
   </nav>
   <RouterView />
 
@@ -23,8 +29,18 @@
     <div class="resume-dialog">
       <p>检测到 {{ pendingCount }} 个未完成的入库任务，是否继续？</p>
       <div class="resume-actions">
-        <button class="btn-primary" @click="resumeTasks">继续入库</button>
-        <button class="btn-secondary" @click="dismissResume">忽略</button>
+        <button
+          class="btn-primary"
+          @click="resumeTasks"
+        >
+          继续入库
+        </button>
+        <button
+          class="btn-secondary"
+          @click="dismissResume"
+        >
+          忽略
+        </button>
       </div>
     </div>
   </div>
@@ -36,6 +52,7 @@ import { invoke } from "@tauri-apps/api/core";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
 
+const isDev = import.meta.env.DEV;
 const showResumeDialog = ref(false);
 const pendingCount = ref(0);
 

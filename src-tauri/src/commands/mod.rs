@@ -6,6 +6,9 @@ use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
 
 use crate::db::{repo, DbPool};
+use crate::kb::maintenance::{
+    KnowledgeBaseEntry, KnowledgeBaseFile, MatchCandidate, ValidationReport,
+};
 use crate::search::engine::SearchEngine;
 
 // SearchEngine 包在 Arc 里以便 Tauri State 共享
@@ -70,11 +73,148 @@ pub struct ClearGalleryProgress {
     pub total: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbEntryPayload {
+    pub canonical: String,
+    pub category: String,
+    pub aliases: Vec<String>,
+    pub match_terms: Vec<String>,
+    pub description: String,
+    pub match_mode: String,
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbFilePayload {
+    pub version: u32,
+    pub entries: Vec<KbEntryPayload>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbTermConflictPayload {
+    pub term: String,
+    pub canonicals: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbValidationReportPayload {
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    pub conflicts: Vec<KbTermConflictPayload>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbStatePayload {
+    pub path: String,
+    pub knowledge_base: KbFilePayload,
+    pub validation_report: KbValidationReportPayload,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbMatchCandidatePayload {
+    pub canonical: String,
+    pub category: String,
+    pub match_type: String,
+    pub matched_term: String,
+    pub score: i32,
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbTestMatchPayload {
+    pub matches: Vec<KbMatchCandidatePayload>,
+    pub recommended_canonical: Option<String>,
+}
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+fn resolve_kb_path() -> Result<PathBuf, String> {
+    Ok(crate::kb::maintenance::resolve_default_kb_path())
+}
+
+fn kb_file_from_payload(payload: KbFilePayload) -> KnowledgeBaseFile {
+    KnowledgeBaseFile {
+        version: payload.version,
+        entries: payload
+            .entries
+            .into_iter()
+            .map(|entry| KnowledgeBaseEntry {
+                canonical: entry.canonical,
+                category: entry.category,
+                aliases: entry.aliases,
+                match_terms: entry.match_terms,
+                description: entry.description,
+                match_mode: entry.match_mode,
+                priority: entry.priority,
+            })
+            .collect(),
+    }
+}
+
+fn kb_file_to_payload(kb: KnowledgeBaseFile) -> KbFilePayload {
+    KbFilePayload {
+        version: kb.version,
+        entries: kb
+            .entries
+            .into_iter()
+            .map(|entry| KbEntryPayload {
+                canonical: entry.canonical,
+                category: entry.category,
+                aliases: entry.aliases,
+                match_terms: entry.match_terms,
+                description: entry.description,
+                match_mode: entry.match_mode,
+                priority: entry.priority,
+            })
+            .collect(),
+    }
+}
+
+fn validation_report_to_payload(report: ValidationReport) -> KbValidationReportPayload {
+    KbValidationReportPayload {
+        errors: report.errors,
+        warnings: report.warnings,
+        conflicts: report
+            .conflicts
+            .into_iter()
+            .map(|conflict| KbTermConflictPayload {
+                term: conflict.term,
+                canonicals: conflict.canonicals,
+            })
+            .collect(),
+    }
+}
+
+fn match_candidate_to_payload(candidate: MatchCandidate) -> KbMatchCandidatePayload {
+    KbMatchCandidatePayload {
+        canonical: candidate.canonical,
+        category: candidate.category,
+        match_type: format!("{:?}", candidate.match_type),
+        matched_term: candidate.matched_term,
+        score: candidate.score,
+        priority: candidate.priority,
+    }
+}
+
+fn kb_state_from_file(path: PathBuf, kb: KnowledgeBaseFile) -> KbStatePayload {
+    let validation_report = kb.validate();
+    KbStatePayload {
+        path: path.to_string_lossy().to_string(),
+        knowledge_base: kb_file_to_payload(kb),
+        validation_report: validation_report_to_payload(validation_report),
+    }
 }
 
 async fn sync_file_status(
@@ -913,6 +1053,50 @@ pub async fn clear_task_queue(db: State<'_, DbPool>) -> Result<(), String> {
     crate::db::task_repo::clear_task_queue(db.inner())
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn kb_get_state() -> Result<KbStatePayload, String> {
+    let path = resolve_kb_path()?;
+    let kb = if path.exists() {
+        KnowledgeBaseFile::load(&path).map_err(|e| e.to_string())?
+    } else {
+        KnowledgeBaseFile::default()
+    };
+    Ok(kb_state_from_file(path, kb))
+}
+
+#[tauri::command]
+pub async fn kb_validate_entries(
+    knowledge_base: KbFilePayload,
+) -> Result<KbValidationReportPayload, String> {
+    let report = kb_file_from_payload(knowledge_base).validate();
+    Ok(validation_report_to_payload(report))
+}
+
+#[tauri::command]
+pub async fn kb_test_match_entries(
+    knowledge_base: KbFilePayload,
+    text: String,
+) -> Result<KbTestMatchPayload, String> {
+    let matches = kb_file_from_payload(knowledge_base).test_match(&text);
+    let recommended_canonical = matches.first().map(|item| item.canonical.clone());
+    Ok(KbTestMatchPayload {
+        matches: matches.into_iter().map(match_candidate_to_payload).collect(),
+        recommended_canonical,
+    })
+}
+
+#[tauri::command]
+pub async fn kb_save_entries(knowledge_base: KbFilePayload) -> Result<KbStatePayload, String> {
+    let path = resolve_kb_path()?;
+    let mut store =
+        crate::kb::maintenance::KnowledgeBaseStore::open(&path).map_err(|e| e.to_string())?;
+    store.replace_all(kb_file_from_payload(knowledge_base))
+        .map_err(|e| e.to_string())?;
+    store.save().map_err(|e| e.to_string())?;
+    let reloaded = KnowledgeBaseFile::load(&path).map_err(|e| e.to_string())?;
+    Ok(kb_state_from_file(path, reloaded))
 }
 
 // ── 测试 ────────────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ pub fn run() {
                 let pool = db::init(&app_data).await.expect("db init failed");
 
                 // 初始化知识库
-                let kb_path = app_data.join("../../knowledge_base.json"); // app_data/knowledge_base.json
+                let kb_path = kb::maintenance::resolve_default_kb_path();
                 let kb = kb::local::LocalKBProvider::load(&kb_path)
                     .unwrap_or_else(|_| kb::local::LocalKBProvider::empty());
 
@@ -65,6 +65,10 @@ pub fn run() {
             commands::get_pending_tasks,
             commands::resume_pending_tasks,
             commands::clear_task_queue,
+            commands::kb_get_state,
+            commands::kb_validate_entries,
+            commands::kb_test_match_entries,
+            commands::kb_save_entries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

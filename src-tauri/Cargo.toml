@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "本地表情包语义检索工具"
 authors = []
 edition = "2021"
+default-run = "meme-retriever"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

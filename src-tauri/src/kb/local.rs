@@ -45,9 +45,9 @@ impl LocalKBProvider {
     pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
         let content =
             std::fs::read_to_string(path).unwrap_or_else(|_| r#"{"entries":[]}"#.to_string());
-        let v: serde_json::Value = serde_json::from_str(&content)?;
+        let value: serde_json::Value = serde_json::from_str(&content)?;
         let entries: Vec<KbEntry> =
-            serde_json::from_value(v["entries"].clone()).unwrap_or_default();
+            serde_json::from_value(value["entries"].clone()).unwrap_or_default();
         Ok(Self::from_entries(entries))
     }
 
@@ -97,11 +97,7 @@ impl LocalKBProvider {
 
             let canonical = normalize(&entry.canonical);
             if term_matches(&normalized_ocr, &canonical, &entry.match_mode) {
-                strongest = strongest.max(if normalized_ocr == canonical {
-                    1.0
-                } else {
-                    0.8
-                });
+                strongest = strongest.max(if normalized_ocr == canonical { 1.0 } else { 0.8 });
                 matched_sources.insert("ocr");
             }
 
@@ -216,12 +212,14 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                     .iter()
                     .any(|alias| normalize(alias) == normalized)
             {
-                return format!(
-                    "{} {} {}",
-                    entry.canonical,
-                    entry.description,
+                let extra_terms = if entry.tags.is_empty() {
+                    entry.match_terms.join(" ")
+                } else {
                     entry.tags.join(" ")
-                );
+                };
+                return format!("{} {} {}", entry.canonical, entry.description, extra_terms)
+                    .trim()
+                    .to_string();
             }
         }
         query.to_string()
@@ -318,6 +316,7 @@ fn term_matches(haystack: &str, needle: &str, mode: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     fn provider() -> LocalKBProvider {
         LocalKBProvider::from_entries(vec![
@@ -360,5 +359,61 @@ mod tests {
     fn test_auto_tag_ignores_file_name_only() {
         let tags = provider().auto_tag("", "绷不住了_sample.jpg");
         assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn expand_query_supports_legacy_schema() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("knowledge_base.json");
+        std::fs::write(
+            &path,
+            r#"{
+              "version": 1,
+              "entries": [
+                {
+                  "canonical": "蚌埠住了",
+                  "aliases": ["绷不住了"],
+                  "description": "表示忍不住笑了",
+                  "tags": ["搞笑", "表情包"],
+                  "type": "meme"
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let provider = LocalKBProvider::load(&path).unwrap();
+        let expanded = provider.expand_query("绷不住了");
+
+        assert_eq!(expanded, "蚌埠住了 表示忍不住笑了 搞笑 表情包");
+    }
+
+    #[test]
+    fn expand_query_supports_maintenance_schema() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("knowledge_base.json");
+        std::fs::write(
+            &path,
+            r#"{
+              "version": 1,
+              "entries": [
+                {
+                  "canonical": "甄嬛传",
+                  "category": "source",
+                  "aliases": ["甄嬛"],
+                  "match_terms": ["皇上", "娘娘"],
+                  "description": "宫斗剧经典来源",
+                  "match_mode": "contains",
+                  "priority": 20
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let provider = LocalKBProvider::load(&path).unwrap();
+        let expanded = provider.expand_query("甄嬛");
+
+        assert_eq!(expanded, "甄嬛传 宫斗剧经典来源 皇上 娘娘");
     }
 }
