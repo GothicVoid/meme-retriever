@@ -188,7 +188,7 @@ async fn do_index_inner(
     if !ocr_text.is_empty() {
         repo::insert_ocr(pool, &id, &ocr_text).await?;
     }
-    let auto_tags = engine.build_auto_tags(&ocr_text, &rec.file_name);
+    let auto_tags = engine.build_auto_tags(&ocr_text, &rec.file_name, Some(&rec.file_path));
     if !auto_tags.is_empty() {
         repo::insert_tags(pool, &id, &auto_tags).await?;
     }
@@ -276,7 +276,7 @@ mod tests {
     async fn test_pipeline_single_image(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
         let engine = make_engine(pool.clone()).await;
-        let mut rx = index_images(
+        let rx = index_images(
             pool.clone(),
             vec![fixture("sample.jpg")],
             lib.path().to_path_buf(),

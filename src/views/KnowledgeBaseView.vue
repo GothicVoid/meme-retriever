@@ -186,6 +186,28 @@
               placeholder="给维护人看的说明"
             />
           </label>
+
+          <label class="field wide">
+            <span>示例图 <em>填写相对知识库文件的本地路径，支持逗号或换行分隔</em></span>
+            <textarea
+              v-model="form.exampleImages"
+              data-field="example-images"
+              rows="4"
+              placeholder="如：examples/zhenhuan/sample-1.jpg"
+            />
+            <div class="example-actions">
+              <button
+                class="ghost-btn small"
+                data-action="import-example-image"
+                type="button"
+                :disabled="importingExample || !selectedEntry"
+                @click="importExampleImage"
+              >
+                {{ importingExample ? "导入中..." : "导入示例图到应用目录" }}
+              </button>
+              <span class="mini-note">选择本地图片后会复制到知识库目录下的 `kb_examples/` 并自动填入相对路径。</span>
+            </div>
+          </label>
         </div>
 
         <div
@@ -286,6 +308,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 
 type EntryForm = {
   canonical: string;
@@ -295,6 +318,7 @@ type EntryForm = {
   description: string;
   matchMode: "exact" | "contains" | "exact_or_contains";
   priority: number;
+  exampleImages: string;
 };
 
 type KbEntry = {
@@ -306,6 +330,7 @@ type KbEntry = {
   description: string;
   matchMode: "exact" | "contains" | "exact_or_contains";
   priority: number;
+  exampleImages: string[];
 };
 
 type ValidationReport = {
@@ -338,6 +363,7 @@ type KbStateResponse = {
 const kbPath = ref("");
 const loading = ref(false);
 const saving = ref(false);
+const importingExample = ref(false);
 const dirty = ref(false);
 const tested = ref(false);
 const statusMessage = ref("");
@@ -358,6 +384,7 @@ const form = reactive<EntryForm>({
   description: "",
   matchMode: "contains",
   priority: 1,
+  exampleImages: "",
 });
 
 const selectedEntry = computed(() => entries.value.find((entry) => entry.id === selectedEntryId.value) || null);
@@ -432,6 +459,7 @@ function createEntry() {
       description: "",
       matchMode: "contains",
       priority: 1,
+      exampleImages: [],
     },
     entries.value.length
   );
@@ -467,6 +495,7 @@ function syncEntryToForm() {
     form.description = "";
     form.matchMode = "contains";
     form.priority = 1;
+    form.exampleImages = "";
     syncingForm.value = false;
     return;
   }
@@ -479,6 +508,7 @@ function syncEntryToForm() {
   form.description = selectedEntry.value.description;
   form.matchMode = selectedEntry.value.matchMode;
   form.priority = selectedEntry.value.priority;
+  form.exampleImages = selectedEntry.value.exampleImages.join(", ");
   syncingForm.value = false;
 }
 
@@ -491,6 +521,7 @@ function syncFormToEntry() {
   selectedEntry.value.description = form.description.trim();
   selectedEntry.value.matchMode = form.matchMode;
   selectedEntry.value.priority = Number(form.priority) || 0;
+  selectedEntry.value.exampleImages = parseList(form.exampleImages);
   dirty.value = true;
 }
 
@@ -511,6 +542,34 @@ function buildPayload() {
       return nextEntry;
     }),
   };
+}
+
+async function importExampleImage() {
+  if (!selectedEntry.value) return;
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "gif", "webp"] }],
+  });
+  if (!selected || Array.isArray(selected)) return;
+
+  importingExample.value = true;
+  statusMessage.value = "";
+  try {
+    const relativePath = await invoke<string>("kb_import_example_image", {
+      sourcePath: selected,
+      canonical: selectedEntry.value.canonical || "entry",
+    });
+    const nextImages = parseList(form.exampleImages);
+    if (!nextImages.includes(relativePath)) {
+      nextImages.push(relativePath);
+      form.exampleImages = nextImages.join(", ");
+    }
+    statusMessage.value = `已导入示例图：${relativePath}`;
+  } catch (error) {
+    statusMessage.value = String(error);
+  } finally {
+    importingExample.value = false;
+  }
 }
 
 async function validateKnowledgeBase() {
@@ -646,6 +705,14 @@ async function testMatch() {
   background: rgba(255, 247, 228, 0.96);
   border: 1px solid rgba(212, 162, 78, 0.25);
   color: #835d25;
+}
+
+.example-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
 }
 
 .workspace {

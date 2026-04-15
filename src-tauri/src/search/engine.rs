@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::commands::{ScoreDebugInfo, SearchResult, TagDto};
 use crate::db::{repo, DbPool};
+use crate::kb::example_index::ExampleImageIndex;
 use crate::kb::provider::KnowledgeBaseProvider;
 use crate::ml::clip::ClipEncoder;
 use crate::search::{keyword, vector_store::VectorStore};
@@ -35,7 +36,8 @@ fn now_secs() -> i64 {
 pub struct SearchEngine {
     pool: DbPool,
     vector_store: Arc<RwLock<VectorStore>>,
-    kb: Box<dyn KnowledgeBaseProvider>,
+    kb: Arc<RwLock<Box<dyn KnowledgeBaseProvider>>>,
+    example_image_index: Arc<RwLock<ExampleImageIndex>>,
 }
 
 impl SearchEngine {
@@ -51,7 +53,8 @@ impl SearchEngine {
         Ok(Self {
             pool,
             vector_store: Arc::new(RwLock::new(store)),
-            kb,
+            kb: Arc::new(RwLock::new(kb)),
+            example_image_index: Arc::new(RwLock::new(ExampleImageIndex::empty())),
         })
     }
 
@@ -80,8 +83,37 @@ impl SearchEngine {
         self.vector_store.write().unwrap().clear();
     }
 
-    pub fn build_auto_tags(&self, ocr_text: &str, file_name: &str) -> Vec<repo::TagRecord> {
-        self.kb.auto_tag(ocr_text, file_name)
+    pub fn replace_knowledge_base(
+        &self,
+        kb: Box<dyn KnowledgeBaseProvider>,
+        example_image_index: ExampleImageIndex,
+    ) {
+        *self.kb.write().unwrap() = kb;
+        *self.example_image_index.write().unwrap() = example_image_index;
+    }
+
+    pub fn set_example_image_index(&self, example_image_index: ExampleImageIndex) {
+        *self.example_image_index.write().unwrap() = example_image_index;
+    }
+
+    pub fn build_auto_tags(
+        &self,
+        ocr_text: &str,
+        file_name: &str,
+        image_path: Option<&str>,
+    ) -> Vec<repo::TagRecord> {
+        let mut merged = {
+            let kb = self.kb.read().unwrap();
+            kb.auto_tag(ocr_text, file_name)
+        };
+
+        if let Some(path) = image_path {
+            let visual_tags = self.example_image_index.read().unwrap().match_image(path);
+            merge_auto_tag_candidates(&mut merged, visual_tags);
+        }
+
+        clip_auto_tags(&mut merged);
+        merged
     }
 
     pub async fn search(
@@ -126,7 +158,12 @@ impl SearchEngine {
 
         let start = std::time::Instant::now();
 
-        let normalized_query = self.kb.normalize_query(query);
+        let (normalized_query, related_terms) = {
+            let kb = self.kb.read().unwrap();
+            let normalized_query = kb.normalize_query(query);
+            let related_terms = kb.related_terms(&normalized_query.tag_query);
+            (normalized_query, related_terms)
+        };
         if normalized_query.tag_query != query {
             tracing::info!(
                 "[KB] Tag query normalized: {:?} → {:?}",
@@ -163,13 +200,13 @@ impl SearchEngine {
         let tag_score_map: std::collections::HashMap<String, f32> = {
             let mut m = std::collections::HashMap::new();
             for (id, score) in keyword::tag_search(
-                &self.pool,
-                query,
-                &normalized_query.tag_query,
-                &self.kb.related_terms(&normalized_query.tag_query),
-                limit_i64,
-            )
-            .await?
+                    &self.pool,
+                    query,
+                    &normalized_query.tag_query,
+                    &related_terms,
+                    limit_i64,
+                )
+                .await?
             {
                 m.insert(id, score);
             }
@@ -377,6 +414,48 @@ impl SearchEngine {
 
         Ok(results)
     }
+}
+
+fn merge_auto_tag_candidates(existing: &mut Vec<repo::TagRecord>, incoming: Vec<repo::TagRecord>) {
+    for tag in incoming {
+        if let Some(current) = existing.iter_mut().find(|item| item.tag_text == tag.tag_text) {
+            current.confidence = current.confidence.max(tag.confidence);
+            if matches!(current.source_strategy, repo::TagSourceStrategy::ExampleImage) {
+                current.source_strategy = tag.source_strategy;
+            }
+            continue;
+        }
+        existing.push(tag);
+    }
+}
+
+fn clip_auto_tags(tags: &mut Vec<repo::TagRecord>) {
+    tags.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.tag_text.len().cmp(&a.tag_text.len()))
+    });
+
+    let mut kept = Vec::new();
+    let mut per_category: std::collections::HashMap<&'static str, usize> =
+        std::collections::HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for tag in tags.drain(..) {
+        let key = tag.tag_text.to_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        let category_key = tag.category.as_str();
+        if *per_category.get(category_key).unwrap_or(&0) >= 2 || kept.len() >= 5 {
+            continue;
+        }
+        *per_category.entry(category_key).or_insert(0) += 1;
+        kept.push(tag);
+    }
+
+    *tags = kept;
 }
 
 #[cfg(test)]

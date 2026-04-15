@@ -31,13 +31,18 @@ pub fn run() {
 
                 // 初始化知识库
                 let kb_path = kb::maintenance::resolve_default_kb_path();
+                let kb_file = kb::maintenance::KnowledgeBaseFile::load(&kb_path)
+                    .unwrap_or_default();
                 let kb = kb::local::LocalKBProvider::load(&kb_path)
                     .unwrap_or_else(|_| kb::local::LocalKBProvider::empty());
+                let example_image_index =
+                    kb::example_index::ExampleImageIndex::from_knowledge_base(&kb_file, &kb_path);
 
                 // 初始化搜索引擎（预加载向量索引）
                 let engine = search::engine::SearchEngine::new(pool.clone(), Box::new(kb))
                     .await
                     .expect("search engine init failed");
+                engine.set_example_image_index(example_image_index);
 
                 app.manage(pool);
                 app.manage(Arc::new(engine) as commands::EngineState);
@@ -69,6 +74,7 @@ pub fn run() {
             commands::kb_validate_entries,
             commands::kb_test_match_entries,
             commands::kb_save_entries,
+            commands::kb_import_example_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -16,7 +16,8 @@
       ],
       "description": "日语空耳，原文表示逃跑",
       "match_mode": "exact_or_contains",
-      "priority": 100
+      "priority": 100,
+      "example_images": []
     },
     {
       "canonical": "蚌埠住了",
@@ -32,7 +33,26 @@
       ],
       "description": "表示忍不住笑了，常用于搞笑场景",
       "match_mode": "contains",
-      "priority": 100
+      "priority": 100,
+      "example_images": []
+    },
+    {
+      "canonical": "黄金船",
+      "category": "person",
+      "aliases": [
+        "gold ship",
+        "阿船"
+      ],
+      "match_terms": [
+        "gold ship",
+        "阿船"
+      ],
+      "description": "《赛马娘》《优骏少女》里的角色",
+      "match_mode": "exact_or_contains",
+      "priority": 1,
+      "example_images": [
+        "kb_examples/entry/d16d373b-db94-48e3-ab14-b8da55847eb8.jpg"
+      ]
     }
   ]
 }

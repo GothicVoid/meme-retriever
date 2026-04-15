@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { invoke } from "@tauri-apps/api/core";
 import type { InvokeArgs } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import KnowledgeBaseView from "@/views/KnowledgeBaseView.vue";
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+}));
+
 const mockInvoke = vi.mocked(invoke);
+const mockOpen = vi.mocked(open);
 
 const mockState = {
   path: "app_data/knowledge_base.json",
@@ -19,6 +25,7 @@ const mockState = {
         description: "表示忍不住笑了",
         matchMode: "contains",
         priority: 100,
+        exampleImages: [],
       },
       {
         canonical: "甄嬛传",
@@ -28,6 +35,7 @@ const mockState = {
         description: "电视剧出处标签",
         matchMode: "contains",
         priority: 90,
+        exampleImages: ["examples/zhenhuan/sample-1.jpg"],
       },
     ],
   },
@@ -41,6 +49,7 @@ const mockState = {
 describe("KnowledgeBaseView", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
+    mockOpen.mockReset();
   });
 
   it("挂载时读取知识库并展示条目列表", async () => {
@@ -68,6 +77,7 @@ describe("KnowledgeBaseView", () => {
             entries: expect.arrayContaining([
               expect.objectContaining({
                 canonical: "蚌埠住了 Plus",
+                exampleImages: [],
               }),
             ]),
           },
@@ -110,6 +120,7 @@ describe("KnowledgeBaseView", () => {
               expect.objectContaining({
                 canonical: "蚌埠住了",
                 aliases: ["绷不住了", "蚌住了"],
+                exampleImages: [],
               }),
             ]),
           },
@@ -181,5 +192,74 @@ describe("KnowledgeBaseView", () => {
 
     expect(wrapper.text()).toContain("最终推荐标签：甄嬛传");
     expect(wrapper.text()).toContain("命中词：皇上");
+  });
+
+  it("支持编辑示例图字段并随保存一起提交", async () => {
+    mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
+      if (cmd === "kb_get_state") return Promise.resolve(mockState);
+      if (cmd === "kb_save_entries") {
+        expect(payload).toMatchObject({
+          knowledgeBase: {
+            entries: expect.arrayContaining([
+              expect.objectContaining({
+                canonical: "甄嬛传",
+                exampleImages: ["examples/zhenhuan/sample-1.jpg", "examples/zhenhuan/sample-2.jpg"],
+              }),
+            ]),
+          },
+        });
+        return Promise.resolve(mockState);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const wrapper = mount(KnowledgeBaseView);
+    await flushPromises();
+
+    await wrapper.get("[data-entry='甄嬛传']").trigger("click");
+    await wrapper
+      .get("[data-field='example-images']")
+      .setValue("examples/zhenhuan/sample-1.jpg, examples/zhenhuan/sample-2.jpg");
+    await wrapper.get("[data-action='save-kb']").trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "kb_save_entries",
+      expect.objectContaining({
+        knowledgeBase: expect.objectContaining({
+          entries: expect.any(Array),
+        }),
+      })
+    );
+  });
+
+  it("支持选择图片并导入到应用目录", async () => {
+    mockOpen.mockResolvedValueOnce("/tmp/source.jpg");
+    mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
+      if (cmd === "kb_get_state") return Promise.resolve(mockState);
+      if (cmd === "kb_import_example_image") {
+        expect(payload).toEqual({
+          sourcePath: "/tmp/source.jpg",
+          canonical: "甄嬛传",
+        });
+        return Promise.resolve("kb_examples/entry/sample.jpg");
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const wrapper = mount(KnowledgeBaseView);
+    await flushPromises();
+
+    await wrapper.get("[data-entry='甄嬛传']").trigger("click");
+    await wrapper.get("[data-action='import-example-image']").trigger("click");
+    await flushPromises();
+
+    expect(mockOpen).toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledWith("kb_import_example_image", {
+      sourcePath: "/tmp/source.jpg",
+      canonical: "甄嬛传",
+    });
+    expect((wrapper.get("[data-field='example-images']").element as HTMLTextAreaElement).value)
+      .toContain("kb_examples/entry/sample.jpg");
   });
 });

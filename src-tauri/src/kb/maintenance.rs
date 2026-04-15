@@ -30,6 +30,8 @@ pub struct KnowledgeBaseEntry {
     pub match_mode: String,
     #[serde(default)]
     pub priority: i32,
+    #[serde(default)]
+    pub example_images: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +152,7 @@ impl KnowledgeBaseFile {
 
             validate_term_collection("aliases", &entry.aliases, canonical, &mut errors);
             validate_term_collection("match_terms", &entry.match_terms, canonical, &mut errors);
+            validate_example_images(entry, canonical, &mut errors, &mut warnings);
 
             for term in entry.all_terms() {
                 let normalized = normalize_text(&term);
@@ -262,6 +265,7 @@ impl KnowledgeBaseEntry {
         self.match_mode = self.match_mode.trim().to_string();
         self.aliases = dedup_terms(&self.aliases);
         self.match_terms = dedup_terms(&self.match_terms);
+        self.example_images = dedup_paths(&self.example_images);
     }
 
     pub fn all_terms(&self) -> Vec<String> {
@@ -642,8 +646,56 @@ fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
     if entry.match_mode.is_empty() {
         entry.match_mode = default_match_mode();
     }
+    if entry.example_images.is_empty() {
+        entry.example_images = value["example_images"]
+            .as_array()
+            .map(|array| {
+                array
+                    .iter()
+                    .filter_map(|item| item.as_str().map(|value| value.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+    }
     entry.normalize();
     Ok(entry)
+}
+
+fn validate_example_images(
+    entry: &KnowledgeBaseEntry,
+    canonical: &str,
+    errors: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) {
+    let mut seen = BTreeSet::new();
+    for value in &entry.example_images {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            errors.push(format!("example_images 存在空值：{}", canonical));
+            continue;
+        }
+        let key = trimmed.to_lowercase();
+        if !seen.insert(key) {
+            errors.push(format!("检测到重复 example_images：{}", canonical));
+            break;
+        }
+        let path = Path::new(trimmed);
+        let extension_ok = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif"))
+            .unwrap_or(false);
+        if !extension_ok {
+            errors.push(format!(
+                "示例图格式不受支持：{} -> {}",
+                canonical, trimmed
+            ));
+        }
+    }
+
+    if matches!(entry.category.as_str(), "person" | "source") && entry.example_images.is_empty() {
+        warnings.push(format!("{} 分类建议补充示例图：{}", entry.category, canonical));
+    }
 }
 
 fn validate_term_collection(
@@ -676,6 +728,22 @@ fn dedup_terms(values: &[String]) -> Vec<String> {
         }
         let normalized = normalize_text(trimmed);
         if seen.insert(normalized) {
+            result.push(trimmed.to_string());
+        }
+    }
+    result
+}
+
+fn dedup_paths(values: &[String]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut result = Vec::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = trimmed.to_lowercase();
+        if seen.insert(key) {
             result.push(trimmed.to_string());
         }
     }
@@ -815,6 +883,7 @@ fn parse_entry_from_args(args: &[String]) -> anyhow::Result<KnowledgeBaseEntry> 
             .map(|value| value.parse::<i32>().context("priority 必须为整数"))
             .transpose()?
             .unwrap_or_default(),
+        example_images: vec![],
     })
 }
 
@@ -852,6 +921,7 @@ mod tests {
             description: "测试条目".to_string(),
             match_mode: "contains".to_string(),
             priority: 10,
+            example_images: vec![],
         }
     }
 
@@ -868,6 +938,7 @@ mod tests {
                     description: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 10,
+                    example_images: vec![],
                 },
                 KnowledgeBaseEntry {
                     canonical: "甄嬛传".to_string(),
@@ -877,6 +948,7 @@ mod tests {
                     description: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 5,
+                    example_images: vec![],
                 },
                 KnowledgeBaseEntry {
                     canonical: "蚌埠住了".to_string(),
@@ -886,6 +958,7 @@ mod tests {
                     description: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 1,
+                    example_images: vec![],
                 },
             ],
         };
@@ -913,6 +986,7 @@ mod tests {
                     description: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 20,
+                    example_images: vec![],
                 },
             ],
         };
@@ -939,6 +1013,7 @@ mod tests {
                     description: String::new(),
                     match_mode: "exact_or_contains".to_string(),
                     priority: 10,
+                    example_images: vec![],
                 },
                 KnowledgeBaseEntry {
                     canonical: "臣妾".to_string(),
@@ -948,6 +1023,7 @@ mod tests {
                     description: String::new(),
                     match_mode: "exact".to_string(),
                     priority: 10,
+                    example_images: vec![],
                 },
             ],
         };
@@ -984,6 +1060,7 @@ mod tests {
                     description: "更新说明".to_string(),
                     match_mode: "contains".to_string(),
                     priority: 30,
+                    example_images: vec![],
                 },
             )
             .unwrap();

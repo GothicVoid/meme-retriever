@@ -25,6 +25,8 @@ struct KbEntry {
     match_mode: String,
     #[serde(default = "default_priority")]
     priority: f32,
+    #[serde(default)]
+    example_images: Vec<String>,
 }
 
 fn default_match_mode() -> String {

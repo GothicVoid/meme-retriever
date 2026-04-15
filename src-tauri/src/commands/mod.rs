@@ -4,11 +4,15 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
+use uuid::Uuid;
 
 use crate::db::{repo, DbPool};
+use crate::kb::example_index::ExampleImageIndex;
 use crate::kb::maintenance::{
     KnowledgeBaseEntry, KnowledgeBaseFile, MatchCandidate, ValidationReport,
 };
+use crate::kb::provider::KnowledgeBaseProvider;
+use crate::kb::local::LocalKBProvider;
 use crate::search::engine::SearchEngine;
 
 // SearchEngine 包在 Arc 里以便 Tauri State 共享
@@ -83,6 +87,7 @@ pub struct KbEntryPayload {
     pub description: String,
     pub match_mode: String,
     pub priority: i32,
+    pub example_images: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -144,6 +149,72 @@ fn resolve_kb_path() -> Result<PathBuf, String> {
     Ok(crate::kb::maintenance::resolve_default_kb_path())
 }
 
+fn load_runtime_knowledge_base(
+    path: &Path,
+) -> Result<(Box<dyn KnowledgeBaseProvider>, ExampleImageIndex), String> {
+    let kb_file = if path.exists() {
+        KnowledgeBaseFile::load(path).map_err(|e| e.to_string())?
+    } else {
+        KnowledgeBaseFile::default()
+    };
+    let provider = LocalKBProvider::load(path)
+        .map(|provider| Box::new(provider) as Box<dyn KnowledgeBaseProvider>)
+        .map_err(|e| e.to_string())?;
+    let example_image_index = ExampleImageIndex::from_knowledge_base(&kb_file, path);
+    Ok((provider, example_image_index))
+}
+
+fn sanitize_path_segment(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if matches!(ch, '-' | '_') {
+            out.push(ch);
+        } else if ch.is_whitespace() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "entry".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn import_example_image_impl(source_path: &str, canonical: &str, kb_path: &Path) -> Result<String, String> {
+    let source = Path::new(source_path);
+    if !source.exists() {
+        return Err("示例图文件不存在".into());
+    }
+    let extension = source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .ok_or_else(|| "示例图文件缺少扩展名".to_string())?;
+    if !matches!(extension.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp") {
+        return Err("仅支持 jpg/jpeg/png/gif/webp 示例图".into());
+    }
+
+    let base_dir = kb_path
+        .parent()
+        .ok_or_else(|| "知识库目录无效，无法导入示例图".to_string())?;
+    let entry_dir = base_dir
+        .join("kb_examples")
+        .join(sanitize_path_segment(canonical));
+    std::fs::create_dir_all(&entry_dir).map_err(|e| e.to_string())?;
+
+    let file_name = format!("{}.{}", Uuid::new_v4(), extension);
+    let destination = entry_dir.join(file_name);
+    std::fs::copy(source, &destination).map_err(|e| e.to_string())?;
+
+    destination
+        .strip_prefix(base_dir)
+        .map_err(|e| e.to_string())
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+}
+
 fn kb_file_from_payload(payload: KbFilePayload) -> KnowledgeBaseFile {
     KnowledgeBaseFile {
         version: payload.version,
@@ -158,6 +229,7 @@ fn kb_file_from_payload(payload: KbFilePayload) -> KnowledgeBaseFile {
                 description: entry.description,
                 match_mode: entry.match_mode,
                 priority: entry.priority,
+                example_images: entry.example_images,
             })
             .collect(),
     }
@@ -177,6 +249,7 @@ fn kb_file_to_payload(kb: KnowledgeBaseFile) -> KbFilePayload {
                 description: entry.description,
                 match_mode: entry.match_mode,
                 priority: entry.priority,
+                example_images: entry.example_images,
             })
             .collect(),
     }
@@ -432,7 +505,7 @@ async fn relocate_image_impl(
         .into_iter()
         .filter(|tag| !tag.is_auto)
         .collect::<Vec<_>>();
-    let auto_tags = engine.build_auto_tags(&ocr_text, &img.file_name);
+    let auto_tags = engine.build_auto_tags(&ocr_text, &img.file_name, Some(&img.file_path));
     let mut next_tags = manual_tags;
     next_tags.extend(auto_tags);
     repo::delete_tags(db, id).await.map_err(|e| e.to_string())?;
@@ -934,7 +1007,11 @@ pub async fn reindex_all(
                             .filter(|tag| !tag.is_auto)
                             .collect::<Vec<_>>();
                         let mut next_tags = manual_tags;
-                        next_tags.extend(engine.build_auto_tags(&text, &img.file_name));
+                        next_tags.extend(engine.build_auto_tags(
+                            &text,
+                            &img.file_name,
+                            Some(&img.file_path),
+                        ));
                         if let Err(e) = repo::delete_tags(&pool, &id).await {
                             tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
                         } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
@@ -954,7 +1031,11 @@ pub async fn reindex_all(
                         .filter(|tag| !tag.is_auto)
                         .collect::<Vec<_>>();
                     let mut next_tags = manual_tags;
-                    next_tags.extend(engine.build_auto_tags("", &img.file_name));
+                    next_tags.extend(engine.build_auto_tags(
+                        "",
+                        &img.file_name,
+                        Some(&img.file_path),
+                    ));
                     if let Err(e) = repo::delete_tags(&pool, &id).await {
                         tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
                     } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
@@ -1088,15 +1169,26 @@ pub async fn kb_test_match_entries(
 }
 
 #[tauri::command]
-pub async fn kb_save_entries(knowledge_base: KbFilePayload) -> Result<KbStatePayload, String> {
+pub async fn kb_save_entries(
+    knowledge_base: KbFilePayload,
+    engine: State<'_, EngineState>,
+) -> Result<KbStatePayload, String> {
     let path = resolve_kb_path()?;
     let mut store =
         crate::kb::maintenance::KnowledgeBaseStore::open(&path).map_err(|e| e.to_string())?;
     store.replace_all(kb_file_from_payload(knowledge_base))
         .map_err(|e| e.to_string())?;
     store.save().map_err(|e| e.to_string())?;
+    let (provider, example_image_index) = load_runtime_knowledge_base(&path)?;
+    engine.replace_knowledge_base(provider, example_image_index);
     let reloaded = KnowledgeBaseFile::load(&path).map_err(|e| e.to_string())?;
     Ok(kb_state_from_file(path, reloaded))
+}
+
+#[tauri::command]
+pub async fn kb_import_example_image(source_path: String, canonical: String) -> Result<String, String> {
+    let kb_path = resolve_kb_path()?;
+    import_example_image_impl(&source_path, &canonical, &kb_path)
 }
 
 // ── 测试 ────────────────────────────────────────────────────────────────────
@@ -1237,6 +1329,23 @@ mod tests {
     fn test_load_image_for_clipboard_rejects_missing_file() {
         let err = load_image_for_clipboard("/definitely/not/found.png").unwrap_err();
         assert!(err.contains("failed to open image"));
+    }
+
+    #[test]
+    fn test_import_example_image_impl_copies_into_kb_examples_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let kb_path = dir.path().join("knowledge_base.json");
+        std::fs::write(&kb_path, r#"{"version":1,"entries":[]}"#).unwrap();
+
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join("sample.jpg");
+        let relative = import_example_image_impl(source.to_str().unwrap(), "甄嬛传", &kb_path)
+            .unwrap();
+
+        assert!(relative.starts_with("kb_examples/entry/"));
+        let copied = kb_path.parent().unwrap().join(&relative);
+        assert!(copied.exists());
     }
 
     #[sqlx::test(migrations = "./migrations")]
