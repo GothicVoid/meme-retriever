@@ -20,10 +20,87 @@ pub struct ImageRecord {
     pub last_check_time: Option<i64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TagCategory {
+    Meme,
+    Person,
+    Source,
+    #[default]
+    Custom,
+}
+
+impl TagCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Meme => "meme",
+            Self::Person => "person",
+            Self::Source => "source",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl From<&str> for TagCategory {
+    fn from(value: &str) -> Self {
+        match value {
+            "meme" => Self::Meme,
+            "person" => Self::Person,
+            "source" => Self::Source,
+            _ => Self::Custom,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TagSourceStrategy {
+    #[default]
+    Manual,
+    Ocr,
+    FileName,
+    OcrFileName,
+    ClipText,
+    ExampleImage,
+    Fallback,
+}
+
+impl TagSourceStrategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Ocr => "ocr",
+            Self::FileName => "file_name",
+            Self::OcrFileName => "ocr+file_name",
+            Self::ClipText => "clip_text",
+            Self::ExampleImage => "example_image",
+            Self::Fallback => "fallback",
+        }
+    }
+}
+
+impl From<&str> for TagSourceStrategy {
+    fn from(value: &str) -> Self {
+        match value {
+            "ocr" => Self::Ocr,
+            "file_name" => Self::FileName,
+            "ocr+file_name" => Self::OcrFileName,
+            "clip_text" => Self::ClipText,
+            "example_image" => Self::ExampleImage,
+            "fallback" => Self::Fallback,
+            _ => Self::Manual,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct TagRecord {
     pub tag_text: String,
+    pub category: TagCategory,
     pub is_auto: bool,
+    pub source_strategy: TagSourceStrategy,
+    pub confidence: f32,
 }
 
 pub async fn insert_image(pool: &DbPool, rec: &ImageRecord) -> anyhow::Result<()> {
@@ -151,10 +228,16 @@ pub async fn insert_tags(pool: &DbPool, image_id: &str, tags: &[TagRecord]) -> a
         .as_secs() as i64;
     for tag in tags {
         let is_auto = tag.is_auto as i64;
-        sqlx::query("INSERT INTO tags(image_id,tag_text,is_auto,created_at) VALUES(?1,?2,?3,?4)")
+        sqlx::query(
+            "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+        )
             .bind(image_id)
             .bind(&tag.tag_text)
+            .bind(tag.category.as_str())
             .bind(is_auto)
+            .bind(tag.source_strategy.as_str())
+            .bind(tag.confidence)
             .bind(now)
             .execute(pool)
             .await?;
@@ -435,10 +518,7 @@ pub async fn update_file_status(
     Ok(())
 }
 
-pub async fn update_image_file_info(
-    pool: &DbPool,
-    rec: &ImageRecord,
-) -> anyhow::Result<()> {
+pub async fn update_image_file_info(pool: &DbPool, rec: &ImageRecord) -> anyhow::Result<()> {
     let rows = sqlx::query(
         "UPDATE images
          SET file_path=?1,
@@ -521,18 +601,42 @@ pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Ve
         .collect())
 }
 
-pub async fn get_tags_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<Vec<String>> {
-    let rows = sqlx::query("SELECT tag_text FROM tags WHERE image_id=?1 ORDER BY created_at")
-        .bind(image_id)
-        .fetch_all(pool)
-        .await?;
-    Ok(rows.into_iter().map(|r| r.get("tag_text")).collect())
+pub async fn get_tags_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<Vec<TagRecord>> {
+    let rows = sqlx::query(
+        "SELECT tag_text, category, is_auto, source_strategy, confidence
+         FROM tags WHERE image_id=?1 ORDER BY is_auto ASC, created_at ASC, id ASC",
+    )
+    .bind(image_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TagRecord {
+            tag_text: r.get("tag_text"),
+            category: TagCategory::from(r.get::<String, _>("category").as_str()),
+            is_auto: r.get::<i64, _>("is_auto") != 0,
+            source_strategy: TagSourceStrategy::from(
+                r.get::<String, _>("source_strategy").as_str(),
+            ),
+            confidence: r.get::<f64, _>("confidence") as f32,
+        })
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
+
+    fn manual_tag(text: &str) -> TagRecord {
+        TagRecord {
+            tag_text: text.to_string(),
+            category: TagCategory::Custom,
+            is_auto: false,
+            source_strategy: TagSourceStrategy::Manual,
+            confidence: 1.0,
+        }
+    }
 
     fn make_image(id: &str) -> ImageRecord {
         ImageRecord {
@@ -606,16 +710,9 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_delete_image_cascade(pool: SqlitePool) {
         insert_image(&pool, &make_image("img1")).await.unwrap();
-        insert_tags(
-            &pool,
-            "img1",
-            &[TagRecord {
-                tag_text: "搞笑".into(),
-                is_auto: false,
-            }],
-        )
-        .await
-        .unwrap();
+        insert_tags(&pool, "img1", &[manual_tag("搞笑")])
+            .await
+            .unwrap();
         insert_embedding(&pool, "img1", &vec![0.0f32; 512])
             .await
             .unwrap();
@@ -659,16 +756,9 @@ mod tests {
         for i in 0..3 {
             let id = format!("img{i}");
             insert_image(&pool, &make_image(&id)).await.unwrap();
-            insert_tags(
-                &pool,
-                &id,
-                &[TagRecord {
-                    tag_text: format!("tag{i}"),
-                    is_auto: false,
-                }],
-            )
-            .await
-            .unwrap();
+            insert_tags(&pool, &id, &[manual_tag(&format!("tag{i}"))])
+                .await
+                .unwrap();
             insert_embedding(&pool, &id, &vec![i as f32; 512])
                 .await
                 .unwrap();
@@ -725,20 +815,7 @@ mod tests {
         insert_tags(
             &pool,
             "img1",
-            &[
-                TagRecord {
-                    tag_text: "搞笑".into(),
-                    is_auto: false,
-                },
-                TagRecord {
-                    tag_text: "搞怪".into(),
-                    is_auto: false,
-                },
-                TagRecord {
-                    tag_text: "可爱".into(),
-                    is_auto: false,
-                },
-            ],
+            &[manual_tag("搞笑"), manual_tag("搞怪"), manual_tag("可爱")],
         )
         .await
         .unwrap();

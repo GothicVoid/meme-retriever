@@ -59,11 +59,9 @@
         <span>OCR {{ (image.debugInfo.kwScore * 100).toFixed(0) }}%</span>
         <span class="dim">×0.4</span>
       </div>
-      <div
-        v-if="image.debugInfo.tagHit"
-        class="debug-tag"
-      >
-        标签命中 ×0.3
+      <div class="debug-row">
+        <span>标签 {{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
+        <span class="dim">×0.3</span>
       </div>
     </div>
     <Teleport to="body">

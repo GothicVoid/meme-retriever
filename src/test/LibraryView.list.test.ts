@@ -5,6 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import LibraryView from "@/views/LibraryView.vue";
 import type { ImageMeta } from "@/stores/library";
 
+function pageOf(args: unknown): number | undefined {
+  return typeof args === "object" && args !== null && "page" in args
+    ? (args as { page?: number }).page
+    : undefined;
+}
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string) => `asset://${path}`,
@@ -56,7 +62,7 @@ describe("LibraryView 图片列表展示", () => {
     const images = makeImages(15);
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_image_count") return 20;
-      if (cmd === "get_images" && args?.page === 0) return images;
+      if (cmd === "get_images" && pageOf(args) === 0) return images;
       return [];
     });
 
@@ -73,7 +79,7 @@ describe("LibraryView 图片列表展示", () => {
   it("顶部显示按路径引用图片的使用提示", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_image_count") return 1;
-      if (cmd === "get_images" && args?.page === 0) return makeImages(1);
+      if (cmd === "get_images" && pageOf(args) === 0) return makeImages(1);
       return [];
     });
 
@@ -93,8 +99,8 @@ describe("LibraryView 图片列表展示", () => {
 
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_image_count") return 20;
-      if (cmd === "get_images" && args?.page === 0) return page0;
-      if (cmd === "get_images" && args?.page === 1) return page1;
+      if (cmd === "get_images" && pageOf(args) === 0) return page0;
+      if (cmd === "get_images" && pageOf(args) === 1) return page1;
       return [];
     });
 
@@ -151,7 +157,7 @@ describe("LibraryView 图片列表展示", () => {
 
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_image_count") return 30;
-      if (cmd === "get_images" && args?.page === 0) return images;
+      if (cmd === "get_images" && pageOf(args) === 0) return images;
       return [];
     });
 

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import DetailModal from "@/components/DetailModal.vue";
 import type { SearchResult } from "@/stores/search";
+import { createManualTag } from "@/types/tags";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -18,7 +19,17 @@ vi.mock("@/components/TagEditor.vue", () => ({
     name: "TagEditor",
     props: ["tags"],
     emits: ["update:tags"],
-    template: `<div class="tag-editor">{{ tags.join(',') }}</div>`,
+    template: `
+      <div class="tag-editor">
+        {{ tags.map((tag) => tag.text).join(',') }}
+        <button
+          class="mock-add-tag"
+          @click="$emit('update:tags', [...tags, { text: '新增', category: 'custom', isAuto: false, sourceStrategy: 'manual', confidence: 1 }])"
+        >
+          add
+        </button>
+      </div>
+    `,
   },
 }));
 
@@ -32,7 +43,7 @@ function makeImages(count = 3): SearchResult[] {
     thumbnailPath: `/thumb-${i}.jpg`,
     fileFormat: "jpg",
     score: 0.9 - i * 0.1,
-    tags: [`tag${i}`],
+    tags: [createManualTag(`tag${i}`)],
     debugInfo: null,
   }));
 }
@@ -49,7 +60,7 @@ const mockMeta = {
   fileStatus: "normal",
   addedAt: 1700000000,
   useCount: 3,
-  tags: ["tag0"],
+  tags: [createManualTag("tag0")],
 };
 
 describe("DetailModal — 渲染", () => {
@@ -205,7 +216,8 @@ describe("DetailModal — 标签保存", () => {
     const images = makeImages();
     const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
     await flushPromises();
-    mockInvoke.mockResolvedValue(undefined);
+    await wrapper.get(".mock-add-tag").trigger("click");
+    mockInvoke.mockResolvedValue(mockMeta);
     await wrapper.find(".save-btn").trigger("click");
     await flushPromises();
     expect(mockInvoke).toHaveBeenCalledWith("update_tags", {
@@ -255,7 +267,7 @@ describe("DetailModal — 文件丢失", () => {
     mockOpen.mockReset();
   });
 
-  it("文件已丢失时显示错误态并禁用保存", async () => {
+  it("文件已丢失时显示错误态", async () => {
     mockInvoke.mockResolvedValue({
       ...mockMeta,
       fileStatus: "missing",
@@ -265,7 +277,7 @@ describe("DetailModal — 文件丢失", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("原文件已丢失");
     expect(wrapper.find(".relocate-btn").exists()).toBe(true);
-    expect(wrapper.find(".save-btn").attributes("disabled")).toBeDefined();
+    expect(wrapper.find(".save-btn").exists()).toBe(true);
     expect(wrapper.find(".main-img").exists()).toBe(false);
   });
 

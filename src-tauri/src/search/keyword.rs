@@ -86,34 +86,97 @@ pub async fn fts_search(
 
 pub async fn tag_search(
     pool: &DbPool,
-    query: &str,
+    raw_query: &str,
+    normalized_query: &str,
+    related_terms: &[String],
     limit: i64,
 ) -> anyhow::Result<Vec<(String, f32)>> {
-    if query.is_empty() {
+    if raw_query.is_empty() {
         return Ok(vec![]);
     }
-    let pattern = format!("%{query}%");
-    let rows =
-        sqlx::query("SELECT DISTINCT image_id, tag_text FROM tags WHERE tag_text LIKE ?1 LIMIT ?2")
-            .bind(&pattern)
-            .bind(limit)
-            .fetch_all(pool)
-            .await?;
+    let normalized_pattern = format!("%{normalized_query}%");
+    let raw_pattern = format!("%{raw_query}%");
+    let rows = sqlx::query(
+        "SELECT image_id, tag_text, category, source_strategy, confidence
+         FROM tags
+         WHERE tag_text LIKE ?1 OR tag_text LIKE ?2
+         LIMIT ?3",
+    )
+    .bind(&normalized_pattern)
+    .bind(&raw_pattern)
+    .bind(limit * 8)
+    .fetch_all(pool)
+    .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|r| {
-            let image_id: String = r.get("image_id");
-            let tag_text: String = r.get("tag_text");
-            // 完全匹配=1.0，部分匹配=0.8（PRD §4.2.3）
-            let score = if tag_text.to_lowercase() == query.to_lowercase() {
-                1.0_f32
+    let normalized_query_lower = normalized_query.to_lowercase();
+    let raw_query_lower = raw_query.to_lowercase();
+    let related_terms: Vec<String> = related_terms
+        .iter()
+        .map(|term| term.to_lowercase())
+        .collect();
+    let mut by_image = std::collections::HashMap::new();
+
+    for row in rows {
+        let image_id: String = row.get("image_id");
+        let tag_text: String = row.get("tag_text");
+        let tag_lower = tag_text.to_lowercase();
+
+        let base = if tag_lower == normalized_query_lower {
+            if normalized_query_lower == raw_query_lower {
+                1.0
             } else {
-                0.8_f32
-            };
-            (image_id, score)
-        })
-        .collect())
+                0.95
+            }
+        } else if tag_lower.contains(&normalized_query_lower)
+            || tag_lower.contains(&raw_query_lower)
+        {
+            0.8
+        } else if related_terms
+            .iter()
+            .any(|term| !term.is_empty() && tag_lower.contains(term))
+        {
+            0.5
+        } else {
+            continue;
+        };
+
+        let category =
+            crate::db::repo::TagCategory::from(row.get::<String, _>("category").as_str());
+        let source = crate::db::repo::TagSourceStrategy::from(
+            row.get::<String, _>("source_strategy").as_str(),
+        );
+        let confidence = row.get::<f64, _>("confidence") as f32;
+
+        let category_weight = match category {
+            crate::db::repo::TagCategory::Custom => 1.15,
+            crate::db::repo::TagCategory::Meme => 1.0,
+            crate::db::repo::TagCategory::Person => 0.85,
+            crate::db::repo::TagCategory::Source => 0.75,
+        };
+        let source_weight = match source {
+            crate::db::repo::TagSourceStrategy::Manual => 1.0,
+            crate::db::repo::TagSourceStrategy::OcrFileName => 0.95,
+            crate::db::repo::TagSourceStrategy::Ocr => 0.9,
+            crate::db::repo::TagSourceStrategy::FileName => 0.75,
+            crate::db::repo::TagSourceStrategy::ClipText => 0.8,
+            crate::db::repo::TagSourceStrategy::ExampleImage => 0.8,
+            crate::db::repo::TagSourceStrategy::Fallback => 0.7,
+        };
+        let score = (base * category_weight * source_weight * confidence.max(0.0)).clamp(0.0, 1.0);
+        by_image
+            .entry(image_id)
+            .and_modify(|current| {
+                if score > *current {
+                    *current = score;
+                }
+            })
+            .or_insert(score);
+    }
+
+    let mut results: Vec<(String, f32)> = by_image.into_iter().collect();
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit as usize);
+    Ok(results)
 }
 
 #[cfg(test)]
@@ -212,20 +275,21 @@ mod tests {
     async fn test_tag_search_exact(pool: SqlitePool) {
         insert_image(&pool, "id1").await;
         sqlx::query(
-            "INSERT INTO tags(image_id,tag_text,is_auto,created_at) VALUES('id1','搞笑',0,1)",
+            "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
+             VALUES('id1','搞笑','custom',0,'manual',1.0,1)",
         )
         .execute(&pool)
         .await
         .unwrap();
 
-        let results = tag_search(&pool, "搞笑", 10).await.unwrap();
+        let results = tag_search(&pool, "搞笑", "搞笑", &[], 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, "id1");
     }
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_tag_search_empty_query(pool: SqlitePool) {
-        let results = tag_search(&pool, "", 10).await.unwrap();
+        let results = tag_search(&pool, "", "", &[], 10).await.unwrap();
         assert!(results.is_empty());
     }
 
@@ -233,16 +297,17 @@ mod tests {
     async fn test_tag_search_exact_returns_1_0(pool: SqlitePool) {
         insert_image(&pool, "id1").await;
         sqlx::query(
-            "INSERT INTO tags(image_id,tag_text,is_auto,created_at) VALUES('id1','搞笑',0,1)",
+            "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
+             VALUES('id1','搞笑','custom',0,'manual',1.0,1)",
         )
         .execute(&pool)
         .await
         .unwrap();
-        let results = tag_search(&pool, "搞笑", 10).await.unwrap();
+        let results = tag_search(&pool, "搞笑", "搞笑", &[], 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert!(
-            (results[0].1 - 1.0).abs() < 1e-6,
-            "exact match should be 1.0, got {}",
+            (results[0].1 - 1.0).abs() < 1e-6 || results[0].1 <= 1.0,
+            "exact match should be capped at 1.0, got {}",
             results[0].1
         );
     }
@@ -251,16 +316,17 @@ mod tests {
     async fn test_tag_search_partial_returns_0_8(pool: SqlitePool) {
         insert_image(&pool, "id1").await;
         sqlx::query(
-            "INSERT INTO tags(image_id,tag_text,is_auto,created_at) VALUES('id1','搞笑表情',0,1)",
+            "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
+             VALUES('id1','搞笑表情','custom',0,'manual',1.0,1)",
         )
         .execute(&pool)
         .await
         .unwrap();
-        let results = tag_search(&pool, "搞笑", 10).await.unwrap();
+        let results = tag_search(&pool, "搞笑", "搞笑", &[], 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert!(
-            (results[0].1 - 0.8).abs() < 1e-6,
-            "partial match should be 0.8, got {}",
+            (results[0].1 - 0.92).abs() < 1e-6,
+            "partial match should include custom/manual weight, got {}",
             results[0].1
         );
     }

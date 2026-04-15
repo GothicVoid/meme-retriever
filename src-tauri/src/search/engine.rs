@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use crate::commands::{ScoreDebugInfo, SearchResult};
+use crate::commands::{ScoreDebugInfo, SearchResult, TagDto};
 use crate::db::{repo, DbPool};
 use crate::kb::provider::KnowledgeBaseProvider;
 use crate::ml::clip::ClipEncoder;
@@ -19,7 +19,8 @@ fn char_coverage(query: &str, ocr_text: &str) -> f32 {
 
 fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32) -> bool {
     let has_text_signal = s_ocr > 0.0 || s_kw > 0.0;
-    let semantic_pass = raw_cosine >= crate::search::vector_store::VectorStore::semantic_threshold();
+    let semantic_pass =
+        raw_cosine >= crate::search::vector_store::VectorStore::semantic_threshold();
     let text_pass = has_text_signal && (s_ocr >= 0.2 || s_kw >= 0.5);
     semantic_pass || text_pass
 }
@@ -79,6 +80,10 @@ impl SearchEngine {
         self.vector_store.write().unwrap().clear();
     }
 
+    pub fn build_auto_tags(&self, ocr_text: &str, file_name: &str) -> Vec<repo::TagRecord> {
+        self.kb.auto_tag(ocr_text, file_name)
+    }
+
     pub async fn search(
         &self,
         query: &str,
@@ -98,7 +103,8 @@ impl SearchEngine {
                     "missing"
                 };
                 if actual_status != img.file_status {
-                    repo::update_file_status(&self.pool, &img.id, actual_status, now_secs()).await?;
+                    repo::update_file_status(&self.pool, &img.id, actual_status, now_secs())
+                        .await?;
                 }
                 if actual_status == "missing" {
                     continue;
@@ -111,7 +117,7 @@ impl SearchEngine {
                     file_format: img.format,
                     file_status: actual_status.to_string(),
                     score: 1.0,
-                    tags,
+                    tags: tags.into_iter().map(TagDto::from).collect(),
                     debug_info: None,
                 });
             }
@@ -120,15 +126,25 @@ impl SearchEngine {
 
         let start = std::time::Instant::now();
 
-        // KB 查询扩展
-        let expanded = self.kb.expand_query(query);
-        if expanded != query {
-            tracing::info!("[KB] Query expanded: {:?} → {:?}", query, expanded);
+        let normalized_query = self.kb.normalize_query(query);
+        if normalized_query.tag_query != query {
+            tracing::info!(
+                "[KB] Tag query normalized: {:?} → {:?}",
+                query,
+                normalized_query.tag_query
+            );
+        }
+        if normalized_query.expanded_query != query {
+            tracing::info!(
+                "[KB] Query expanded: {:?} → {:?}",
+                query,
+                normalized_query.expanded_query
+            );
         }
 
         // 2. 并行：CLIP 文本编码 + FTS 搜索
         let pool = self.pool.clone();
-        let expanded_clone = expanded.clone();
+        let expanded_clone = normalized_query.expanded_query.clone();
         let limit_i64 = (limit * 2) as i64;
 
         let (text_vec_result, fts_result) = tokio::join!(
@@ -146,13 +162,16 @@ impl SearchEngine {
         // 3. 标签搜索（三级评分：精确=1.0 / 部分=0.8 / 关联=0.5）
         let tag_score_map: std::collections::HashMap<String, f32> = {
             let mut m = std::collections::HashMap::new();
-            for (id, score) in keyword::tag_search(&self.pool, query, limit_i64).await? {
+            for (id, score) in keyword::tag_search(
+                &self.pool,
+                query,
+                &normalized_query.tag_query,
+                &self.kb.related_terms(&normalized_query.tag_query),
+                limit_i64,
+            )
+            .await?
+            {
                 m.insert(id, score);
-            }
-            if expanded != query {
-                for (id, _) in keyword::tag_search(&self.pool, &expanded, limit_i64).await? {
-                    m.entry(id).or_insert(0.5);
-                }
             }
             if !m.is_empty() {
                 tracing::info!("[TAG] Found {} tag matches", m.len());
@@ -184,6 +203,9 @@ impl SearchEngine {
                 ids.insert(id.as_str());
             }
             for id in fts_map.keys() {
+                ids.insert(id.as_str());
+            }
+            for id in tag_score_map.keys() {
                 ids.insert(id.as_str());
             }
             ids.into_iter().collect()
@@ -246,7 +268,10 @@ impl SearchEngine {
                 merge_one(id, *raw_cosine, s_ocr, s_kw, &use_count_map, max_use_count);
             tracing::info!(
                 "[MERGE] {} relevance={:.4} popularity={:.4} final={:.4}",
-                id, dbg.relevance, dbg.popularity, score
+                id,
+                dbg.relevance,
+                dbg.popularity,
+                score
             );
             if score > 0.0 {
                 score_map.insert(id.clone(), score);
@@ -267,7 +292,35 @@ impl SearchEngine {
                 let (score, dbg) = merge_one(id, -1.0, s_ocr, s_kw, &use_count_map, max_use_count);
                 tracing::info!(
                     "[MERGE] {} (no semantic) relevance={:.4} popularity={:.4} final={:.4}",
-                    id, dbg.relevance, dbg.popularity, score
+                    id,
+                    dbg.relevance,
+                    dbg.popularity,
+                    score
+                );
+                if score > 0.0 {
+                    score_map.insert(id.clone(), score);
+                    debug_map.insert(id.clone(), dbg);
+                }
+            }
+        }
+        // 纯标签命中但既无语义命中、也无 OCR/FTS 命中的也应进入结果
+        for id in tag_score_map.keys() {
+            if !score_map.contains_key(id) {
+                let s_ocr = char_coverage(
+                    query,
+                    ocr_text_map
+                        .get(id.as_str())
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
+                );
+                let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+                let (score, dbg) = merge_one(id, -1.0, s_ocr, s_kw, &use_count_map, max_use_count);
+                tracing::info!(
+                    "[MERGE] {} (tag only) relevance={:.4} popularity={:.4} final={:.4}",
+                    id,
+                    dbg.relevance,
+                    dbg.popularity,
+                    score
                 );
                 if score > 0.0 {
                     score_map.insert(id.clone(), score);
@@ -301,18 +354,14 @@ impl SearchEngine {
                     "missing"
                 };
                 if actual_status != img.file_status {
-                    repo::update_file_status(&self.pool, &img.id, actual_status, now_secs()).await?;
+                    repo::update_file_status(&self.pool, &img.id, actual_status, now_secs())
+                        .await?;
                 }
                 if actual_status == "missing" {
                     continue;
                 }
                 let tags = repo::get_tags_for_image(&self.pool, &id).await?;
-                tracing::info!(
-                    "[RESULT] #{} {} score={:.4}",
-                    rank + 1,
-                    id,
-                    score
-                );
+                tracing::info!("[RESULT] #{} {} score={:.4}", rank + 1, id, score);
                 results.push(SearchResult {
                     id: id.clone(),
                     file_path: img.file_path,
@@ -320,7 +369,7 @@ impl SearchEngine {
                     file_format: img.format,
                     file_status: actual_status.to_string(),
                     score,
-                    tags,
+                    tags: tags.into_iter().map(TagDto::from).collect(),
                     debug_info: debug_map.remove(&id),
                 });
             }
@@ -572,6 +621,54 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_returns_tag_only_match(pool: SqlitePool) {
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "tag-only".into(),
+                file_path: fixture_path("sample.jpg"),
+                file_name: "tag-only.jpg".into(),
+                format: "jpg".into(),
+                width: Some(100),
+                height: Some(100),
+                added_at: 1000,
+                use_count: 0,
+                thumbnail_path: Some("/tmp/tag-only_t.jpg".into()),
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_embedding(&pool, "tag-only", &vec![0.0; 512])
+            .await
+            .unwrap();
+        repo::insert_tags(
+            &pool,
+            "tag-only",
+            &[repo::TagRecord {
+                tag_text: "测试人物".into(),
+                category: repo::TagCategory::Person,
+                is_auto: false,
+                source_strategy: repo::TagSourceStrategy::Manual,
+                confidence: 1.0,
+            }],
+        )
+        .await
+        .unwrap();
+
+        let engine = make_engine(pool).await;
+        let results = engine.search("测试人物", 10, 0.3, 0.4, 0.3).await.unwrap();
+        assert!(
+            results.iter().any(|result| result.id == "tag-only"),
+            "manual tag-only match should be searchable"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_search_filters_missing_files(pool: SqlitePool) {
         repo::insert_image(
             &pool,
@@ -597,7 +694,9 @@ mod tests {
         repo::insert_embedding(&pool, "img1", &unit_vec(1))
             .await
             .unwrap();
-        repo::insert_ocr(&pool, "img1", "hello world").await.unwrap();
+        repo::insert_ocr(&pool, "img1", "hello world")
+            .await
+            .unwrap();
 
         let engine = make_engine(pool.clone()).await;
         let results = engine.search("hello", 10, 0.3, 0.4, 0.3).await.unwrap();

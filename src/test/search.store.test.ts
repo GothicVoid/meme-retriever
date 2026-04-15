@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { setActivePinia, createPinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
 import { useSearchStore } from "@/stores/search";
+import { createManualTag } from "@/types/tags";
 
 const mockInvoke = vi.mocked(invoke);
 
@@ -21,7 +22,7 @@ describe("useSearchStore", () => {
 
   it("search 调用 invoke 并更新 results", async () => {
     const mockResults = [
-      { id: "1", filePath: "/tmp/a.jpg", thumbnailPath: "/tmp/a_thumb.jpg", score: 0.9, tags: ["搞笑"] },
+      { id: "1", filePath: "/tmp/a.jpg", thumbnailPath: "/tmp/a_thumb.jpg", score: 0.9, tags: [createManualTag("搞笑")] },
     ];
     mockInvoke.mockResolvedValueOnce(mockResults);
 

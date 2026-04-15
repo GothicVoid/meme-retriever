@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::db::{repo, DbPool};
 use crate::indexer::{hash, ocr, thumbnail};
 use crate::ml::clip::ClipEncoder;
+use crate::search::engine::SearchEngine;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IndexProgress {
@@ -22,11 +23,12 @@ pub fn index_images(
     pool: DbPool,
     paths: Vec<String>,
     library_dir: PathBuf,
+    engine: std::sync::Arc<SearchEngine>,
 ) -> mpsc::Receiver<IndexProgress> {
     let (tx, rx) = mpsc::channel(64);
     tokio::spawn(async move {
         for path in paths {
-            let progress = process_one(&pool, &path, &library_dir).await;
+            let progress = process_one(&pool, &path, &library_dir, &engine).await;
             if tx.send(progress).await.is_err() {
                 break; // 接收端已关闭
             }
@@ -35,7 +37,12 @@ pub fn index_images(
     rx
 }
 
-async fn process_one(pool: &DbPool, src_path: &str, library_dir: &Path) -> IndexProgress {
+async fn process_one(
+    pool: &DbPool,
+    src_path: &str,
+    library_dir: &Path,
+    engine: &SearchEngine,
+) -> IndexProgress {
     let start = Instant::now();
     let src = Path::new(src_path);
     let file_name = src
@@ -43,7 +50,7 @@ async fn process_one(pool: &DbPool, src_path: &str, library_dir: &Path) -> Index
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| src_path.to_string());
 
-    match do_index(pool, src, library_dir).await {
+    match do_index(pool, src, library_dir, engine).await {
         Ok(id) => IndexProgress {
             id,
             file_name,
@@ -64,13 +71,18 @@ async fn process_one(pool: &DbPool, src_path: &str, library_dir: &Path) -> Index
     }
 }
 
-async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Result<String> {
+async fn do_index(
+    pool: &DbPool,
+    src: &Path,
+    library_dir: &Path,
+    engine: &SearchEngine,
+) -> anyhow::Result<String> {
     // 2.3 任务队列：记录任务进度，支持断点续传
     let task_id = Uuid::new_v4().to_string();
     crate::db::task_repo::insert_task(pool, &task_id, &src.to_string_lossy()).await?;
     crate::db::task_repo::update_task_status(pool, &task_id, "processing", None).await?;
 
-    let result = do_index_inner(pool, src, library_dir).await;
+    let result = do_index_inner(pool, src, library_dir, engine).await;
 
     match &result {
         Ok(_) => {
@@ -90,7 +102,12 @@ async fn do_index(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Resu
     result
 }
 
-async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow::Result<String> {
+async fn do_index_inner(
+    pool: &DbPool,
+    src: &Path,
+    library_dir: &Path,
+    engine: &SearchEngine,
+) -> anyhow::Result<String> {
     if !src.exists() {
         anyhow::bail!("file not found: {:?}", src);
     }
@@ -133,7 +150,13 @@ async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow
     let ocr_text = ocr_result??;
     let embedding = clip_result??;
 
-    tracing::info!("[INDEX] {} processed: thumb={}ms ocr={}chars embed={}", id, thumb_ms, ocr_text.len(), embedding.len());
+    tracing::info!(
+        "[INDEX] {} processed: thumb={}ms ocr={}chars embed={}",
+        id,
+        thumb_ms,
+        ocr_text.len(),
+        embedding.len()
+    );
 
     // 4. 读取图片尺寸
     let (width, height) = image_dimensions(src);
@@ -161,8 +184,13 @@ async fn do_index_inner(pool: &DbPool, src: &Path, library_dir: &Path) -> anyhow
     };
     repo::insert_image(pool, &rec).await?;
     repo::insert_embedding(pool, &id, &embedding).await?;
+    engine.insert_vector(id.clone(), embedding.clone());
     if !ocr_text.is_empty() {
         repo::insert_ocr(pool, &id, &ocr_text).await?;
+    }
+    let auto_tags = engine.build_auto_tags(&ocr_text, &rec.file_name);
+    if !auto_tags.is_empty() {
+        repo::insert_tags(pool, &id, &auto_tags).await?;
     }
 
     Ok(id)
@@ -215,7 +243,9 @@ fn is_supported_image(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kb::local::LocalKBProvider;
     use sqlx::SqlitePool;
+    use std::sync::Arc;
     use std::time::Duration;
 
     fn fixture(name: &str) -> String {
@@ -234,13 +264,23 @@ mod tests {
         results
     }
 
+    async fn make_engine(pool: SqlitePool) -> Arc<SearchEngine> {
+        Arc::new(
+            SearchEngine::new(pool, Box::new(LocalKBProvider::empty()))
+                .await
+                .unwrap(),
+        )
+    }
+
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_single_image(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
         let mut rx = index_images(
             pool.clone(),
             vec![fixture("sample.jpg")],
             lib.path().to_path_buf(),
+            engine,
         );
         let results = collect(rx).await;
 
@@ -265,12 +305,13 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_multiple_images(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
         let paths = vec![
             fixture("sample.jpg"),
             fixture("sample_blank.jpg"),
             fixture("sample_wide.jpg"),
         ];
-        let rx = index_images(pool.clone(), paths, lib.path().to_path_buf());
+        let rx = index_images(pool.clone(), paths, lib.path().to_path_buf(), engine);
         let results = collect(rx).await;
 
         assert_eq!(results.len(), 3);
@@ -287,8 +328,9 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_invalid_path(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
         let paths = vec!["/nonexistent/image.jpg".to_string(), fixture("sample.jpg")];
-        let rx = index_images(pool.clone(), paths, lib.path().to_path_buf());
+        let rx = index_images(pool.clone(), paths, lib.path().to_path_buf(), engine);
         let results = collect(rx).await;
 
         assert_eq!(results.len(), 2);
@@ -303,10 +345,12 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_progress_elapsed(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
         let rx = index_images(
             pool.clone(),
             vec![fixture("sample.jpg")],
             lib.path().to_path_buf(),
+            engine,
         );
         let results = collect(rx).await;
         assert!(results[0].elapsed_ms < 10_000, "should complete in < 10s");
@@ -372,7 +416,13 @@ mod tests {
     async fn test_pipeline_stores_original_path(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
         let src = fixture("sample.jpg");
-        let rx = index_images(pool.clone(), vec![src.clone()], lib.path().to_path_buf());
+        let engine = make_engine(pool.clone()).await;
+        let rx = index_images(
+            pool.clone(),
+            vec![src.clone()],
+            lib.path().to_path_buf(),
+            engine,
+        );
         let results = collect(rx).await;
         assert_eq!(results[0].status, "completed");
 
@@ -390,15 +440,26 @@ mod tests {
     async fn test_pipeline_dedup_same_file(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
         let src = fixture("sample.jpg");
+        let engine = make_engine(pool.clone()).await;
 
-        let rx1 = index_images(pool.clone(), vec![src.clone()], lib.path().to_path_buf());
+        let rx1 = index_images(
+            pool.clone(),
+            vec![src.clone()],
+            lib.path().to_path_buf(),
+            Arc::clone(&engine),
+        );
         let r1 = collect(rx1).await;
         assert_eq!(r1.len(), 1);
         assert_eq!(r1[0].status, "completed");
         let first_id = r1[0].id.clone();
 
         // 同一文件再次入库，应返回已有 ID，不新增记录
-        let rx2 = index_images(pool.clone(), vec![src.clone()], lib.path().to_path_buf());
+        let rx2 = index_images(
+            pool.clone(),
+            vec![src.clone()],
+            lib.path().to_path_buf(),
+            engine,
+        );
         let r2 = collect(rx2).await;
         assert_eq!(r2.len(), 1);
         assert_eq!(r2[0].status, "completed");

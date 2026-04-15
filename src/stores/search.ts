@@ -1,11 +1,12 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import type { StructuredTag } from "@/types/tags";
 
 export interface ScoreDebugInfo {
   semScore: number;
   kwScore: number;
-  tagHit: boolean;
+  tagScore: number;
   semWeight: number;
   kwWeight: number;
   relevance: number;
@@ -19,7 +20,7 @@ export interface SearchResult {
   fileFormat: string;
   fileStatus?: string;
   score: number;
-  tags: string[];
+  tags: StructuredTag[];
   debugInfo: ScoreDebugInfo | null;
 }
 

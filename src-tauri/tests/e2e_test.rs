@@ -48,6 +48,7 @@ async fn make_engine(pool: sqlx::SqlitePool) -> Arc<SearchEngine> {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
     let paths = vec![
         fixture("sample.jpg"),
         fixture("sample_blank.jpg"),
@@ -55,7 +56,12 @@ async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
     ];
 
     // 入库
-    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let rx = pipeline::index_images(
+        pool.clone(),
+        paths,
+        lib.path().to_path_buf(),
+        engine.clone(),
+    );
     let results = collect(rx).await;
     assert_eq!(results.len(), 3);
     assert!(
@@ -64,8 +70,6 @@ async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
     );
 
     // 搜索引擎预加载向量
-    let engine = make_engine(pool.clone()).await;
-
     // 搜索不应报错；根据新评分公式，仅有 OCR/关键词命中的图片会出现在结果中
     // 测试图片不含 "test" 文字，因此此查询可能返回空（低相关性被过滤），这是预期行为
     let hits = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
@@ -89,12 +93,16 @@ async fn test_full_index_and_search(pool: sqlx::SqlitePool) {
 async fn test_index_then_delete_then_search(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
     let paths = vec![fixture("sample.jpg"), fixture("sample_blank.jpg")];
+    let engine = make_engine(pool.clone()).await;
 
-    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let rx = pipeline::index_images(
+        pool.clone(),
+        paths,
+        lib.path().to_path_buf(),
+        engine.clone(),
+    );
     let indexed = collect(rx).await;
     assert_eq!(indexed.len(), 2);
-
-    let engine = make_engine(pool.clone()).await;
     assert_eq!(engine.vector_store_len(), 2);
 
     // 删除第一张
@@ -114,10 +122,12 @@ async fn test_index_then_delete_then_search(pool: sqlx::SqlitePool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_use_count_increment(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
     let rx = pipeline::index_images(
         pool.clone(),
         vec![fixture("sample.jpg")],
         lib.path().to_path_buf(),
+        engine,
     );
     let indexed = collect(rx).await;
     assert_eq!(indexed[0].status, "completed");
@@ -134,6 +144,7 @@ async fn test_use_count_increment(pool: sqlx::SqlitePool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_add_images_and_list(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
     let paths = vec![
         fixture("sample.jpg"),
         fixture("sample_blank.jpg"),
@@ -141,7 +152,7 @@ async fn test_add_images_and_list(pool: sqlx::SqlitePool) {
     ];
 
     // 1. 入库，全部成功
-    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf(), engine);
     let results = collect(rx).await;
     assert_eq!(results.len(), 3);
     assert!(
@@ -187,6 +198,7 @@ async fn test_add_images_and_list(pool: sqlx::SqlitePool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_search_performance(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
     let paths = vec![
         fixture("sample.jpg"),
         fixture("sample_blank.jpg"),
@@ -195,7 +207,12 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
 
     // 入库性能：每张 < 5s（mock 模式）
     let start = std::time::Instant::now();
-    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let rx = pipeline::index_images(
+        pool.clone(),
+        paths,
+        lib.path().to_path_buf(),
+        engine.clone(),
+    );
     let results = collect(rx).await;
     let total_ms = start.elapsed().as_millis();
     assert!(results.iter().all(|r| r.status == "completed"));
@@ -205,7 +222,6 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
     );
 
     // 搜索性能：< 2000ms（真实 CLIP 模型推理）
-    let engine = make_engine(pool).await;
     let start = std::time::Instant::now();
     let _ = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
     let search_ms = start.elapsed().as_millis();
@@ -215,17 +231,21 @@ async fn test_search_performance(pool: sqlx::SqlitePool) {
 #[sqlx::test(migrations = "./migrations")]
 async fn test_clear_all_images_integration(pool: sqlx::SqlitePool) {
     let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
     let paths = vec![
         fixture("sample.jpg"),
         fixture("sample_blank.jpg"),
         fixture("sample_wide.jpg"),
     ];
 
-    let rx = pipeline::index_images(pool.clone(), paths, lib.path().to_path_buf());
+    let rx = pipeline::index_images(
+        pool.clone(),
+        paths,
+        lib.path().to_path_buf(),
+        engine.clone(),
+    );
     let indexed = collect(rx).await;
     assert_eq!(indexed.len(), 3);
-
-    let engine = make_engine(pool.clone()).await;
     assert_eq!(engine.vector_store_len(), 3);
 
     let deleted = repo::clear_all_images(&pool).await.unwrap();

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { StructuredTag } from "@/types/tags";
 
 export interface ImageMeta {
   id: string;
@@ -15,7 +16,7 @@ export interface ImageMeta {
   fileSize?: number;
   addedAt: number;
   useCount: number;
-  tags: string[];
+  tags: StructuredTag[];
 }
 
 export const useLibraryStore = defineStore("library", () => {

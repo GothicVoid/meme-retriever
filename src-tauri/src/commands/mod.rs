@@ -32,7 +32,7 @@ pub struct SearchResult {
     pub file_format: String,
     pub file_status: String,
     pub score: f32,
-    pub tags: Vec<String>,
+    pub tags: Vec<TagDto>,
     pub debug_info: Option<ScoreDebugInfo>,
 }
 
@@ -50,7 +50,17 @@ pub struct ImageMeta {
     pub file_size: i64,
     pub added_at: i64,
     pub use_count: i64,
-    pub tags: Vec<String>,
+    pub tags: Vec<TagDto>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagDto {
+    pub text: String,
+    pub category: repo::TagCategory,
+    pub is_auto: bool,
+    pub source_strategy: repo::TagSourceStrategy,
+    pub confidence: f32,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -86,7 +96,11 @@ async fn sync_file_status(
     Ok(actual_status.to_string())
 }
 
-fn to_image_meta(img: repo::ImageRecord, tags: Vec<String>, file_status: String) -> ImageMeta {
+fn to_image_meta(
+    img: repo::ImageRecord,
+    tags: Vec<repo::TagRecord>,
+    file_status: String,
+) -> ImageMeta {
     ImageMeta {
         id: img.id,
         file_path: img.file_path,
@@ -99,8 +113,56 @@ fn to_image_meta(img: repo::ImageRecord, tags: Vec<String>, file_status: String)
         file_size: img.file_size.unwrap_or(0),
         added_at: img.added_at,
         use_count: img.use_count,
-        tags,
+        tags: tags.into_iter().map(TagDto::from).collect(),
     }
+}
+
+impl From<repo::TagRecord> for TagDto {
+    fn from(value: repo::TagRecord) -> Self {
+        Self {
+            text: value.tag_text,
+            category: value.category,
+            is_auto: value.is_auto,
+            source_strategy: value.source_strategy,
+            confidence: value.confidence,
+        }
+    }
+}
+
+impl From<TagDto> for repo::TagRecord {
+    fn from(value: TagDto) -> Self {
+        Self {
+            tag_text: value.text,
+            category: value.category,
+            is_auto: value.is_auto,
+            source_strategy: value.source_strategy,
+            confidence: value.confidence,
+        }
+    }
+}
+
+fn sanitize_tags(tags: Vec<TagDto>) -> Result<Vec<repo::TagRecord>, String> {
+    let mut deduped = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for mut tag in tags {
+        tag.text = tag.text.trim().to_string();
+        if tag.text.is_empty() {
+            return Err("标签不能为空".into());
+        }
+        if tag.text.chars().count() > 50 {
+            return Err("标签最长50字符".into());
+        }
+        let key = tag.text.to_lowercase();
+        if seen.contains(&key) {
+            continue;
+        }
+        seen.insert(key);
+        if !tag.is_auto && matches!(tag.source_strategy, repo::TagSourceStrategy::Manual) {
+            tag.confidence = 1.0;
+        }
+        deduped.push(tag.into());
+    }
+    Ok(deduped)
 }
 
 async fn get_image_meta_impl(id: String, db: &DbPool) -> Result<Option<ImageMeta>, String> {
@@ -108,7 +170,8 @@ async fn get_image_meta_impl(id: String, db: &DbPool) -> Result<Option<ImageMeta
     match img {
         None => Ok(None),
         Some(img) => {
-            let file_status = sync_file_status(db, &img.id, &img.file_path, &img.file_status).await?;
+            let file_status =
+                sync_file_status(db, &img.id, &img.file_path, &img.file_status).await?;
             let tags = repo::get_tags_for_image(db, &img.id)
                 .await
                 .unwrap_or_default();
@@ -223,6 +286,19 @@ async fn relocate_image_impl(
             .await
             .map_err(|e| e.to_string())?;
     }
+    let manual_tags = repo::get_tags_for_image(db, id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|tag| !tag.is_auto)
+        .collect::<Vec<_>>();
+    let auto_tags = engine.build_auto_tags(&ocr_text, &img.file_name);
+    let mut next_tags = manual_tags;
+    next_tags.extend(auto_tags);
+    repo::delete_tags(db, id).await.map_err(|e| e.to_string())?;
+    repo::insert_tags(db, id, &next_tags)
+        .await
+        .map_err(|e| e.to_string())?;
     engine.remove_vector(id);
     engine.insert_vector(id.to_string(), embedding);
 
@@ -241,7 +317,8 @@ fn spawn_index_task(
     app_handle: tauri::AppHandle,
 ) {
     tokio::spawn(async move {
-        let mut rx = crate::indexer::pipeline::index_images(pool, paths, library_dir);
+        let mut rx =
+            crate::indexer::pipeline::index_images(pool, paths, library_dir, Arc::clone(&engine));
         while let Some(progress) = rx.recv().await {
             if progress.status == "completed" && !progress.id.is_empty() {
                 if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
@@ -472,13 +549,8 @@ pub async fn clear_missing_images(
     clear_missing_images_impl(db.inner(), engine.inner()).await
 }
 
-async fn clear_missing_images_impl(
-    db: &DbPool,
-    engine: &EngineState,
-) -> Result<u64, String> {
-    let images = repo::get_all_images(db)
-        .await
-        .map_err(|e| e.to_string())?;
+async fn clear_missing_images_impl(db: &DbPool, engine: &EngineState) -> Result<u64, String> {
+    let images = repo::get_all_images(db).await.map_err(|e| e.to_string())?;
 
     let mut removed = 0u64;
     for img in images {
@@ -515,7 +587,8 @@ pub async fn get_images(page: i64, db: State<'_, DbPool>) -> Result<Vec<ImageMet
 
     let mut result = Vec::with_capacity(images.len());
     for img in images {
-        let file_status = sync_file_status(db.inner(), &img.id, &img.file_path, &img.file_status).await?;
+        let file_status =
+            sync_file_status(db.inner(), &img.id, &img.file_path, &img.file_status).await?;
         let tags = repo::get_tags_for_image(db.inner(), &img.id)
             .await
             .unwrap_or_default();
@@ -535,21 +608,15 @@ pub async fn get_image_count(db: State<'_, DbPool>) -> Result<i64, String> {
 #[tauri::command]
 pub async fn update_tags(
     image_id: String,
-    tags: Vec<String>,
+    tags: Vec<TagDto>,
     db: State<'_, DbPool>,
 ) -> Result<(), String> {
     tracing::info!("update_tags: image={image_id}, count={}", tags.len());
+    let tags = sanitize_tags(tags)?;
     repo::delete_tags(db.inner(), &image_id)
         .await
         .map_err(|e| e.to_string())?;
-    let tag_records: Vec<repo::TagRecord> = tags
-        .into_iter()
-        .map(|t| repo::TagRecord {
-            tag_text: t,
-            is_auto: false,
-        })
-        .collect();
-    repo::insert_tags(db.inner(), &image_id, &tag_records)
+    repo::insert_tags(db.inner(), &image_id, &tags)
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -720,12 +787,38 @@ pub async fn reindex_all(
                         tracing::error!("reindex_all: failed to save ocr for {id}: {e}");
                     } else {
                         tracing::debug!("reindex_all: ocr ok for {id} len={}", text.len());
+                        let manual_tags = repo::get_tags_for_image(&pool, &id)
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|tag| !tag.is_auto)
+                            .collect::<Vec<_>>();
+                        let mut next_tags = manual_tags;
+                        next_tags.extend(engine.build_auto_tags(&text, &img.file_name));
+                        if let Err(e) = repo::delete_tags(&pool, &id).await {
+                            tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
+                        } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
+                            tracing::warn!("reindex_all: failed to write tags for {id}: {e}");
+                        }
                     }
                 }
                 Ok(Ok(_)) => {
                     // 无文字，清除旧 OCR 数据
                     if let Err(e) = repo::delete_ocr_for_image(&pool, &id).await {
                         tracing::warn!("reindex_all: failed to clear old ocr for {id}: {e}");
+                    }
+                    let manual_tags = repo::get_tags_for_image(&pool, &id)
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|tag| !tag.is_auto)
+                        .collect::<Vec<_>>();
+                    let mut next_tags = manual_tags;
+                    next_tags.extend(engine.build_auto_tags("", &img.file_name));
+                    if let Err(e) = repo::delete_tags(&pool, &id).await {
+                        tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
+                    } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
+                        tracing::warn!("reindex_all: failed to restore manual tags for {id}: {e}");
                     }
                 }
                 Ok(Err(e)) => tracing::warn!("reindex_all: ocr failed for {id}: {e}"),
@@ -830,6 +923,16 @@ mod tests {
     use crate::kb::local::LocalKBProvider;
     use image::{ImageBuffer, Rgba};
     use sqlx::SqlitePool;
+
+    fn manual_tag(text: &str) -> repo::TagRecord {
+        repo::TagRecord {
+            tag_text: text.to_string(),
+            category: repo::TagCategory::Custom,
+            is_auto: false,
+            source_strategy: repo::TagSourceStrategy::Manual,
+            confidence: 1.0,
+        }
+    }
 
     async fn make_engine(pool: SqlitePool) -> Arc<SearchEngine> {
         let kb = Box::new(LocalKBProvider::empty());
@@ -943,10 +1046,7 @@ mod tests {
 
         assert_eq!(data.width, 2);
         assert_eq!(data.height, 1);
-        assert_eq!(
-            data.bytes.as_ref(),
-            &[255, 0, 0, 255, 0, 0, 255, 128]
-        );
+        assert_eq!(data.bytes.as_ref(), &[255, 0, 0, 255, 0, 0, 255, 128]);
     }
 
     #[test]
@@ -1023,12 +1123,16 @@ mod tests {
         .await
         .unwrap();
 
-        let err = copy_to_clipboard_impl("img-copy-fail", &pool, |_| Err("clipboard failed".into()))
-            .await
-            .unwrap_err();
+        let err =
+            copy_to_clipboard_impl("img-copy-fail", &pool, |_| Err("clipboard failed".into()))
+                .await
+                .unwrap_err();
         assert_eq!(err, "clipboard failed");
 
-        let image = repo::get_image(&pool, "img-copy-fail").await.unwrap().unwrap();
+        let image = repo::get_image(&pool, "img-copy-fail")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(image.use_count, 0);
     }
 
@@ -1061,7 +1165,10 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, "原文件已丢失，无法复制");
 
-        let image = repo::get_image(&pool, "img-missing").await.unwrap().unwrap();
+        let image = repo::get_image(&pool, "img-missing")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(image.file_status, "missing");
         assert!(image.last_check_time.is_some());
     }
@@ -1096,7 +1203,10 @@ mod tests {
             .unwrap();
         assert_eq!(meta.file_status, "missing");
 
-        let image = repo::get_image(&pool, "img-meta-missing").await.unwrap().unwrap();
+        let image = repo::get_image(&pool, "img-meta-missing")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(image.file_status, "missing");
     }
 
@@ -1119,7 +1229,13 @@ mod tests {
                 height: Some(1),
                 added_at: 1,
                 use_count: 2,
-                thumbnail_path: Some(dir.path().join("thumbs").join("img-relocate.jpg").to_string_lossy().to_string()),
+                thumbnail_path: Some(
+                    dir.path()
+                        .join("thumbs")
+                        .join("img-relocate.jpg")
+                        .to_string_lossy()
+                        .to_string(),
+                ),
                 file_hash: None,
                 file_size: None,
                 file_modified_time: None,
@@ -1149,12 +1265,18 @@ mod tests {
         assert_eq!(meta.width, 3);
         assert_eq!(meta.height, 2);
 
-        let image = repo::get_image(&pool, "img-relocate").await.unwrap().unwrap();
+        let image = repo::get_image(&pool, "img-relocate")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(image.file_status, "normal");
         assert_eq!(image.file_path, src.to_string_lossy());
         assert!(Path::new(image.thumbnail_path.as_deref().unwrap()).exists());
 
-        let embedding = repo::get_embedding(&pool, "img-relocate").await.unwrap().unwrap();
+        let embedding = repo::get_embedding(&pool, "img-relocate")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(embedding.len(), 512);
         assert_eq!(engine.vector_store_len(), 1);
     }
@@ -1217,8 +1339,14 @@ mod tests {
         let removed = clear_missing_images_impl(&pool, &engine).await.unwrap();
 
         assert_eq!(removed, 1);
-        assert!(repo::get_image(&pool, "img-normal").await.unwrap().is_some());
-        assert!(repo::get_image(&pool, "img-missing").await.unwrap().is_none());
+        assert!(repo::get_image(&pool, "img-normal")
+            .await
+            .unwrap()
+            .is_some());
+        assert!(repo::get_image(&pool, "img-missing")
+            .await
+            .unwrap()
+            .is_none());
         assert_eq!(engine.vector_store_len(), 1);
     }
 
@@ -1274,16 +1402,9 @@ mod tests {
         )
         .await
         .unwrap();
-        repo::insert_tags(
-            &pool,
-            "img1",
-            &[repo::TagRecord {
-                tag_text: "旧标签".into(),
-                is_auto: false,
-            }],
-        )
-        .await
-        .unwrap();
+        repo::insert_tags(&pool, "img1", &[manual_tag("旧标签")])
+            .await
+            .unwrap();
 
         // update_tags 应替换旧标签
         let new_tags = vec!["新标签1".to_string(), "新标签2".to_string()];
@@ -1295,7 +1416,10 @@ mod tests {
                 .iter()
                 .map(|t| repo::TagRecord {
                     tag_text: t.clone(),
+                    category: repo::TagCategory::Custom,
                     is_auto: false,
+                    source_strategy: repo::TagSourceStrategy::Manual,
+                    confidence: 1.0,
                 })
                 .collect::<Vec<_>>(),
         )
@@ -1304,8 +1428,8 @@ mod tests {
 
         let tags = repo::get_tags_for_image(&pool, "img1").await.unwrap();
         assert_eq!(tags.len(), 2);
-        assert!(!tags.contains(&"旧标签".to_string()));
-        assert!(tags.contains(&"新标签1".to_string()));
+        assert!(!tags.iter().any(|tag| tag.tag_text == "旧标签"));
+        assert!(tags.iter().any(|tag| tag.tag_text == "新标签1"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1334,20 +1458,7 @@ mod tests {
         repo::insert_tags(
             &pool,
             "img1",
-            &[
-                repo::TagRecord {
-                    tag_text: "搞笑".into(),
-                    is_auto: false,
-                },
-                repo::TagRecord {
-                    tag_text: "搞怪".into(),
-                    is_auto: false,
-                },
-                repo::TagRecord {
-                    tag_text: "可爱".into(),
-                    is_auto: false,
-                },
-            ],
+            &[manual_tag("搞笑"), manual_tag("搞怪"), manual_tag("可爱")],
         )
         .await
         .unwrap();

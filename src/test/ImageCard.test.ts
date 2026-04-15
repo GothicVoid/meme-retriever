@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import ImageCard from "@/components/ImageCard.vue";
 import Toast from "@/components/Toast.vue";
 import type { SearchResult } from "@/stores/search";
+import { createManualTag } from "@/types/tags";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -21,7 +22,7 @@ const mockImage: SearchResult = {
   thumbnailPath: "/library/thumbs/uuid-1.jpg",
   fileFormat: "jpg",
   score: 0.9,
-  tags: ["搞笑"],
+  tags: [createManualTag("搞笑")],
   debugInfo: null,
 };
 
@@ -128,22 +129,24 @@ describe("ImageCard", () => {
   it("showDebugInfo=true 且有 debugInfo 时显示叠层", () => {
     const image: SearchResult = {
       ...mockImage,
-      debugInfo: { semScore: 0.8, kwScore: 0.3, tagHit: false, semWeight: 0.3, kwWeight: 0.4, relevance: 0.24, popularity: 0.5 },
+      debugInfo: { semScore: 0.8, kwScore: 0.3, tagScore: 0, semWeight: 0.3, kwWeight: 0.4, relevance: 0.24, popularity: 0.5 },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     const overlay = wrapper.find(".debug-overlay");
     expect(overlay.exists()).toBe(true);
     expect(overlay.text()).toContain("80");
     expect(overlay.text()).toContain("30");
+    expect(overlay.text()).toContain("标签 0%");
   });
 
-  it("标签命中时显示标签命中标记", () => {
+  it("标签得分固定显示", () => {
     const image: SearchResult = {
       ...mockImage,
-      debugInfo: { semScore: 0.5, kwScore: 0.9, tagHit: true, semWeight: 0.3, kwWeight: 0.4, relevance: 0.36, popularity: 0.8 },
+      debugInfo: { semScore: 0.5, kwScore: 0.9, tagScore: 0.7, semWeight: 0.3, kwWeight: 0.4, relevance: 0.36, popularity: 0.8 },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
-    expect(wrapper.find(".debug-overlay").text()).toContain("标签命中");
+    expect(wrapper.find(".debug-overlay").text()).toContain("标签 70%");
+    expect(wrapper.find(".debug-overlay").text()).toContain("×0.3");
   });
 
   it("selectable=true 时渲染 checkbox", () => {

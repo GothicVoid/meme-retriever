@@ -7,8 +7,6 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
-        Self {
-            default_limit: 9,
-        }
+        Self { default_limit: 9 }
     }
 }
