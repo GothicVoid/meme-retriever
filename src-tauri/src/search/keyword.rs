@@ -97,7 +97,7 @@ pub async fn tag_search(
     let normalized_pattern = format!("%{normalized_query}%");
     let raw_pattern = format!("%{raw_query}%");
     let rows = sqlx::query(
-        "SELECT image_id, tag_text, category, source_strategy, confidence
+        "SELECT image_id, tag_text, source_strategy
          FROM tags
          WHERE tag_text LIKE ?1 OR tag_text LIKE ?2
          LIMIT ?3",
@@ -121,7 +121,7 @@ pub async fn tag_search(
         let tag_text: String = row.get("tag_text");
         let tag_lower = tag_text.to_lowercase();
 
-        let base = if tag_lower == normalized_query_lower {
+        let base: f32 = if tag_lower == normalized_query_lower {
             if normalized_query_lower == raw_query_lower {
                 1.0
             } else {
@@ -140,29 +140,19 @@ pub async fn tag_search(
             continue;
         };
 
-        let category =
-            crate::db::repo::TagCategory::from(row.get::<String, _>("category").as_str());
         let source = crate::db::repo::TagSourceStrategy::from(
             row.get::<String, _>("source_strategy").as_str(),
         );
-        let confidence = row.get::<f64, _>("confidence") as f32;
-
-        let category_weight = match category {
-            crate::db::repo::TagCategory::Custom => 1.15,
-            crate::db::repo::TagCategory::Meme => 1.0,
-            crate::db::repo::TagCategory::Person => 0.85,
-            crate::db::repo::TagCategory::Source => 0.75,
-        };
-        let source_weight = match source {
+        let source_weight: f32 = match source {
             crate::db::repo::TagSourceStrategy::Manual => 1.0,
-            crate::db::repo::TagSourceStrategy::OcrFileName => 0.95,
-            crate::db::repo::TagSourceStrategy::Ocr => 0.9,
-            crate::db::repo::TagSourceStrategy::FileName => 0.75,
-            crate::db::repo::TagSourceStrategy::ClipText => 0.8,
-            crate::db::repo::TagSourceStrategy::ExampleImage => 0.8,
-            crate::db::repo::TagSourceStrategy::Fallback => 0.7,
+            crate::db::repo::TagSourceStrategy::OcrFileName
+            | crate::db::repo::TagSourceStrategy::Ocr
+            | crate::db::repo::TagSourceStrategy::FileName
+            | crate::db::repo::TagSourceStrategy::ClipText
+            | crate::db::repo::TagSourceStrategy::ExampleImage
+            | crate::db::repo::TagSourceStrategy::Fallback => 0.6,
         };
-        let score = (base * category_weight * source_weight * confidence.max(0.0)).clamp(0.0, 1.0);
+        let score = (base * source_weight).clamp(0.0, 1.0);
         by_image
             .entry(image_id)
             .and_modify(|current| {
@@ -313,7 +303,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_tag_search_partial_returns_0_8(pool: SqlitePool) {
+    async fn test_tag_search_partial_manual_returns_0_8(pool: SqlitePool) {
         insert_image(&pool, "id1").await;
         sqlx::query(
             "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
@@ -325,8 +315,52 @@ mod tests {
         let results = tag_search(&pool, "搞笑", "搞笑", &[], 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert!(
-            (results[0].1 - 0.92).abs() < 1e-6,
-            "partial match should include custom/manual weight, got {}",
+            (results[0].1 - 0.8).abs() < 1e-6,
+            "manual partial match should keep base score, got {}",
+            results[0].1
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_tag_search_manual_beats_auto_and_ignores_category_confidence(
+        pool: SqlitePool,
+    ) {
+        insert_image(&pool, "manual").await;
+        insert_image(&pool, "auto").await;
+        sqlx::query(
+            "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
+             VALUES
+             ('manual','老板','person',0,'manual',0.2,1),
+             ('auto','老板','custom',1,'ocr+file_name',1.0,1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let results = tag_search(&pool, "老板", "老板", &[], 10).await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "manual");
+        assert!((results[0].1 - 1.0).abs() < 1e-6);
+        assert_eq!(results[1].0, "auto");
+        assert!((results[1].1 - 0.6).abs() < 1e-6);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_tag_search_auto_partial_is_weak_signal(pool: SqlitePool) {
+        insert_image(&pool, "id1").await;
+        sqlx::query(
+            "INSERT INTO tags(image_id,tag_text,category,is_auto,source_strategy,confidence,created_at)
+             VALUES('id1','老板来了','custom',1,'ocr',1.0,1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let results = tag_search(&pool, "老板", "老板", &[], 10).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(
+            (results[0].1 - 0.48).abs() < 1e-6,
+            "auto partial match should stay weak, got {}",
             results[0].1
         );
     }

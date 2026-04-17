@@ -820,6 +820,37 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_prefers_ocr_main_route_over_auto_hint(pool: SqlitePool) {
+        insert_test_image(&pool, "ocr-hit", "老板来了", unit_vec(1)).await;
+        insert_test_image(&pool, "auto-hint", "", unit_vec(2)).await;
+        repo::insert_tags(
+            &pool,
+            "auto-hint",
+            &[repo::TagRecord {
+                tag_text: "老板来了".into(),
+                category: repo::TagCategory::Custom,
+                is_auto: true,
+                source_strategy: repo::TagSourceStrategy::Ocr,
+                confidence: 1.0,
+            }],
+        )
+        .await
+        .unwrap();
+
+        let engine = make_engine(pool).await;
+        let results = engine.search("老板来了", 10, 0.3, 0.4, 0.3).await.unwrap();
+
+        assert!(results.len() >= 2);
+        assert_eq!(results[0].id, "ocr-hit");
+        assert_eq!(results[0].debug_info.as_ref().unwrap().main_route, "ocr");
+        assert_eq!(results[1].id, "auto-hint");
+        assert!(
+            results[0].score > results[1].score,
+            "ocr main route should outrank auto hint"
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_search_filters_missing_files(pool: SqlitePool) {
         repo::insert_image(
             &pool,
