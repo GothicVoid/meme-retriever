@@ -38,7 +38,7 @@
     </header>
 
     <div class="meta-row">
-      <span class="meta-pill">文件：{{ kbPath || "app_data/knowledge_base.json" }}</span>
+      <span class="meta-pill">文件：{{ kbPath || "读取中..." }}</span>
       <span class="meta-pill">角色数：{{ entries.length }}</span>
       <span
         class="meta-pill"
