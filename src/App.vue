@@ -15,7 +15,7 @@
       v-if="isDev"
       to="/kb-maintenance"
     >
-      知识库维护
+      私有角色库维护
     </RouterLink>
   </nav>
   <RouterView />

@@ -199,7 +199,7 @@ fn import_example_image_impl(source_path: &str, canonical: &str, kb_path: &Path)
 
     let base_dir = kb_path
         .parent()
-        .ok_or_else(|| "知识库目录无效，无法导入示例图".to_string())?;
+        .ok_or_else(|| "私有角色库目录无效，无法导入示例图".to_string())?;
     let entry_dir = base_dir
         .join("kb_examples")
         .join(sanitize_path_segment(canonical));

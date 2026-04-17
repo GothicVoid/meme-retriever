@@ -5,9 +5,9 @@
         <p class="eyebrow">
           Dev Only
         </p>
-        <h2>知识库维护</h2>
+        <h2>私有角色库维护</h2>
         <p class="hero-copy">
-          在同一页里完成词条编辑、结构校验和 OCR 命中测试，保存前就能看到潜在冲突。
+          在同一页里完成角色卡片编辑、结构校验和角色召回测试，保存前就能看到潜在冲突。
         </p>
       </div>
       <div class="hero-actions">
@@ -39,7 +39,7 @@
 
     <div class="meta-row">
       <span class="meta-pill">文件：{{ kbPath || "app_data/knowledge_base.json" }}</span>
-      <span class="meta-pill">条目数：{{ entries.length }}</span>
+      <span class="meta-pill">角色数：{{ entries.length }}</span>
       <span
         class="meta-pill"
         :class="{ dirty: dirty }"
@@ -64,7 +64,7 @@
             data-action="new-entry"
             @click="createEntry"
           >
-            新建条目
+            新建角色
           </button>
         </div>
 
@@ -72,7 +72,7 @@
           v-model.trim="filterKeyword"
           class="filter-input"
           type="text"
-          placeholder="按 canonical / 别名 / 关键词筛选"
+          placeholder="按角色名 / 别名 / 线索词筛选"
         >
 
         <div class="entry-list">
@@ -84,28 +84,28 @@
             :data-entry="entry.canonical"
             @click="selectEntry(entry.id)"
           >
-            <span class="entry-title">{{ entry.canonical || "未命名条目" }}</span>
+            <span class="entry-title">{{ entry.canonical || "未命名角色" }}</span>
             <span class="entry-meta">{{ entry.category }} · {{ entry.matchMode }}</span>
           </button>
           <div
             v-if="filteredEntries.length === 0"
             class="empty-state"
           >
-            当前筛选下没有条目
+            当前筛选下没有角色
           </div>
         </div>
       </aside>
 
       <section class="editor-panel">
         <div class="panel-head">
-          <h3>条目编辑</h3>
+          <h3>角色编辑</h3>
           <button
             class="danger-btn small"
             data-action="delete-entry"
             :disabled="!selectedEntry"
             @click="deleteCurrentEntry"
           >
-            删除当前条目
+            删除当前角色
           </button>
         </div>
 
@@ -114,17 +114,17 @@
           class="form-grid"
         >
           <label class="field wide">
-            <span>标准标签 <em>最终落库统一写入该值</em></span>
+            <span>角色主名称 <em>当前兼容字段仍写入 canonical</em></span>
             <input
               v-model="form.canonical"
               data-field="canonical"
               type="text"
-              placeholder="如：蚌埠住了"
+              placeholder="如：阿布 / 老板"
             >
           </label>
 
           <label class="field">
-            <span>分类 <em>限定为 meme / source / person</em></span>
+            <span>分类 <em>当前实现仍兼容 meme / source / person，私有角色建议使用 person</em></span>
             <select
               v-model="form.category"
               data-field="category"
@@ -136,7 +136,7 @@
           </label>
 
           <label class="field">
-            <span>匹配模式 <em>控制 exact / contains / exact_or_contains</em></span>
+            <span>匹配模式 <em>控制角色名、别名和线索词的命中方式</em></span>
             <select
               v-model="form.matchMode"
               data-field="match-mode"
@@ -158,7 +158,7 @@
           </label>
 
           <label class="field wide">
-            <span>别名 <em>同义词、口语化写法、变体表达；支持逗号或换行分隔</em></span>
+            <span>别名 <em>角色别称、昵称或常见写法；支持逗号或换行分隔</em></span>
             <textarea
               v-model="form.aliases"
               data-field="aliases"
@@ -168,32 +168,32 @@
           </label>
 
           <label class="field wide">
-            <span>匹配线索 <em>用于命中的线索词，不一定是标准别名；支持逗号或换行分隔</em></span>
+            <span>匹配线索 <em>动作、表情、场景等记忆点；支持逗号或换行分隔</em></span>
             <textarea
               v-model="form.matchTerms"
               data-field="match-terms"
               rows="4"
-              placeholder="如：皇上、臣妾、忍不住笑"
+              placeholder="如：撇嘴、冷笑、看报表"
             />
           </label>
 
           <label class="field wide">
-            <span>描述 <em>给维护人看的解释字段，不参与首期核心匹配</em></span>
+            <span>备注 <em>给维护人看的说明字段，不参与首期核心匹配</em></span>
             <textarea
               v-model="form.description"
               data-field="description"
               rows="4"
-              placeholder="给维护人看的说明"
+              placeholder="记录这个角色的使用场景或补充说明"
             />
           </label>
 
           <label class="field wide">
-            <span>示例图 <em>填写相对知识库文件的本地路径，支持逗号或换行分隔</em></span>
+            <span>示例图 <em>填写相对角色库文件的本地路径，支持逗号或换行分隔</em></span>
             <textarea
               v-model="form.exampleImages"
               data-field="example-images"
               rows="4"
-              placeholder="如：examples/zhenhuan/sample-1.jpg"
+              placeholder="如：kb_examples/abu/sample-1.jpg"
             />
             <div class="example-actions">
               <button
@@ -205,7 +205,7 @@
               >
                 {{ importingExample ? "导入中..." : "导入示例图到应用目录" }}
               </button>
-              <span class="mini-note">选择本地图片后会复制到知识库目录下的 `kb_examples/` 并自动填入相对路径。</span>
+              <span class="mini-note">选择本地图片后会复制到角色库目录下的 `kb_examples/` 并自动填入相对路径。</span>
             </div>
           </label>
         </div>
@@ -214,7 +214,7 @@
           v-else
           class="empty-state large"
         >
-          先从左侧选择一个条目，或者新建词条开始编辑。
+          先从左侧选择一个角色，或者新建角色开始编辑。
         </div>
       </section>
 
@@ -253,15 +253,15 @@
 
         <section class="report-card">
           <div class="panel-head">
-            <h3>OCR 测试</h3>
-            <span class="mini-note">快速验证命中效果</span>
+            <h3>角色召回测试</h3>
+            <span class="mini-note">快速验证角色名、别名和线索词是否能命中</span>
           </div>
           <textarea
             v-model="testText"
             data-field="test-text"
             class="test-text"
             rows="5"
-            placeholder="输入一段 OCR 文本，查看最终推荐标签"
+            placeholder="输入角色名、别名或你记得的动作/表情线索"
           />
           <button
             class="primary-btn full"
@@ -269,20 +269,20 @@
             :disabled="loading"
             @click="testMatch"
           >
-            测试命中
+            测试召回
           </button>
 
           <div
             v-if="matchResult.recommendedCanonical"
             class="match-summary"
           >
-            最终推荐标签：{{ matchResult.recommendedCanonical }}
+            最终推荐角色：{{ matchResult.recommendedCanonical }}
           </div>
           <div
             v-else-if="tested"
             class="report-ok"
           >
-            未命中任何知识库条目
+            未命中任何私有角色
           </div>
 
           <div class="match-list">
@@ -467,7 +467,7 @@ function createEntry() {
   selectedEntryId.value = entry.id;
   syncEntryToForm();
   dirty.value = true;
-  statusMessage.value = "已新建空白条目，填写后记得保存。";
+  statusMessage.value = "已新建空白角色，填写后记得保存。";
 }
 
 function selectEntry(id: string) {
@@ -482,7 +482,7 @@ function deleteCurrentEntry() {
   selectedEntryId.value = entries.value[0]?.id ?? "";
   syncEntryToForm();
   dirty.value = true;
-  statusMessage.value = "已从当前草稿中删除条目，保存后才会写回文件。";
+  statusMessage.value = "已从当前草稿中删除角色，保存后才会写回文件。";
 }
 
 function syncEntryToForm() {

@@ -92,13 +92,13 @@ impl Default for KnowledgeBaseFile {
 impl KnowledgeBaseFile {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("读取知识库文件失败：{}", path.display()))?;
+            .with_context(|| format!("读取私有角色库文件失败：{}", path.display()))?;
         Self::from_json_str(&content)
     }
 
     pub fn from_json_str(content: &str) -> anyhow::Result<Self> {
         let value: serde_json::Value =
-            serde_json::from_str(content).context("知识库文件格式错误")?;
+            serde_json::from_str(content).context("私有角色库文件格式错误")?;
         let version = value["version"]
             .as_u64()
             .map(|v| v as u32)
@@ -106,7 +106,7 @@ impl KnowledgeBaseFile {
 
         let entries = value["entries"]
             .as_array()
-            .ok_or_else(|| anyhow!("知识库文件格式错误"))?
+            .ok_or_else(|| anyhow!("私有角色库文件格式错误"))?
             .iter()
             .cloned()
             .map(parse_entry)
@@ -116,7 +116,7 @@ impl KnowledgeBaseFile {
     }
 
     pub fn to_pretty_json(&self) -> anyhow::Result<String> {
-        serde_json::to_string_pretty(self).context("序列化知识库失败")
+        serde_json::to_string_pretty(self).context("序列化私有角色库失败")
     }
 
     pub fn validate(&self) -> ValidationReport {
@@ -335,7 +335,7 @@ impl KnowledgeBaseStore {
             .entries
             .iter()
             .position(|entry| normalize_text(&entry.canonical) == target)
-            .ok_or_else(|| anyhow!("未找到知识库条目：{}", canonical))?;
+            .ok_or_else(|| anyhow!("未找到私有角色条目：{}", canonical))?;
         self.kb.entries[index] = replacement;
         self.kb.format_in_place();
         self.ensure_valid()?;
@@ -349,7 +349,7 @@ impl KnowledgeBaseStore {
             .entries
             .retain(|entry| normalize_text(&entry.canonical) != target);
         if self.kb.entries.len() == before {
-            bail!("未找到知识库条目：{}", canonical);
+            bail!("未找到私有角色条目：{}", canonical);
         }
         Ok(())
     }
@@ -362,7 +362,7 @@ impl KnowledgeBaseStore {
                 .with_context(|| format!("创建目录失败：{}", parent.display()))?;
         }
         std::fs::write(&self.path, self.kb.to_pretty_json()?)
-            .with_context(|| format!("写回知识库文件失败：{}", self.path.display()))?;
+            .with_context(|| format!("写回私有角色库文件失败：{}", self.path.display()))?;
         Ok(())
     }
 
@@ -391,7 +391,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
                 parse_optional_value(args, "--keyword").as_deref(),
             );
             if entries.is_empty() {
-                return Ok("未找到任何知识库条目".to_string());
+                return Ok("未找到任何私有角色条目".to_string());
             }
             Ok(entries
                 .into_iter()
@@ -415,7 +415,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let canonical = entry.canonical.clone();
             store.add_entry(entry)?;
             store.save()?;
-            Ok(format!("已创建知识库条目：{}", canonical))
+            Ok(format!("已创建私有角色条目：{}", canonical))
         }
         "edit" => {
             let path = parse_optional_path(args, "--file");
@@ -425,7 +425,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let canonical = entry.canonical.clone();
             store.edit_entry(&target, entry)?;
             store.save()?;
-            Ok(format!("已更新知识库条目：{}", canonical))
+            Ok(format!("已更新私有角色条目：{}", canonical))
         }
         "delete" => {
             let path = parse_optional_path(args, "--file");
@@ -433,14 +433,14 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let mut store = KnowledgeBaseStore::open(path)?;
             store.delete_entry(&canonical)?;
             store.save()?;
-            Ok(format!("已删除知识库条目：{}", canonical))
+            Ok(format!("已删除私有角色条目：{}", canonical))
         }
         "validate" => {
             let path = parse_optional_path(args, "--file");
             let kb = KnowledgeBaseFile::load(&path)?;
             let report = kb.validate();
             if report.errors.is_empty() && report.warnings.is_empty() {
-                return Ok("知识库校验通过".to_string());
+                return Ok("私有角色库校验通过".to_string());
             }
 
             let mut lines = Vec::new();
@@ -460,11 +460,11 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let kb = KnowledgeBaseFile::load(&path)?;
             let matches = kb.test_match(&text);
             if matches.is_empty() {
-                return Ok("未命中任何知识库条目".to_string());
+                return Ok("未命中任何私有角色条目".to_string());
             }
             let recommended = &matches[0].canonical;
             let mut lines = vec![format!(
-                "输入文本命中 {} 个候选，最终推荐标签：{}",
+                "输入文本命中 {} 个候选，最终推荐角色：{}",
                 matches.len(),
                 recommended
             )];
@@ -480,7 +480,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let path = parse_optional_path(args, "--file");
             let mut store = KnowledgeBaseStore::open(path)?;
             store.save()?;
-            Ok("已写回格式化后的知识库文件".to_string())
+            Ok("已写回格式化后的私有角色库文件".to_string())
         }
         _ => Ok(cli_help()),
     }
@@ -625,7 +625,7 @@ fn base_score(match_type: MatchType) -> i32 {
 
 fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
     let mut entry: KnowledgeBaseEntry =
-        serde_json::from_value(value.clone()).context("知识库条目格式错误")?;
+        serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;
     if entry.match_terms.is_empty() {
         entry.match_terms = value["tags"]
             .as_array()
@@ -1117,7 +1117,7 @@ mod tests {
             path.display().to_string(),
         ])
         .unwrap();
-        assert_eq!(validate_output, "知识库校验通过");
+        assert_eq!(validate_output, "私有角色库校验通过");
 
         let test_output = execute_cli(&[
             "test-match".to_string(),
@@ -1127,7 +1127,7 @@ mod tests {
             "这个图我真的绷不住了".to_string(),
         ])
         .unwrap();
-        assert!(test_output.contains("最终推荐标签：蚌埠住了"));
+        assert!(test_output.contains("最终推荐角色：蚌埠住了"));
         assert!(test_output.contains("AliasSubstring"));
     }
 
@@ -1156,7 +1156,7 @@ mod tests {
             "8".to_string(),
         ])
         .unwrap();
-        assert_eq!(add_output, "已创建知识库条目：蚌埠住了");
+        assert_eq!(add_output, "已创建私有角色条目：蚌埠住了");
 
         let list_output = execute_cli(&[
             "list".to_string(),
@@ -1176,7 +1176,7 @@ mod tests {
             "这个图我真的绷不住了".to_string(),
         ])
         .unwrap();
-        assert!(test_output.contains("最终推荐标签：蚌埠住了"));
+        assert!(test_output.contains("最终推荐角色：蚌埠住了"));
 
         let delete_output = execute_cli(&[
             "delete".to_string(),
@@ -1186,6 +1186,6 @@ mod tests {
             "蚌埠住了".to_string(),
         ])
         .unwrap();
-        assert_eq!(delete_output, "已删除知识库条目：蚌埠住了");
+        assert_eq!(delete_output, "已删除私有角色条目：蚌埠住了");
     }
 }

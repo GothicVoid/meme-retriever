@@ -18,30 +18,30 @@ const mockState = {
     version: 1,
     entries: [
       {
-        canonical: "蚌埠住了",
-        category: "meme",
-        aliases: ["绷不住了"],
-        matchTerms: ["忍不住笑"],
-        description: "表示忍不住笑了",
+        canonical: "阿布",
+        category: "person",
+        aliases: ["布布"],
+        matchTerms: ["撇嘴", "委屈"],
+        description: "私有角色卡片",
         matchMode: "contains",
         priority: 100,
-        exampleImages: [],
+        exampleImages: ["kb_examples/abu/sample-1.jpg"],
       },
       {
-        canonical: "甄嬛传",
-        category: "source",
-        aliases: ["后宫甄嬛传"],
-        matchTerms: ["皇上", "臣妾"],
-        description: "电视剧出处标签",
+        canonical: "老板",
+        category: "person",
+        aliases: ["王总"],
+        matchTerms: ["冷笑", "看报表"],
+        description: "工作场景常用私有对象",
         matchMode: "contains",
         priority: 90,
-        exampleImages: ["examples/zhenhuan/sample-1.jpg"],
+        exampleImages: ["kb_examples/boss/sample-1.jpg"],
       },
     ],
   },
   validationReport: {
     errors: [],
-    warnings: ["检测到潜在冲突词：皇上 -> 甄嬛传、如懿传"],
+    warnings: ["检测到潜在冲突词：老板 -> 老板、老板娘"],
     conflicts: [],
   },
 };
@@ -52,7 +52,7 @@ describe("KnowledgeBaseView", () => {
     mockOpen.mockReset();
   });
 
-  it("挂载时读取知识库并展示条目列表", async () => {
+  it("挂载时读取私有角色库并展示角色列表", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
       return Promise.resolve(undefined);
@@ -62,9 +62,9 @@ describe("KnowledgeBaseView", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("kb_get_state");
-    expect(wrapper.text()).toContain("知识库维护");
-    expect(wrapper.text()).toContain("蚌埠住了");
-    expect(wrapper.text()).toContain("甄嬛传");
+    expect(wrapper.text()).toContain("私有角色库维护");
+    expect(wrapper.text()).toContain("阿布");
+    expect(wrapper.text()).toContain("老板");
     expect(wrapper.text()).toContain("检测到潜在冲突词");
   });
 
@@ -76,15 +76,15 @@ describe("KnowledgeBaseView", () => {
           knowledgeBase: {
             entries: expect.arrayContaining([
               expect.objectContaining({
-                canonical: "蚌埠住了 Plus",
-                exampleImages: [],
+                canonical: "阿布 Plus",
+                exampleImages: ["kb_examples/abu/sample-1.jpg"],
               }),
             ]),
           },
         });
         return Promise.resolve({
           errors: [],
-          warnings: ["高歧义短词，请确认是否保留：蚌埠住了 Plus -> 笑死"],
+          warnings: ["高歧义短词，请确认是否保留：阿布 Plus -> 阿布"],
           conflicts: [],
         });
       }
@@ -94,8 +94,8 @@ describe("KnowledgeBaseView", () => {
     const wrapper = mount(KnowledgeBaseView);
     await flushPromises();
 
-    await wrapper.get("[data-entry='蚌埠住了']").trigger("click");
-    await wrapper.get("[data-field='canonical']").setValue("蚌埠住了 Plus");
+    await wrapper.get("[data-entry='阿布']").trigger("click");
+    await wrapper.get("[data-field='canonical']").setValue("阿布 Plus");
     await wrapper.get("[data-action='validate-kb']").trigger("click");
     await flushPromises();
 
@@ -110,7 +110,7 @@ describe("KnowledgeBaseView", () => {
     expect(wrapper.text()).toContain("高歧义短词");
   });
 
-  it("点击保存会将当前知识库写回", async () => {
+  it("点击保存会将当前私有角色库写回", async () => {
     mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
       if (cmd === "kb_save_entries") {
@@ -118,9 +118,9 @@ describe("KnowledgeBaseView", () => {
           knowledgeBase: {
             entries: expect.arrayContaining([
               expect.objectContaining({
-                canonical: "蚌埠住了",
-                aliases: ["绷不住了", "蚌住了"],
-                exampleImages: [],
+                canonical: "阿布",
+                aliases: ["布布", "阿布老师"],
+                exampleImages: ["kb_examples/abu/sample-1.jpg"],
               }),
             ]),
           },
@@ -132,7 +132,7 @@ describe("KnowledgeBaseView", () => {
             entries: [
               {
                 ...mockState.knowledgeBase.entries[0],
-                aliases: ["绷不住了", "蚌住了"],
+                aliases: ["布布", "阿布老师"],
               },
               mockState.knowledgeBase.entries[1],
             ],
@@ -146,8 +146,8 @@ describe("KnowledgeBaseView", () => {
     const wrapper = mount(KnowledgeBaseView);
     await flushPromises();
 
-    await wrapper.get("[data-entry='蚌埠住了']").trigger("click");
-    await wrapper.get("[data-field='aliases']").setValue("绷不住了, 蚌住了");
+    await wrapper.get("[data-entry='阿布']").trigger("click");
+    await wrapper.get("[data-field='aliases']").setValue("布布, 阿布老师");
     await wrapper.get("[data-action='save-kb']").trigger("click");
     await flushPromises();
 
@@ -162,22 +162,22 @@ describe("KnowledgeBaseView", () => {
     expect(wrapper.text()).toContain("已保存到");
   });
 
-  it("输入 OCR 文本后可以看到测试命中结果", async () => {
+  it("输入角色线索后可以看到测试命中结果", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
       if (cmd === "kb_test_match_entries") {
         return Promise.resolve({
           matches: [
             {
-              canonical: "甄嬛传",
-              category: "source",
+              canonical: "老板",
+              category: "person",
               matchType: "MatchTermSubstring",
-              matchedTerm: "皇上",
+              matchedTerm: "冷笑",
               score: 355,
               priority: 90,
             },
           ],
-          recommendedCanonical: "甄嬛传",
+          recommendedCanonical: "老板",
         });
       }
       return Promise.resolve(undefined);
@@ -186,12 +186,12 @@ describe("KnowledgeBaseView", () => {
     const wrapper = mount(KnowledgeBaseView);
     await flushPromises();
 
-    await wrapper.get("[data-field='test-text']").setValue("皇上看到这张图都沉默了");
+    await wrapper.get("[data-field='test-text']").setValue("我想找老板冷笑那张图");
     await wrapper.get("[data-action='test-match']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("最终推荐标签：甄嬛传");
-    expect(wrapper.text()).toContain("命中词：皇上");
+    expect(wrapper.text()).toContain("最终推荐角色：老板");
+    expect(wrapper.text()).toContain("命中词：冷笑");
   });
 
   it("支持编辑示例图字段并随保存一起提交", async () => {
@@ -202,8 +202,8 @@ describe("KnowledgeBaseView", () => {
           knowledgeBase: {
             entries: expect.arrayContaining([
               expect.objectContaining({
-                canonical: "甄嬛传",
-                exampleImages: ["examples/zhenhuan/sample-1.jpg", "examples/zhenhuan/sample-2.jpg"],
+                canonical: "老板",
+                exampleImages: ["kb_examples/boss/sample-1.jpg", "kb_examples/boss/sample-2.jpg"],
               }),
             ]),
           },
@@ -216,10 +216,10 @@ describe("KnowledgeBaseView", () => {
     const wrapper = mount(KnowledgeBaseView);
     await flushPromises();
 
-    await wrapper.get("[data-entry='甄嬛传']").trigger("click");
+    await wrapper.get("[data-entry='老板']").trigger("click");
     await wrapper
       .get("[data-field='example-images']")
-      .setValue("examples/zhenhuan/sample-1.jpg, examples/zhenhuan/sample-2.jpg");
+      .setValue("kb_examples/boss/sample-1.jpg, kb_examples/boss/sample-2.jpg");
     await wrapper.get("[data-action='save-kb']").trigger("click");
     await flushPromises();
 
@@ -240,7 +240,7 @@ describe("KnowledgeBaseView", () => {
       if (cmd === "kb_import_example_image") {
         expect(payload).toEqual({
           sourcePath: "/tmp/source.jpg",
-          canonical: "甄嬛传",
+          canonical: "老板",
         });
         return Promise.resolve("kb_examples/entry/sample.jpg");
       }
@@ -250,14 +250,14 @@ describe("KnowledgeBaseView", () => {
     const wrapper = mount(KnowledgeBaseView);
     await flushPromises();
 
-    await wrapper.get("[data-entry='甄嬛传']").trigger("click");
+    await wrapper.get("[data-entry='老板']").trigger("click");
     await wrapper.get("[data-action='import-example-image']").trigger("click");
     await flushPromises();
 
     expect(mockOpen).toHaveBeenCalled();
     expect(mockInvoke).toHaveBeenCalledWith("kb_import_example_image", {
       sourcePath: "/tmp/source.jpg",
-      canonical: "甄嬛传",
+      canonical: "老板",
     });
     expect((wrapper.get("[data-field='example-images']").element as HTMLTextAreaElement).value)
       .toContain("kb_examples/entry/sample.jpg");
