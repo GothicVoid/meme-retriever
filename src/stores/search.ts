@@ -4,13 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import type { StructuredTag } from "@/types/tags";
 
 export interface ScoreDebugInfo {
+  mainRoute: string;
+  mainScore: number;
+  auxScore: number;
   semScore: number;
   kwScore: number;
   tagScore: number;
-  semWeight: number;
-  kwWeight: number;
-  relevance: number;
-  popularity: number;
+  popularityBoost: number;
 }
 
 export interface SearchResult {

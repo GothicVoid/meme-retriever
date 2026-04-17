@@ -21,13 +21,13 @@ pub type EngineState = Arc<SearchEngine>;
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreDebugInfo {
+    pub main_route: String,
+    pub main_score: f32,
+    pub aux_score: f32,
     pub sem_score: f32,
     pub kw_score: f32,
     pub tag_score: f32,
-    pub sem_weight: f32,
-    pub kw_weight: f32,
-    pub relevance: f32,
-    pub popularity: f32,
+    pub popularity_boost: f32,
 }
 
 #[derive(serde::Serialize)]
@@ -1260,22 +1260,25 @@ mod tests {
     #[test]
     fn test_score_debug_info_serializes_camel_case() {
         let info = ScoreDebugInfo {
+            main_route: "ocr".into(),
+            main_score: 0.8,
+            aux_score: 0.2,
             sem_score: 0.85,
             kw_score: 0.4,
             tag_score: 1.0,
-            sem_weight: 0.4,
-            kw_weight: 0.6,
-            relevance: 0.3,
-            popularity: 0.5,
+            popularity_boost: 0.05,
         };
         let json = serde_json::to_value(&info).unwrap();
+        assert!(json.get("mainRoute").is_some(), "should have mainRoute");
+        assert!(json.get("mainScore").is_some(), "should have mainScore");
+        assert!(json.get("auxScore").is_some(), "should have auxScore");
         assert!(json.get("semScore").is_some(), "should have semScore");
         assert!(json.get("kwScore").is_some(), "should have kwScore");
         assert!(json.get("tagScore").is_some(), "should have tagScore");
-        assert!(json.get("semWeight").is_some(), "should have semWeight");
-        assert!(json.get("kwWeight").is_some(), "should have kwWeight");
-        assert!(json.get("relevance").is_some(), "should have relevance");
-        assert!(json.get("popularity").is_some(), "should have popularity");
+        assert!(
+            json.get("popularityBoost").is_some(),
+            "should have popularityBoost"
+        );
         assert!(json.get("sem_score").is_none(), "should NOT have sem_score");
     }
 
@@ -1639,18 +1642,19 @@ mod tests {
             score: 0.9,
             tags: vec![],
             debug_info: Some(ScoreDebugInfo {
+                main_route: "semantic".into(),
+                main_score: 0.8,
+                aux_score: 0.1,
                 sem_score: 0.8,
                 kw_score: 0.0,
                 tag_score: 0.0,
-                sem_weight: 0.3,
-                kw_weight: 0.4,
-                relevance: 0.24,
-                popularity: 0.5,
+                popularity_boost: 0.05,
             }),
         };
         let json = serde_json::to_value(&result).unwrap();
         assert!(json.get("debugInfo").is_some(), "should have debugInfo");
         let di = json["debugInfo"].as_object().unwrap();
+        assert_eq!(di["mainRoute"].as_str().unwrap(), "semantic");
         assert!((di["semScore"].as_f64().unwrap() - 0.8).abs() < 1e-5);
         assert_eq!(di["tagScore"].as_f64().unwrap(), 0.0);
         assert_eq!(di["kwScore"].as_f64().unwrap(), 0.0);

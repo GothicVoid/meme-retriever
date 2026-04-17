@@ -43,25 +43,26 @@
         {{ (image.score * 100).toFixed(1) }}%
       </div>
       <div class="debug-row">
-        <span>相关性 {{ (image.debugInfo.relevance * 100).toFixed(0) }}%</span>
-        <span class="dim">×0.75</span>
+        <span>主路 {{ image.debugInfo.mainRoute }}</span>
+        <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(0) }}%</span>
       </div>
       <div class="debug-row">
-        <span>热度 {{ (image.debugInfo.popularity * 100).toFixed(0) }}%</span>
-        <span class="dim">×0.25</span>
+        <span>辅路补充</span>
+        <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(0) }}%</span>
+      </div>
+      <div class="debug-row">
+        <span>热度修正</span>
+        <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(0) }}%</span>
       </div>
       <div class="debug-divider" />
       <div class="debug-row">
         <span>CLIP {{ (image.debugInfo.semScore * 100).toFixed(0) }}%</span>
-        <span class="dim">×0.3</span>
       </div>
       <div class="debug-row">
         <span>OCR {{ (image.debugInfo.kwScore * 100).toFixed(0) }}%</span>
-        <span class="dim">×0.4</span>
       </div>
       <div class="debug-row">
         <span>标签 {{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
-        <span class="dim">×0.3</span>
       </div>
     </div>
     <Teleport to="body">

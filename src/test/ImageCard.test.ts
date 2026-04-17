@@ -129,11 +129,20 @@ describe("ImageCard", () => {
   it("showDebugInfo=true 且有 debugInfo 时显示叠层", () => {
     const image: SearchResult = {
       ...mockImage,
-      debugInfo: { semScore: 0.8, kwScore: 0.3, tagScore: 0, semWeight: 0.3, kwWeight: 0.4, relevance: 0.24, popularity: 0.5 },
+      debugInfo: {
+        mainRoute: "ocr",
+        mainScore: 0.8,
+        auxScore: 0.2,
+        semScore: 0.8,
+        kwScore: 0.3,
+        tagScore: 0,
+        popularityBoost: 0.05,
+      },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     const overlay = wrapper.find(".debug-overlay");
     expect(overlay.exists()).toBe(true);
+    expect(overlay.text()).toContain("主路 ocr");
     expect(overlay.text()).toContain("80");
     expect(overlay.text()).toContain("30");
     expect(overlay.text()).toContain("标签 0%");
@@ -142,11 +151,19 @@ describe("ImageCard", () => {
   it("标签得分固定显示", () => {
     const image: SearchResult = {
       ...mockImage,
-      debugInfo: { semScore: 0.5, kwScore: 0.9, tagScore: 0.7, semWeight: 0.3, kwWeight: 0.4, relevance: 0.36, popularity: 0.8 },
+      debugInfo: {
+        mainRoute: "semantic",
+        mainScore: 0.6,
+        auxScore: 0.2,
+        semScore: 0.5,
+        kwScore: 0.9,
+        tagScore: 0.7,
+        popularityBoost: 0.04,
+      },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     expect(wrapper.find(".debug-overlay").text()).toContain("标签 70%");
-    expect(wrapper.find(".debug-overlay").text()).toContain("×0.3");
+    expect(wrapper.find(".debug-overlay").text()).toContain("热度修正");
   });
 
   it("selectable=true 时渲染 checkbox", () => {

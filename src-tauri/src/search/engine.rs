@@ -33,6 +33,23 @@ fn now_secs() -> i64 {
         .as_secs() as i64
 }
 
+#[derive(Clone, Copy)]
+enum MainRoute {
+    Ocr,
+    Semantic,
+    PrivateRole,
+}
+
+impl MainRoute {
+    fn as_str(self) -> &'static str {
+        match self {
+            MainRoute::Ocr => "ocr",
+            MainRoute::Semantic => "semantic",
+            MainRoute::PrivateRole => "privateRole",
+        }
+    }
+}
+
 pub struct SearchEngine {
     pool: DbPool,
     vector_store: Arc<RwLock<VectorStore>>,
@@ -120,9 +137,9 @@ impl SearchEngine {
         &self,
         query: &str,
         limit: usize,
-        w_kw: f32,
-        w_ocr: f32,
-        w_clip: f32,
+        _w_kw: f32,
+        _w_ocr: f32,
+        _w_clip: f32,
     ) -> anyhow::Result<Vec<SearchResult>> {
         if query.is_empty() {
             // PRD §5.2.3: 展示使用频次最高的 N 张
@@ -250,6 +267,12 @@ impl SearchEngine {
         let use_count_map = repo::get_use_counts(&self.pool, &all_candidate_ids).await?;
         let ocr_text_map = repo::get_ocr_texts(&self.pool, &all_candidate_ids).await?;
 
+        let main_route = if !fts_map.is_empty() {
+            MainRoute::Ocr
+        } else {
+            MainRoute::Semantic
+        };
+
         let mut score_map: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
         let mut debug_map: std::collections::HashMap<String, ScoreDebugInfo> =
@@ -257,14 +280,14 @@ impl SearchEngine {
 
         let merge_one = |id: &str,
                          raw_cosine: f32,
+                         s_fts: f32,
                          s_ocr: f32,
                          s_kw: f32,
                          use_count_map: &std::collections::HashMap<String, i64>,
                          max_uc: i64|
          -> (f32, ScoreDebugInfo) {
             let s_clip: f32 = (raw_cosine + 1.0) / 2.0; // cosine → [0,1]
-
-            let relevance = (w_kw * s_kw + w_ocr * s_ocr + w_clip * s_clip).clamp(0.0, 1.0);
+            let text_score = s_ocr.max(s_fts);
 
             let use_count = use_count_map.get(id).copied().unwrap_or(0);
             let popularity: f32 = if use_count == 0 {
@@ -272,27 +295,35 @@ impl SearchEngine {
             } else {
                 ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
             };
+            let popularity_boost = 0.1 * popularity;
+
+            let (main_score, aux_score) = match main_route {
+                MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
+                MainRoute::Semantic => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
+                MainRoute::PrivateRole => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
+            };
 
             // 纯语义命中只要通过向量召回阈值就应保留；文本分支仍保留最低质量门槛。
             let final_score = if passes_result_filter(raw_cosine, s_ocr, s_kw) {
-                (0.75 * relevance + 0.25 * popularity).clamp(0.0, 1.0)
+                (main_score + aux_score + popularity_boost).clamp(0.0, 1.0)
             } else {
                 0.0
             };
 
             let dbg = ScoreDebugInfo {
+                main_route: main_route.as_str().to_string(),
+                main_score,
+                aux_score,
                 sem_score: s_clip,
-                kw_score: s_ocr,
+                kw_score: text_score,
                 tag_score: s_kw,
-                sem_weight: w_clip,
-                kw_weight: w_ocr,
-                relevance,
-                popularity,
+                popularity_boost,
             };
             (final_score, dbg)
         };
 
         for (id, raw_cosine) in &semantic_hits {
+            let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
             let s_ocr = char_coverage(
                 query,
                 ocr_text_map
@@ -301,13 +332,22 @@ impl SearchEngine {
                     .unwrap_or(""),
             );
             let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-            let (score, dbg) =
-                merge_one(id, *raw_cosine, s_ocr, s_kw, &use_count_map, max_use_count);
-            tracing::info!(
-                "[MERGE] {} relevance={:.4} popularity={:.4} final={:.4}",
+            let (score, dbg) = merge_one(
                 id,
-                dbg.relevance,
-                dbg.popularity,
+                *raw_cosine,
+                s_fts,
+                s_ocr,
+                s_kw,
+                &use_count_map,
+                max_use_count,
+            );
+            tracing::info!(
+                "[MERGE] {} route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
+                id,
+                dbg.main_route,
+                dbg.main_score,
+                dbg.aux_score,
+                dbg.popularity_boost,
                 score
             );
             if score > 0.0 {
@@ -318,20 +358,31 @@ impl SearchEngine {
         // FTS 命中但语义未命中的也加入
         for id in fts_map.keys() {
             if !score_map.contains_key(id) {
+                let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
                 let s_ocr = char_coverage(
                     query,
                     ocr_text_map
                         .get(id.as_str())
                         .map(|s| s.as_str())
-                        .unwrap_or(""),
+                    .unwrap_or(""),
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-                let (score, dbg) = merge_one(id, -1.0, s_ocr, s_kw, &use_count_map, max_use_count);
-                tracing::info!(
-                    "[MERGE] {} (no semantic) relevance={:.4} popularity={:.4} final={:.4}",
+                let (score, dbg) = merge_one(
                     id,
-                    dbg.relevance,
-                    dbg.popularity,
+                    -1.0,
+                    s_fts,
+                    s_ocr,
+                    s_kw,
+                    &use_count_map,
+                    max_use_count,
+                );
+                tracing::info!(
+                    "[MERGE] {} (no semantic) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
+                    id,
+                    dbg.main_route,
+                    dbg.main_score,
+                    dbg.aux_score,
+                    dbg.popularity_boost,
                     score
                 );
                 if score > 0.0 {
@@ -343,20 +394,31 @@ impl SearchEngine {
         // 纯标签命中但既无语义命中、也无 OCR/FTS 命中的也应进入结果
         for id in tag_score_map.keys() {
             if !score_map.contains_key(id) {
+                let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
                 let s_ocr = char_coverage(
                     query,
                     ocr_text_map
                         .get(id.as_str())
                         .map(|s| s.as_str())
-                        .unwrap_or(""),
+                    .unwrap_or(""),
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-                let (score, dbg) = merge_one(id, -1.0, s_ocr, s_kw, &use_count_map, max_use_count);
-                tracing::info!(
-                    "[MERGE] {} (tag only) relevance={:.4} popularity={:.4} final={:.4}",
+                let (score, dbg) = merge_one(
                     id,
-                    dbg.relevance,
-                    dbg.popularity,
+                    -1.0,
+                    s_fts,
+                    s_ocr,
+                    s_kw,
+                    &use_count_map,
+                    max_use_count,
+                );
+                tracing::info!(
+                    "[MERGE] {} (tag only) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
+                    id,
+                    dbg.main_route,
+                    dbg.main_score,
+                    dbg.aux_score,
+                    dbg.popularity_boost,
                     score
                 );
                 if score > 0.0 {
@@ -502,6 +564,16 @@ mod tests {
     }
 
     async fn insert_test_image(pool: &SqlitePool, id: &str, ocr: &str, embedding: Vec<f32>) {
+        insert_test_image_with_use_count(pool, id, ocr, embedding, 0).await;
+    }
+
+    async fn insert_test_image_with_use_count(
+        pool: &SqlitePool,
+        id: &str,
+        ocr: &str,
+        embedding: Vec<f32>,
+        use_count: i64,
+    ) {
         repo::insert_image(
             pool,
             &repo::ImageRecord {
@@ -512,7 +584,7 @@ mod tests {
                 width: Some(100),
                 height: Some(100),
                 added_at: 1000,
-                use_count: 0,
+                use_count,
                 thumbnail_path: Some(format!("/tmp/{id}_thumb.jpg")),
                 file_hash: None,
                 file_size: None,
@@ -871,53 +943,50 @@ mod tests {
                 .debug_info
                 .as_ref()
                 .expect("debug_info should be Some for search results");
-            // sem_score = (cosine+1)/2 ∈ [0,1]
             assert!(
                 di.sem_score >= 0.0 && di.sem_score <= 1.0,
                 "sem_score out of range: {}",
                 di.sem_score
             );
-            // kw_score = FTS score ∈ [0,1]
             assert!(
                 di.kw_score >= 0.0 && di.kw_score <= 1.0,
                 "kw_score out of range: {}",
                 di.kw_score
             );
-            // 权重反映传入值
             assert!(
-                (di.sem_weight - 0.3).abs() < 1e-5,
-                "sem_weight should be 0.3 (w_clip)"
+                matches!(di.main_route.as_str(), "ocr" | "semantic" | "privateRole"),
+                "unexpected main_route: {}",
+                di.main_route
             );
             assert!(
-                (di.kw_weight - 0.4).abs() < 1e-5,
-                "kw_weight should be 0.4 (w_ocr)"
+                di.main_score >= 0.0 && di.main_score <= 1.0,
+                "main_score out of range: {}",
+                di.main_score
             );
-            // relevance ∈ [0,1]
             assert!(
-                di.relevance >= 0.0 && di.relevance <= 1.0,
-                "relevance out of range: {}",
-                di.relevance
+                di.aux_score >= 0.0 && di.aux_score <= 1.0,
+                "aux_score out of range: {}",
+                di.aux_score
             );
-            // popularity ∈ [0,1]（冷启动为 0.1）
             assert!(
-                di.popularity >= 0.0 && di.popularity <= 1.0,
-                "popularity out of range: {}",
-                di.popularity
+                di.popularity_boost >= 0.0 && di.popularity_boost <= 0.1,
+                "popularity_boost out of range: {}",
+                di.popularity_boost
             );
         }
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_cold_start_popularity_is_0_1(pool: SqlitePool) {
+    async fn test_cold_start_popularity_boost_is_small(pool: SqlitePool) {
         insert_test_image(&pool, "cold", "test", unit_vec(1)).await;
         let engine = make_engine(pool).await;
         let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
         let r = results.iter().find(|r| r.id == "cold").unwrap();
         let di = r.debug_info.as_ref().unwrap();
         assert!(
-            (di.popularity - 0.1).abs() < 1e-6,
-            "cold start popularity should be 0.1, got {}",
-            di.popularity
+            (di.popularity_boost - 0.01).abs() < 1e-6,
+            "cold start popularity_boost should be 0.01, got {}",
+            di.popularity_boost
         );
     }
 
@@ -960,53 +1029,58 @@ mod tests {
         }
     }
 
-    // ── 动态权重测试 ────────────────────────────────────────────────────────
-
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_dynamic_weights_reflected_in_debug_info(pool: SqlitePool) {
-        // 验证传入的权重被正确记录到 debug_info
-        insert_test_image(&pool, "img1", "test", unit_vec(1)).await;
+    async fn test_ocr_main_route_prioritizes_text_hit(pool: SqlitePool) {
+        insert_test_image(&pool, "ocr-strong", "你礼貌吗", unit_vec(1)).await;
+        insert_test_image(&pool, "semantic-only", "", unit_vec(2)).await;
         let engine = make_engine(pool).await;
 
-        let results = engine.search("test", 10, 0.5, 0.3, 0.2).await.unwrap();
+        let results = engine.search("你礼貌吗", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert!(!results.is_empty());
-        for r in &results {
-            if let Some(di) = &r.debug_info {
-                assert!(
-                    (di.sem_weight - 0.2).abs() < 1e-5,
-                    "sem_weight (w_clip) should be 0.2, got {}",
-                    di.sem_weight
-                );
-                assert!(
-                    (di.kw_weight - 0.3).abs() < 1e-5,
-                    "kw_weight (w_ocr) should be 0.3, got {}",
-                    di.kw_weight
-                );
-            }
+        assert_eq!(results[0].id, "ocr-strong");
+        assert_eq!(
+            results[0].debug_info.as_ref().map(|di| di.main_route.as_str()),
+            Some("ocr")
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_non_empty_query_popularity_is_light_bonus(pool: SqlitePool) {
+        insert_test_image_with_use_count(&pool, "exact-new", "你礼貌吗", unit_vec(1), 0).await;
+        insert_test_image_with_use_count(&pool, "weak-hot", "你", unit_vec(2), 500).await;
+        let engine = make_engine(pool).await;
+
+        let results = engine.search("你礼貌吗", 10, 0.3, 0.4, 0.3).await.unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].id, "exact-new");
+        let exact = results.iter().find(|result| result.id == "exact-new").unwrap();
+        let weak = results.iter().find(|result| result.id == "weak-hot");
+        if let Some(weak) = weak {
+            assert!(
+                exact.score > weak.score,
+                "exact text hit should rank above weak but popular result"
+            );
         }
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_dynamic_weights_score_range(pool: SqlitePool) {
-        // 不同权重下 score 仍在 [0,1]
-        insert_test_image(&pool, "img1", "test", unit_vec(1)).await;
+    async fn test_semantic_main_route_remains_available_without_ocr(pool: SqlitePool) {
+        let matching_embedding = ClipEncoder::encode_text("抓狂").unwrap();
+        insert_test_image(&pool, "semantic-hit", "", matching_embedding).await;
         let engine = make_engine(pool).await;
 
-        for (w1, w2, w3) in [
-            (1.0, 0.0, 0.0),
-            (0.0, 1.0, 0.0),
-            (0.0, 0.0, 1.0),
-            (0.5, 0.3, 0.2),
-        ] {
-            let results = engine.search("test", 10, w1, w2, w3).await.unwrap();
-            for r in &results {
-                assert!(
-                    r.score >= 0.0 && r.score <= 1.0,
-                    "score out of range with weights ({w1},{w2},{w3}): {}",
-                    r.score
-                );
-            }
-        }
+        let results = engine.search("抓狂", 10, 0.3, 0.4, 0.3).await.unwrap();
+        assert!(!results.is_empty());
+        assert!(
+            results.iter().any(|result| {
+                result.id == "semantic-hit"
+                    && result
+                        .debug_info
+                        .as_ref()
+                        .is_some_and(|di| di.main_route == "semantic")
+            }),
+            "results should use semantic route when no OCR main signal exists"
+        );
     }
 
     #[test]
