@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Deserialize;
 
-use super::provider::{category_threshold, KnowledgeBaseProvider, QueryNormalization};
+use super::provider::{category_threshold, KnowledgeBaseProvider, PrivateRoleMatch, QueryNormalization};
 use crate::db::repo::{TagCategory, TagRecord, TagSourceStrategy};
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -261,6 +261,59 @@ impl KnowledgeBaseProvider for LocalKBProvider {
         Vec::new()
     }
 
+    fn detect_private_role(&self, query: &str) -> Option<PrivateRoleMatch> {
+        let normalized_query = normalize(query);
+        if normalized_query.is_empty() {
+            return None;
+        }
+
+        self.entries
+            .iter()
+            .filter(|entry| {
+                matches!(Self::entry_category(entry), TagCategory::Person)
+                    && !entry.example_images.is_empty()
+            })
+            .filter_map(|entry| {
+                let terms = std::iter::once(entry.canonical.as_str())
+                    .chain(entry.aliases.iter().map(String::as_str))
+                    .collect::<Vec<_>>();
+                let matched_term = terms
+                    .into_iter()
+                    .filter_map(|term| {
+                        let normalized_term = normalize(term);
+                        if normalized_term.is_empty() || !normalized_query.contains(&normalized_term)
+                        {
+                            return None;
+                        }
+                        Some((term.to_string(), normalized_term.chars().count()))
+                    })
+                    .max_by(|a, b| a.1.cmp(&b.1))?;
+
+                Some((
+                    matched_term.1,
+                    entry.priority,
+                    PrivateRoleMatch {
+                        canonical: entry.canonical.clone(),
+                        matched_term: matched_term.0,
+                        related_terms: entry
+                            .aliases
+                            .iter()
+                            .cloned()
+                            .chain(std::iter::once(entry.canonical.clone()))
+                            .chain(entry.match_terms.iter().cloned())
+                            .collect(),
+                    },
+                ))
+            })
+            .max_by(|a, b| {
+                a.0.cmp(&b.0).then_with(|| {
+                    a.1.partial_cmp(&b.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+            })
+            .map(|(_, _, role)| role)
+    }
+
     fn auto_tag(&self, ocr_text: &str, file_name: &str) -> Vec<TagRecord> {
         self.match_candidates(ocr_text, file_name)
     }
@@ -361,6 +414,49 @@ mod tests {
     fn test_auto_tag_ignores_file_name_only() {
         let tags = provider().auto_tag("", "绷不住了_sample.jpg");
         assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn test_detect_private_role_from_query_substring() {
+        let provider = LocalKBProvider::from_entries(vec![
+            KbEntry {
+                canonical: "阿布".into(),
+                category: Some("person".into()),
+                aliases: vec!["布布".into()],
+                match_terms: vec!["撇嘴".into()],
+                priority: 10.0,
+                example_images: vec!["kb_examples/abu-1.jpg".into()],
+                ..Default::default()
+            },
+            KbEntry {
+                canonical: "甄嬛传".into(),
+                category: Some("source".into()),
+                aliases: vec!["甄嬛".into()],
+                match_terms: vec!["皇上".into()],
+                priority: 5.0,
+                ..Default::default()
+            },
+        ]);
+
+        let matched = provider.detect_private_role("我想找阿布撇嘴那张").unwrap();
+        assert_eq!(matched.canonical, "阿布");
+        assert_eq!(matched.matched_term, "阿布");
+        assert!(matched.related_terms.contains(&"撇嘴".to_string()));
+    }
+
+    #[test]
+    fn test_detect_private_role_requires_example_images() {
+        let provider = LocalKBProvider::from_entries(vec![KbEntry {
+            canonical: "老板".into(),
+            category: Some("person".into()),
+            aliases: vec!["王总".into()],
+            match_terms: vec!["冷笑".into()],
+            priority: 10.0,
+            example_images: vec![],
+            ..Default::default()
+        }]);
+
+        assert!(provider.detect_private_role("老板冷笑").is_none());
     }
 
     #[test]

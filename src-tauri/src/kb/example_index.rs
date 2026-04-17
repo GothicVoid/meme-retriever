@@ -4,6 +4,7 @@ use crate::db::repo::{TagCategory, TagRecord, TagSourceStrategy};
 use crate::kb::maintenance::{KnowledgeBaseEntry, KnowledgeBaseFile};
 use crate::kb::provider::category_threshold;
 use crate::ml::clip::ClipEncoder;
+use crate::search::vector_store::VectorStore;
 
 #[derive(Debug, Clone, Default)]
 pub struct ExampleImageIndex {
@@ -78,6 +79,41 @@ impl ExampleImageIndex {
                 .then_with(|| b.tag_text.len().cmp(&a.tag_text.len()))
         });
         candidates
+    }
+
+    pub fn query_role_candidates(
+        &self,
+        canonical: &str,
+        vector_store: &VectorStore,
+        top_k: usize,
+    ) -> Vec<(String, f32)> {
+        let Some(entry) = self.entries.iter().find(|item| item.canonical == canonical) else {
+            return vec![];
+        };
+
+        let mut merged = std::collections::HashMap::<String, f32>::new();
+        for embedding in &entry.embeddings {
+            for (id, score) in vector_store.query(embedding, top_k * 2) {
+                let normalized_score = ((score + 1.0) / 2.0).clamp(0.0, 1.0);
+                let threshold = example_threshold(&entry.category);
+                if normalized_score < threshold {
+                    continue;
+                }
+                merged
+                    .entry(id)
+                    .and_modify(|current| {
+                        if normalized_score > *current {
+                            *current = normalized_score;
+                        }
+                    })
+                    .or_insert(normalized_score);
+            }
+        }
+
+        let mut results = merged.into_iter().collect::<Vec<_>>();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(top_k);
+        results
     }
 }
 
@@ -201,5 +237,35 @@ mod tests {
         assert_eq!(tags[0].tag_text, "测试人物");
         assert_eq!(tags[0].source_strategy, TagSourceStrategy::ExampleImage);
         assert!(tags[0].confidence >= 0.99);
+    }
+
+    #[test]
+    fn test_query_role_candidates_returns_matching_gallery_images() {
+        let kb = KnowledgeBaseFile {
+            version: 1,
+            entries: vec![KnowledgeBaseEntry {
+                canonical: "测试人物".into(),
+                category: "person".into(),
+                aliases: vec![],
+                match_terms: vec![],
+                description: String::new(),
+                match_mode: "contains".into(),
+                priority: 1,
+                example_images: vec![fixture("sample.jpg")],
+            }],
+        };
+        let index = ExampleImageIndex::from_knowledge_base(&kb, Path::new("."));
+        let mut store = VectorStore::new();
+        let sample_embedding = ClipEncoder::encode_image(&fixture("sample.jpg")).unwrap();
+        store.insert("same".into(), sample_embedding.clone());
+        store.insert(
+            "different".into(),
+            sample_embedding.iter().map(|value| -*value).collect(),
+        );
+
+        let results = index.query_role_candidates("测试人物", &store, 5);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "same");
+        assert!(results[0].1 >= 0.99);
     }
 }

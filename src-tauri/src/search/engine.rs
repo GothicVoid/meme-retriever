@@ -18,7 +18,10 @@ fn char_coverage(query: &str, ocr_text: &str) -> f32 {
     q_chars.intersection(&o_chars).count() as f32 / q_chars.len() as f32
 }
 
-fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32) -> bool {
+fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32, s_role: f32) -> bool {
+    if s_role >= 0.9 {
+        return true;
+    }
     let has_text_signal = s_ocr > 0.0 || s_kw > 0.0;
     let semantic_pass =
         raw_cosine >= crate::search::vector_store::VectorStore::semantic_threshold();
@@ -181,6 +184,10 @@ impl SearchEngine {
             let related_terms = kb.related_terms(&normalized_query.tag_query);
             (normalized_query, related_terms)
         };
+        let private_role_match = {
+            let kb = self.kb.read().unwrap();
+            kb.detect_private_role(query)
+        };
         if normalized_query.tag_query != query {
             tracing::info!(
                 "[KB] Tag query normalized: {:?} → {:?}",
@@ -241,6 +248,27 @@ impl SearchEngine {
             .query(&text_vec, limit * 2);
         tracing::info!("[VEC] Found {} semantic matches", semantic_hits.len());
 
+        let role_score_map: std::collections::HashMap<String, f32> = if let Some(role_match) =
+            &private_role_match
+        {
+            let store = self.vector_store.read().unwrap();
+            let role_hits = self
+                .example_image_index
+                .read()
+                .unwrap()
+                .query_role_candidates(&role_match.canonical, &store, limit * 2);
+            if !role_hits.is_empty() {
+                tracing::info!(
+                    "[ROLE] {} matched private role {}",
+                    role_hits.len(),
+                    role_match.canonical
+                );
+            }
+            role_hits.into_iter().collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
         // 5. 按 PRD §5.2.3 公式合并得分
         //    Final_Score = 0.75·Relevance + 0.25·Popularity
         //    Relevance   = w_kw·S_kw + w_ocr·S_ocr + w_clip·S_clip  （加权求和）
@@ -262,6 +290,9 @@ impl SearchEngine {
             for id in tag_score_map.keys() {
                 ids.insert(id.as_str());
             }
+            for id in role_score_map.keys() {
+                ids.insert(id.as_str());
+            }
             ids.into_iter().collect()
         };
         let use_count_map = repo::get_use_counts(&self.pool, &all_candidate_ids).await?;
@@ -269,6 +300,8 @@ impl SearchEngine {
 
         let main_route = if !fts_map.is_empty() {
             MainRoute::Ocr
+        } else if !role_score_map.is_empty() {
+            MainRoute::PrivateRole
         } else {
             MainRoute::Semantic
         };
@@ -283,6 +316,7 @@ impl SearchEngine {
                          s_fts: f32,
                          s_ocr: f32,
                          s_kw: f32,
+                         s_role: f32,
                          use_count_map: &std::collections::HashMap<String, i64>,
                          max_uc: i64|
          -> (f32, ScoreDebugInfo) {
@@ -300,11 +334,11 @@ impl SearchEngine {
             let (main_score, aux_score) = match main_route {
                 MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
                 MainRoute::Semantic => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
-                MainRoute::PrivateRole => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
+                MainRoute::PrivateRole => (0.7 * s_role, 0.15 * s_clip + 0.1 * text_score + 0.05 * s_kw),
             };
 
             // 纯语义命中只要通过向量召回阈值就应保留；文本分支仍保留最低质量门槛。
-            let final_score = if passes_result_filter(raw_cosine, s_ocr, s_kw) {
+            let final_score = if passes_result_filter(raw_cosine, s_ocr, s_kw, s_role) {
                 (main_score + aux_score + popularity_boost).clamp(0.0, 1.0)
             } else {
                 0.0
@@ -332,12 +366,14 @@ impl SearchEngine {
                     .unwrap_or(""),
             );
             let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+            let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
             let (score, dbg) = merge_one(
                 id,
                 *raw_cosine,
                 s_fts,
                 s_ocr,
                 s_kw,
+                s_role,
                 &use_count_map,
                 max_use_count,
             );
@@ -367,12 +403,14 @@ impl SearchEngine {
                     .unwrap_or(""),
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+                let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
                 let (score, dbg) = merge_one(
                     id,
                     -1.0,
                     s_fts,
                     s_ocr,
                     s_kw,
+                    s_role,
                     &use_count_map,
                     max_use_count,
                 );
@@ -403,17 +441,56 @@ impl SearchEngine {
                     .unwrap_or(""),
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+                let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
                 let (score, dbg) = merge_one(
                     id,
                     -1.0,
                     s_fts,
                     s_ocr,
                     s_kw,
+                    s_role,
                     &use_count_map,
                     max_use_count,
                 );
                 tracing::info!(
                     "[MERGE] {} (tag only) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
+                    id,
+                    dbg.main_route,
+                    dbg.main_score,
+                    dbg.aux_score,
+                    dbg.popularity_boost,
+                    score
+                );
+                if score > 0.0 {
+                    score_map.insert(id.clone(), score);
+                    debug_map.insert(id.clone(), dbg);
+                }
+            }
+        }
+        for id in role_score_map.keys() {
+            if !score_map.contains_key(id) {
+                let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
+                let s_ocr = char_coverage(
+                    query,
+                    ocr_text_map
+                        .get(id.as_str())
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
+                );
+                let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
+                let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
+                let (score, dbg) = merge_one(
+                    id,
+                    -1.0,
+                    s_fts,
+                    s_ocr,
+                    s_kw,
+                    s_role,
+                    &use_count_map,
+                    max_use_count,
+                );
+                tracing::info!(
+                    "[MERGE] {} (private role) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
                     id,
                     dbg.main_route,
                     dbg.main_score,
@@ -524,8 +601,11 @@ fn clip_auto_tags(tags: &mut Vec<repo::TagRecord>) {
 mod tests {
     use super::*;
     use crate::kb::local::LocalKBProvider;
+    use crate::kb::maintenance::{KnowledgeBaseEntry, KnowledgeBaseFile};
+    use crate::kb::example_index::ExampleImageIndex;
     use sqlx::SqlitePool;
     use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
     fn test_char_coverage_full() {
@@ -553,6 +633,17 @@ mod tests {
                 LocalKBProvider::load(std::path::Path::new("/nonexistent")).unwrap()
             });
         SearchEngine::new(pool, Box::new(kb)).await.unwrap()
+    }
+
+    async fn make_engine_with_kb(pool: SqlitePool, kb_file: KnowledgeBaseFile) -> SearchEngine {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("knowledge_base.json");
+        std::fs::write(&path, kb_file.to_pretty_json().unwrap()).unwrap();
+        let provider = LocalKBProvider::load(&path).unwrap();
+        let example_image_index = ExampleImageIndex::from_knowledge_base(&kb_file, &path);
+        let engine = SearchEngine::new(pool, Box::new(provider)).await.unwrap();
+        engine.set_example_image_index(example_image_index);
+        engine
     }
 
     fn fixture_path(name: &str) -> String {
@@ -851,6 +942,75 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_private_role_main_route_prioritizes_role_candidates(pool: SqlitePool) {
+        insert_test_image(&pool, "abu-role", "", unit_vec(1)).await;
+        insert_test_image(&pool, "other", "", unit_vec(2)).await;
+
+        let sample_path = fixture_path("sample.jpg");
+        sqlx::query("UPDATE images SET file_path = ?1 WHERE id = 'abu-role'")
+            .bind(&sample_path)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let sample_embedding = crate::ml::clip::ClipEncoder::encode_image(&sample_path).unwrap();
+        sqlx::query("DELETE FROM embeddings WHERE image_id = 'abu-role'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        repo::insert_embedding(&pool, "abu-role", &sample_embedding)
+            .await
+            .unwrap();
+
+        let kb_file = KnowledgeBaseFile {
+            version: 1,
+            entries: vec![KnowledgeBaseEntry {
+                canonical: "阿布".into(),
+                category: "person".into(),
+                aliases: vec!["布布".into()],
+                match_terms: vec!["撇嘴".into()],
+                description: "私有角色".into(),
+                match_mode: "contains".into(),
+                priority: 10,
+                example_images: vec![sample_path.clone()],
+            }],
+        };
+
+        let engine = make_engine_with_kb(pool, kb_file).await;
+        let results = engine.search("阿布撇嘴", 10, 0.3, 0.4, 0.3).await.unwrap();
+
+        assert!(!results.is_empty());
+        assert_eq!(results[0].id, "abu-role");
+        assert_eq!(results[0].debug_info.as_ref().unwrap().main_route, "privateRole");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_private_role_without_examples_falls_back_to_semantic(pool: SqlitePool) {
+        insert_test_image(&pool, "img1", "", unit_vec(1)).await;
+
+        let kb_file = KnowledgeBaseFile {
+            version: 1,
+            entries: vec![KnowledgeBaseEntry {
+                canonical: "老板".into(),
+                category: "person".into(),
+                aliases: vec!["王总".into()],
+                match_terms: vec!["冷笑".into()],
+                description: "私有角色".into(),
+                match_mode: "contains".into(),
+                priority: 10,
+                example_images: vec![],
+            }],
+        };
+
+        let engine = make_engine_with_kb(pool, kb_file).await;
+        let results = engine.search("老板冷笑", 10, 0.3, 0.4, 0.3).await.unwrap();
+
+        if let Some(first) = results.first() {
+            assert_ne!(first.debug_info.as_ref().unwrap().main_route, "privateRole");
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_search_filters_missing_files(pool: SqlitePool) {
         repo::insert_image(
             &pool,
@@ -1120,16 +1280,17 @@ mod tests {
             passes_result_filter(
                 crate::search::vector_store::VectorStore::semantic_threshold(),
                 0.0,
+                0.0,
                 0.0
             ),
             "pure semantic hit should pass even without OCR/tag signals"
         );
         assert!(
-            !passes_result_filter(0.0, 0.1, 0.0),
+            !passes_result_filter(0.0, 0.1, 0.0, 0.0),
             "weak OCR-only hit should still be filtered"
         );
         assert!(
-            passes_result_filter(0.0, 0.0, 0.5),
+            passes_result_filter(0.0, 0.0, 0.5, 0.0),
             "strong tag hit should pass filter"
         );
     }

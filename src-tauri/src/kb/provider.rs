@@ -6,10 +6,18 @@ pub struct QueryNormalization {
     pub expanded_query: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrivateRoleMatch {
+    pub canonical: String,
+    pub matched_term: String,
+    pub related_terms: Vec<String>,
+}
+
 pub trait KnowledgeBaseProvider: Send + Sync {
     fn expand_query(&self, query: &str) -> String;
     fn normalize_query(&self, query: &str) -> QueryNormalization;
     fn related_terms(&self, query: &str) -> Vec<String>;
+    fn detect_private_role(&self, query: &str) -> Option<PrivateRoleMatch>;
     fn auto_tag(&self, ocr_text: &str, file_name: &str) -> Vec<TagRecord>;
 }
 
