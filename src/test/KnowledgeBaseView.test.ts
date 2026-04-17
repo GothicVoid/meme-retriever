@@ -3,7 +3,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { invoke } from "@tauri-apps/api/core";
 import type { InvokeArgs } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import KnowledgeBaseView from "@/views/KnowledgeBaseView.vue";
+import PrivateRoleLibraryView from "@/views/PrivateRoleLibraryView.vue";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -46,7 +46,7 @@ const mockState = {
   },
 };
 
-describe("KnowledgeBaseView", () => {
+describe("PrivateRoleLibraryView", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
     mockOpen.mockReset();
@@ -58,7 +58,7 @@ describe("KnowledgeBaseView", () => {
       return Promise.resolve(undefined);
     });
 
-    const wrapper = mount(KnowledgeBaseView);
+    const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("kb_get_state");
@@ -91,7 +91,7 @@ describe("KnowledgeBaseView", () => {
       return Promise.resolve(undefined);
     });
 
-    const wrapper = mount(KnowledgeBaseView);
+    const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
     await wrapper.get("[data-entry='阿布']").trigger("click");
@@ -143,7 +143,7 @@ describe("KnowledgeBaseView", () => {
       return Promise.resolve(undefined);
     });
 
-    const wrapper = mount(KnowledgeBaseView);
+    const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
     await wrapper.get("[data-entry='阿布']").trigger("click");
@@ -183,7 +183,7 @@ describe("KnowledgeBaseView", () => {
       return Promise.resolve(undefined);
     });
 
-    const wrapper = mount(KnowledgeBaseView);
+    const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
     await wrapper.get("[data-field='test-text']").setValue("我想找老板冷笑那张图");
@@ -213,7 +213,7 @@ describe("KnowledgeBaseView", () => {
       return Promise.resolve(undefined);
     });
 
-    const wrapper = mount(KnowledgeBaseView);
+    const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
     await wrapper.get("[data-entry='老板']").trigger("click");
@@ -247,7 +247,7 @@ describe("KnowledgeBaseView", () => {
       return Promise.resolve(undefined);
     });
 
-    const wrapper = mount(KnowledgeBaseView);
+    const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
     await wrapper.get("[data-entry='老板']").trigger("click");

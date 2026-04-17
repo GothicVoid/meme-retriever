@@ -13,7 +13,7 @@
     </RouterLink>
     <RouterLink
       v-if="isDev"
-      to="/kb-maintenance"
+      to="/private-role-maintenance"
     >
       私有角色库维护
     </RouterLink>

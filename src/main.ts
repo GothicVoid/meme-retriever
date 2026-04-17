@@ -5,7 +5,7 @@ import App from "./App.vue";
 import SearchView from "./views/SearchView.vue";
 import LibraryView from "./views/LibraryView.vue";
 import SettingsView from "./views/SettingsView.vue";
-import KnowledgeBaseView from "./views/KnowledgeBaseView.vue";
+import PrivateRoleLibraryView from "./views/PrivateRoleLibraryView.vue";
 
 const routes = [
   { path: "/", component: SearchView },
@@ -14,7 +14,11 @@ const routes = [
 ];
 
 if (import.meta.env.DEV) {
-  routes.push({ path: "/kb-maintenance", component: KnowledgeBaseView });
+  routes.push({
+    path: "/private-role-maintenance",
+    alias: "/kb-maintenance",
+    component: PrivateRoleLibraryView,
+  });
 }
 
 const router = createRouter({
