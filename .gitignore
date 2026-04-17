@@ -30,3 +30,7 @@ src-tauri/models/
 
 # ONNX Runtime shared library (copy libonnxruntime.so from onnxruntime installation)
 src-tauri/libs/
+
+# Runtime private role library assets
+app_data/knowledge_base.json
+app_data/kb_examples/
