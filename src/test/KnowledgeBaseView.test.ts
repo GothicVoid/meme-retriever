@@ -18,21 +18,21 @@ const mockState = {
     version: 1,
     entries: [
       {
-        canonical: "阿布",
+        name: "阿布",
         category: "person",
         aliases: ["布布"],
         matchTerms: ["撇嘴", "委屈"],
-        description: "私有角色卡片",
+        notes: "私有角色卡片",
         matchMode: "contains",
         priority: 100,
         exampleImages: ["kb_examples/abu/sample-1.jpg"],
       },
       {
-        canonical: "老板",
+        name: "老板",
         category: "person",
         aliases: ["王总"],
         matchTerms: ["冷笑", "看报表"],
-        description: "工作场景常用私有对象",
+        notes: "工作场景常用私有对象",
         matchMode: "contains",
         priority: 90,
         exampleImages: ["kb_examples/boss/sample-1.jpg"],
@@ -76,7 +76,7 @@ describe("KnowledgeBaseView", () => {
           knowledgeBase: {
             entries: expect.arrayContaining([
               expect.objectContaining({
-                canonical: "阿布 Plus",
+                name: "阿布 Plus",
                 exampleImages: ["kb_examples/abu/sample-1.jpg"],
               }),
             ]),
@@ -95,7 +95,7 @@ describe("KnowledgeBaseView", () => {
     await flushPromises();
 
     await wrapper.get("[data-entry='阿布']").trigger("click");
-    await wrapper.get("[data-field='canonical']").setValue("阿布 Plus");
+    await wrapper.get("[data-field='name']").setValue("阿布 Plus");
     await wrapper.get("[data-action='validate-kb']").trigger("click");
     await flushPromises();
 
@@ -118,7 +118,7 @@ describe("KnowledgeBaseView", () => {
           knowledgeBase: {
             entries: expect.arrayContaining([
               expect.objectContaining({
-                canonical: "阿布",
+                name: "阿布",
                 aliases: ["布布", "阿布老师"],
                 exampleImages: ["kb_examples/abu/sample-1.jpg"],
               }),
@@ -169,7 +169,7 @@ describe("KnowledgeBaseView", () => {
         return Promise.resolve({
           matches: [
             {
-              canonical: "老板",
+              name: "老板",
               category: "person",
               matchType: "MatchTermSubstring",
               matchedTerm: "冷笑",
@@ -177,7 +177,7 @@ describe("KnowledgeBaseView", () => {
               priority: 90,
             },
           ],
-          recommendedCanonical: "老板",
+          recommendedName: "老板",
         });
       }
       return Promise.resolve(undefined);
@@ -202,7 +202,7 @@ describe("KnowledgeBaseView", () => {
           knowledgeBase: {
             entries: expect.arrayContaining([
               expect.objectContaining({
-                canonical: "老板",
+                name: "老板",
                 exampleImages: ["kb_examples/boss/sample-1.jpg", "kb_examples/boss/sample-2.jpg"],
               }),
             ]),
@@ -240,7 +240,7 @@ describe("KnowledgeBaseView", () => {
       if (cmd === "kb_import_example_image") {
         expect(payload).toEqual({
           sourcePath: "/tmp/source.jpg",
-          canonical: "老板",
+          name: "老板",
         });
         return Promise.resolve("kb_examples/entry/sample.jpg");
       }
@@ -257,7 +257,7 @@ describe("KnowledgeBaseView", () => {
     expect(mockOpen).toHaveBeenCalled();
     expect(mockInvoke).toHaveBeenCalledWith("kb_import_example_image", {
       sourcePath: "/tmp/source.jpg",
-      canonical: "老板",
+      name: "老板",
     });
     expect((wrapper.get("[data-field='example-images']").element as HTMLTextAreaElement).value)
       .toContain("kb_examples/entry/sample.jpg");

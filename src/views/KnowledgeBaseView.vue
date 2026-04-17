@@ -81,10 +81,10 @@
             :key="entry.id"
             class="entry-item"
             :class="{ active: entry.id === selectedEntryId }"
-            :data-entry="entry.canonical"
+            :data-entry="entry.name"
             @click="selectEntry(entry.id)"
           >
-            <span class="entry-title">{{ entry.canonical || "未命名角色" }}</span>
+            <span class="entry-title">{{ entry.name || "未命名角色" }}</span>
             <span class="entry-meta">{{ entry.category }} · {{ entry.matchMode }}</span>
           </button>
           <div
@@ -114,10 +114,10 @@
           class="form-grid"
         >
           <label class="field wide">
-            <span>角色主名称 <em>当前兼容字段仍写入 canonical</em></span>
+            <span>角色主名称 <em>新 schema 主字段为 name</em></span>
             <input
-              v-model="form.canonical"
-              data-field="canonical"
+              v-model="form.name"
+              data-field="name"
               type="text"
               placeholder="如：阿布 / 老板"
             >
@@ -180,8 +180,8 @@
           <label class="field wide">
             <span>备注 <em>给维护人看的说明字段，不参与首期核心匹配</em></span>
             <textarea
-              v-model="form.description"
-              data-field="description"
+              v-model="form.notes"
+              data-field="notes"
               rows="4"
               placeholder="记录这个角色的使用场景或补充说明"
             />
@@ -273,10 +273,10 @@
           </button>
 
           <div
-            v-if="matchResult.recommendedCanonical"
+            v-if="matchResult.recommendedName"
             class="match-summary"
           >
-            最终推荐角色：{{ matchResult.recommendedCanonical }}
+            最终推荐角色：{{ matchResult.recommendedName }}
           </div>
           <div
             v-else-if="tested"
@@ -288,11 +288,11 @@
           <div class="match-list">
             <div
               v-for="item in matchResult.matches"
-              :key="`${item.canonical}-${item.matchedTerm}-${item.matchType}`"
+              :key="`${item.name}-${item.matchedTerm}-${item.matchType}`"
               class="match-item"
             >
               <div class="match-title">
-                {{ item.canonical }}
+                {{ item.name }}
               </div>
               <div class="match-meta">
                 {{ item.matchType }} · 命中词：{{ item.matchedTerm }} · 分值：{{ item.score }}
@@ -311,11 +311,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 type EntryForm = {
-  canonical: string;
+  name: string;
   category: "meme" | "source" | "person";
   aliases: string;
   matchTerms: string;
-  description: string;
+  notes: string;
   matchMode: "exact" | "contains" | "exact_or_contains";
   priority: number;
   exampleImages: string;
@@ -323,11 +323,11 @@ type EntryForm = {
 
 type KbEntry = {
   id: string;
-  canonical: string;
+  name: string;
   category: "meme" | "source" | "person";
   aliases: string[];
   matchTerms: string[];
-  description: string;
+  notes: string;
   matchMode: "exact" | "contains" | "exact_or_contains";
   priority: number;
   exampleImages: string[];
@@ -341,14 +341,14 @@ type ValidationReport = {
 
 type MatchResult = {
   matches: Array<{
-    canonical: string;
+    name: string;
     category: string;
     matchType: string;
     matchedTerm: string;
     score: number;
     priority: number;
   }>;
-  recommendedCanonical: string | null;
+  recommendedName: string | null;
 };
 
 type KbStateResponse = {
@@ -372,16 +372,16 @@ const selectedEntryId = ref("");
 const testText = ref("");
 const syncingForm = ref(false);
 const report = ref<ValidationReport>({ errors: [], warnings: [], conflicts: [] });
-const matchResult = ref<MatchResult>({ matches: [], recommendedCanonical: null });
+const matchResult = ref<MatchResult>({ matches: [], recommendedName: null });
 const version = ref(1);
 const entries = ref<KbEntry[]>([]);
 
 const form = reactive<EntryForm>({
-  canonical: "",
+  name: "",
   category: "meme",
   aliases: "",
   matchTerms: "",
-  description: "",
+  notes: "",
   matchMode: "contains",
   priority: 1,
   exampleImages: "",
@@ -396,11 +396,11 @@ const filteredEntries = computed(() => {
   }
   return entries.value.filter((entry) => {
     const haystack = [
-      entry.canonical,
+      entry.name,
       entry.category,
       entry.aliases.join(" "),
       entry.matchTerms.join(" "),
-      entry.description,
+      entry.notes,
     ]
       .join(" ")
       .toLowerCase();
@@ -434,7 +434,7 @@ async function loadState() {
     syncEntryToForm();
     dirty.value = false;
     tested.value = false;
-    matchResult.value = { matches: [], recommendedCanonical: null };
+    matchResult.value = { matches: [], recommendedName: null };
   } catch (error) {
     statusMessage.value = String(error);
   } finally {
@@ -452,11 +452,11 @@ function hydrateEntry(entry: Omit<KbEntry, "id">, index: number): KbEntry {
 function createEntry() {
   const entry = hydrateEntry(
     {
-      canonical: "",
+      name: "",
       category: "meme",
       aliases: [],
       matchTerms: [],
-      description: "",
+      notes: "",
       matchMode: "contains",
       priority: 1,
       exampleImages: [],
@@ -488,11 +488,11 @@ function deleteCurrentEntry() {
 function syncEntryToForm() {
   if (!selectedEntry.value) {
     syncingForm.value = true;
-    form.canonical = "";
+    form.name = "";
     form.category = "meme";
     form.aliases = "";
     form.matchTerms = "";
-    form.description = "";
+    form.notes = "";
     form.matchMode = "contains";
     form.priority = 1;
     form.exampleImages = "";
@@ -501,11 +501,11 @@ function syncEntryToForm() {
   }
 
   syncingForm.value = true;
-  form.canonical = selectedEntry.value.canonical;
+  form.name = selectedEntry.value.name;
   form.category = selectedEntry.value.category;
   form.aliases = selectedEntry.value.aliases.join(", ");
   form.matchTerms = selectedEntry.value.matchTerms.join(", ");
-  form.description = selectedEntry.value.description;
+  form.notes = selectedEntry.value.notes;
   form.matchMode = selectedEntry.value.matchMode;
   form.priority = selectedEntry.value.priority;
   form.exampleImages = selectedEntry.value.exampleImages.join(", ");
@@ -514,11 +514,11 @@ function syncEntryToForm() {
 
 function syncFormToEntry() {
   if (!selectedEntry.value) return;
-  selectedEntry.value.canonical = form.canonical;
+  selectedEntry.value.name = form.name;
   selectedEntry.value.category = form.category;
   selectedEntry.value.aliases = parseList(form.aliases);
   selectedEntry.value.matchTerms = parseList(form.matchTerms);
-  selectedEntry.value.description = form.description.trim();
+  selectedEntry.value.notes = form.notes.trim();
   selectedEntry.value.matchMode = form.matchMode;
   selectedEntry.value.priority = Number(form.priority) || 0;
   selectedEntry.value.exampleImages = parseList(form.exampleImages);
@@ -557,7 +557,7 @@ async function importExampleImage() {
   try {
     const relativePath = await invoke<string>("kb_import_example_image", {
       sourcePath: selected,
-      canonical: selectedEntry.value.canonical || "entry",
+      name: selectedEntry.value.name || "entry",
     });
     const nextImages = parseList(form.exampleImages);
     if (!nextImages.includes(relativePath)) {
@@ -598,7 +598,7 @@ async function saveKnowledgeBase() {
     entries.value = state.knowledgeBase.entries.map((entry, index) => hydrateEntry(entry, index));
     report.value = state.validationReport;
     if (entries.value.length > 0) {
-      const nextSelected = entries.value.find((entry) => entry.canonical === form.canonical);
+      const nextSelected = entries.value.find((entry) => entry.name === form.name);
       selectedEntryId.value = nextSelected?.id ?? entries.value[0].id;
     } else {
       selectedEntryId.value = "";

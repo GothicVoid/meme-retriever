@@ -17,15 +17,17 @@ pub struct KnowledgeBaseFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct KnowledgeBaseEntry {
-    pub canonical: String,
+    #[serde(alias = "canonical")]
+    pub name: String,
     #[serde(alias = "type")]
     pub category: String,
     #[serde(default)]
     pub aliases: Vec<String>,
     #[serde(default)]
     pub match_terms: Vec<String>,
+    #[serde(alias = "description")]
     #[serde(default)]
-    pub description: String,
+    pub notes: String,
     #[serde(default = "default_match_mode")]
     pub match_mode: String,
     #[serde(default)]
@@ -49,7 +51,7 @@ pub struct TermConflict {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchCandidate {
-    pub canonical: String,
+    pub name: String,
     pub category: String,
     pub match_type: MatchType,
     pub matched_term: String,
@@ -122,13 +124,13 @@ impl KnowledgeBaseFile {
     pub fn validate(&self) -> ValidationReport {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
-        let mut canonical_map: BTreeMap<String, String> = BTreeMap::new();
+        let mut name_map: BTreeMap<String, String> = BTreeMap::new();
         let mut term_map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
         for entry in &self.entries {
-            let canonical = entry.canonical.trim();
-            if canonical.is_empty() {
-                errors.push("canonical 不能为空".to_string());
+            let name = entry.name.trim();
+            if name.is_empty() {
+                errors.push("name 不能为空".to_string());
             }
 
             if !VALID_CATEGORIES.contains(&entry.category.as_str()) {
@@ -145,14 +147,14 @@ impl KnowledgeBaseFile {
                 ));
             }
 
-            let canonical_key = normalize_text(canonical);
-            if let Some(previous) = canonical_map.insert(canonical_key, canonical.to_string()) {
-                errors.push(format!("canonical 已存在：{}", previous));
+            let name_key = normalize_text(name);
+            if let Some(previous) = name_map.insert(name_key, name.to_string()) {
+                errors.push(format!("name 已存在：{}", previous));
             }
 
-            validate_term_collection("aliases", &entry.aliases, canonical, &mut errors);
-            validate_term_collection("match_terms", &entry.match_terms, canonical, &mut errors);
-            validate_example_images(entry, canonical, &mut errors, &mut warnings);
+            validate_term_collection("aliases", &entry.aliases, name, &mut errors);
+            validate_term_collection("match_terms", &entry.match_terms, name, &mut errors);
+            validate_example_images(entry, name, &mut errors, &mut warnings);
 
             for term in entry.all_terms() {
                 let normalized = normalize_text(&term);
@@ -162,10 +164,10 @@ impl KnowledgeBaseFile {
                 term_map
                     .entry(normalized.clone())
                     .or_default()
-                    .insert(canonical.to_string());
+                    .insert(name.to_string());
 
                 if is_ambiguous_short_term(&normalized) {
-                    warnings.push(format!("高歧义短词，请确认是否保留：{} -> {}", canonical, term));
+                    warnings.push(format!("高歧义短词，请确认是否保留：{} -> {}", name, term));
                 }
             }
         }
@@ -201,20 +203,20 @@ impl KnowledgeBaseFile {
 
     pub fn search_entries(
         &self,
-        canonical: Option<&str>,
+        name: Option<&str>,
         category: Option<&str>,
         keyword: Option<&str>,
     ) -> Vec<&KnowledgeBaseEntry> {
         let keyword = keyword.map(normalize_text);
         self.entries
             .iter()
-            .filter(|entry| canonical.map(|v| entry.canonical == v).unwrap_or(true))
+            .filter(|entry| name.map(|v| entry.name == v).unwrap_or(true))
             .filter(|entry| category.map(|v| entry.category == v).unwrap_or(true))
             .filter(|entry| {
                 keyword
                     .as_ref()
                     .map(|kw| {
-                        normalize_text(&entry.canonical).contains(kw)
+                        normalize_text(&entry.name).contains(kw)
                             || entry
                                 .aliases
                                 .iter()
@@ -243,14 +245,14 @@ impl KnowledgeBaseFile {
                 .cmp(&a.score)
                 .then_with(|| b.priority.cmp(&a.priority))
                 .then_with(|| b.matched_term.chars().count().cmp(&a.matched_term.chars().count()))
-                .then_with(|| a.canonical.cmp(&b.canonical))
+                .then_with(|| a.name.cmp(&b.name))
         });
         results
     }
 
     pub fn format_in_place(&mut self) {
         self.entries
-            .sort_by(|a, b| a.category.cmp(&b.category).then_with(|| a.canonical.cmp(&b.canonical)));
+            .sort_by(|a, b| a.category.cmp(&b.category).then_with(|| a.name.cmp(&b.name)));
         for entry in &mut self.entries {
             entry.normalize();
         }
@@ -259,9 +261,9 @@ impl KnowledgeBaseFile {
 
 impl KnowledgeBaseEntry {
     pub fn normalize(&mut self) {
-        self.canonical = self.canonical.trim().to_string();
+        self.name = self.name.trim().to_string();
         self.category = self.category.trim().to_string();
-        self.description = self.description.trim().to_string();
+        self.notes = self.notes.trim().to_string();
         self.match_mode = self.match_mode.trim().to_string();
         self.aliases = dedup_terms(&self.aliases);
         self.match_terms = dedup_terms(&self.match_terms);
@@ -269,7 +271,7 @@ impl KnowledgeBaseEntry {
     }
 
     pub fn all_terms(&self) -> Vec<String> {
-        let mut terms = vec![self.canonical.clone()];
+        let mut terms = vec![self.name.clone()];
         terms.extend(self.aliases.clone());
         terms.extend(self.match_terms.clone());
         terms
@@ -313,9 +315,9 @@ impl KnowledgeBaseStore {
             .kb
             .entries
             .iter()
-            .any(|current| normalize_text(&current.canonical) == normalize_text(&entry.canonical))
+            .any(|current| normalize_text(&current.name) == normalize_text(&entry.name))
         {
-            bail!("canonical 已存在");
+            bail!("name 已存在");
         }
         self.kb.entries.push(entry);
         self.kb.format_in_place();
@@ -325,31 +327,31 @@ impl KnowledgeBaseStore {
 
     pub fn edit_entry(
         &mut self,
-        canonical: &str,
+        name: &str,
         mut replacement: KnowledgeBaseEntry,
     ) -> anyhow::Result<()> {
         replacement.normalize();
-        let target = normalize_text(canonical);
+        let target = normalize_text(name);
         let index = self
             .kb
             .entries
             .iter()
-            .position(|entry| normalize_text(&entry.canonical) == target)
-            .ok_or_else(|| anyhow!("未找到私有角色条目：{}", canonical))?;
+            .position(|entry| normalize_text(&entry.name) == target)
+            .ok_or_else(|| anyhow!("未找到私有角色条目：{}", name))?;
         self.kb.entries[index] = replacement;
         self.kb.format_in_place();
         self.ensure_valid()?;
         Ok(())
     }
 
-    pub fn delete_entry(&mut self, canonical: &str) -> anyhow::Result<()> {
+    pub fn delete_entry(&mut self, name: &str) -> anyhow::Result<()> {
         let before = self.kb.entries.len();
-        let target = normalize_text(canonical);
+        let target = normalize_text(name);
         self.kb
             .entries
-            .retain(|entry| normalize_text(&entry.canonical) != target);
+            .retain(|entry| normalize_text(&entry.name) != target);
         if self.kb.entries.len() == before {
-            bail!("未找到私有角色条目：{}", canonical);
+            bail!("未找到私有角色条目：{}", name);
         }
         Ok(())
     }
@@ -386,7 +388,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let path = parse_optional_path(args, "--file");
             let kb = KnowledgeBaseFile::load(&path)?;
             let entries = kb.search_entries(
-                parse_optional_value(args, "--canonical").as_deref(),
+                parse_optional_value(args, "--name").as_deref(),
                 parse_optional_value(args, "--category").as_deref(),
                 parse_optional_value(args, "--keyword").as_deref(),
             );
@@ -398,7 +400,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
                 .map(|entry| {
                     format!(
                         "{} [{}] aliases={} match_terms={} priority={}",
-                        entry.canonical,
+                        entry.name,
                         entry.category,
                         entry.aliases.len(),
                         entry.match_terms.len(),
@@ -412,28 +414,28 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             let path = parse_optional_path(args, "--file");
             let mut store = KnowledgeBaseStore::open(path)?;
             let entry = parse_entry_from_args(args)?;
-            let canonical = entry.canonical.clone();
+            let name = entry.name.clone();
             store.add_entry(entry)?;
             store.save()?;
-            Ok(format!("已创建私有角色条目：{}", canonical))
+            Ok(format!("已创建私有角色条目：{}", name))
         }
         "edit" => {
             let path = parse_optional_path(args, "--file");
             let target = require_value(args, "--target")?;
             let mut store = KnowledgeBaseStore::open(path)?;
             let entry = parse_entry_from_args(args)?;
-            let canonical = entry.canonical.clone();
+            let name = entry.name.clone();
             store.edit_entry(&target, entry)?;
             store.save()?;
-            Ok(format!("已更新私有角色条目：{}", canonical))
+            Ok(format!("已更新私有角色条目：{}", name))
         }
         "delete" => {
             let path = parse_optional_path(args, "--file");
-            let canonical = require_value(args, "--canonical")?;
+            let name = require_value(args, "--name")?;
             let mut store = KnowledgeBaseStore::open(path)?;
-            store.delete_entry(&canonical)?;
+            store.delete_entry(&name)?;
             store.save()?;
-            Ok(format!("已删除私有角色条目：{}", canonical))
+            Ok(format!("已删除私有角色条目：{}", name))
         }
         "validate" => {
             let path = parse_optional_path(args, "--file");
@@ -462,7 +464,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             if matches.is_empty() {
                 return Ok("未命中任何私有角色条目".to_string());
             }
-            let recommended = &matches[0].canonical;
+            let recommended = &matches[0].name;
             let mut lines = vec![format!(
                 "输入文本命中 {} 个候选，最终推荐角色：{}",
                 matches.len(),
@@ -471,7 +473,7 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
             lines.extend(matches.into_iter().map(|candidate| {
                 format!(
                     "- {} | {:?} | 命中词={} | 分值={}",
-                    candidate.canonical, candidate.match_type, candidate.matched_term, candidate.score
+                    candidate.name, candidate.match_type, candidate.matched_term, candidate.score
                 )
             }));
             Ok(lines.join("\n"))
@@ -519,10 +521,10 @@ pub fn resolve_default_kb_path() -> PathBuf {
 }
 
 fn entry_match(entry: &KnowledgeBaseEntry, normalized_text: &str) -> Option<MatchCandidate> {
-    let normalized_canonical = normalize_text(&entry.canonical);
+    let normalized_name = normalize_text(&entry.name);
     let mut best = score_term(
-        &entry.canonical,
-        &normalized_canonical,
+        &entry.name,
+        &normalized_name,
         normalized_text,
         MatchType::CanonicalExact,
         MatchType::CanonicalSubstring,
@@ -557,7 +559,7 @@ fn entry_match(entry: &KnowledgeBaseEntry, normalized_text: &str) -> Option<Matc
     }
 
     best.map(|(match_type, matched_term, score)| MatchCandidate {
-        canonical: entry.canonical.clone(),
+        name: entry.name.clone(),
         category: entry.category.clone(),
         match_type,
         matched_term,
@@ -663,7 +665,7 @@ fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
 
 fn validate_example_images(
     entry: &KnowledgeBaseEntry,
-    canonical: &str,
+    name: &str,
     errors: &mut Vec<String>,
     warnings: &mut Vec<String>,
 ) {
@@ -671,12 +673,12 @@ fn validate_example_images(
     for value in &entry.example_images {
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            errors.push(format!("example_images 存在空值：{}", canonical));
+            errors.push(format!("example_images 存在空值：{}", name));
             continue;
         }
         let key = trimmed.to_lowercase();
         if !seen.insert(key) {
-            errors.push(format!("检测到重复 example_images：{}", canonical));
+            errors.push(format!("检测到重复 example_images：{}", name));
             break;
         }
         let path = Path::new(trimmed);
@@ -688,31 +690,31 @@ fn validate_example_images(
         if !extension_ok {
             errors.push(format!(
                 "示例图格式不受支持：{} -> {}",
-                canonical, trimmed
+                name, trimmed
             ));
         }
     }
 
     if matches!(entry.category.as_str(), "person" | "source") && entry.example_images.is_empty() {
-        warnings.push(format!("{} 分类建议补充示例图：{}", entry.category, canonical));
+        warnings.push(format!("{} 分类建议补充示例图：{}", entry.category, name));
     }
 }
 
 fn validate_term_collection(
     field_name: &str,
     values: &[String],
-    canonical: &str,
+    name: &str,
     errors: &mut Vec<String>,
 ) {
     let mut seen = BTreeSet::new();
     for value in values {
         let normalized = normalize_text(value);
         if normalized.is_empty() {
-            errors.push(format!("{} 存在空值：{}", field_name, canonical));
+            errors.push(format!("{} 存在空值：{}", field_name, name));
             continue;
         }
         if !seen.insert(normalized) {
-            errors.push(format!("检测到重复 {}：{}", field_name, canonical));
+            errors.push(format!("检测到重复 {}：{}", field_name, name));
             break;
         }
     }
@@ -841,6 +843,11 @@ fn require_value(args: &[String], key: &str) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow!("缺少参数：{}", key))
 }
 
+fn require_value_by_aliases(args: &[String], keys: &[&str]) -> anyhow::Result<String> {
+    parse_optional_value_by_aliases(args, keys)
+        .ok_or_else(|| anyhow!("缺少参数：{}", keys[0]))
+}
+
 fn parse_csv(args: &[String], key: &str) -> Vec<String> {
     let aliases = param_aliases(key);
     parse_optional_value_by_aliases(args, &aliases)
@@ -857,11 +864,13 @@ fn parse_csv(args: &[String], key: &str) -> Vec<String> {
 fn param_aliases(key: &str) -> Vec<&str> {
     match key {
         "--file" => vec!["--file", "-f"],
+        "--name" => vec!["--name", "--canonical", "-c"],
         "--canonical" => vec!["--canonical", "-c"],
         "--category" => vec!["--category", "-g"],
         "--keyword" => vec!["--keyword", "-k"],
         "--aliases" => vec!["--aliases", "-a"],
         "--match-terms" => vec!["--match-terms", "-m"],
+        "--notes" => vec!["--notes", "--description", "-d"],
         "--description" => vec!["--description", "-d"],
         "--match-mode" => vec!["--match-mode", "-M"],
         "--priority" => vec!["--priority", "-p"],
@@ -873,11 +882,11 @@ fn param_aliases(key: &str) -> Vec<&str> {
 
 fn parse_entry_from_args(args: &[String]) -> anyhow::Result<KnowledgeBaseEntry> {
     Ok(KnowledgeBaseEntry {
-        canonical: require_value(args, "--canonical")?,
+        name: require_value(args, "--name")?,
         category: require_value(args, "--category")?,
         aliases: parse_csv(args, "--aliases"),
         match_terms: parse_csv(args, "--match-terms"),
-        description: parse_optional_value(args, "--description").unwrap_or_default(),
+        notes: parse_optional_value(args, "--notes").unwrap_or_default(),
         match_mode: parse_optional_value(args, "--match-mode").unwrap_or_else(default_match_mode),
         priority: parse_optional_value(args, "--priority")
             .map(|value| value.parse::<i32>().context("priority 必须为整数"))
@@ -889,13 +898,13 @@ fn parse_entry_from_args(args: &[String]) -> anyhow::Result<KnowledgeBaseEntry> 
 
 fn cli_help() -> String {
     [
-        "kb list [--file path] [--canonical 名称] [--category 分类] [--keyword 关键词]",
+        "kb list [--file path] [--name 名称] [--category 分类] [--keyword 关键词]",
         "  别名: -f -c -g -k",
-        "kb add --canonical 名称 --category 分类 [--aliases a,b] [--match-terms a,b] [--description 文本] [--match-mode exact|contains|exact_or_contains] [--priority 数值]",
+        "kb add --name 名称 --category 分类 [--aliases a,b] [--match-terms a,b] [--notes 文本] [--match-mode exact|contains|exact_or_contains] [--priority 数值]",
         "  别名: -c -g -a -m -d -M -p",
-        "kb edit --target 旧名称 --canonical 新名称 --category 分类 [其他参数同 add]",
+        "kb edit --target 旧名称 --name 新名称 --category 分类 [其他参数同 add]",
         "  别名: -t -c -g -a -m -d -M -p",
-        "kb delete --canonical 名称 [--file path]",
+        "kb delete --name 名称 [--file path]",
         "  别名: -c -f",
         "kb validate [--file path]",
         "  别名: -f",
@@ -912,13 +921,13 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn sample_entry(canonical: &str) -> KnowledgeBaseEntry {
+    fn sample_entry(name: &str) -> KnowledgeBaseEntry {
         KnowledgeBaseEntry {
-            canonical: canonical.to_string(),
+            name: name.to_string(),
             category: "meme".to_string(),
             aliases: vec!["绷不住了".to_string()],
             match_terms: vec!["忍不住笑".to_string()],
-            description: "测试条目".to_string(),
+            notes: "测试条目".to_string(),
             match_mode: "contains".to_string(),
             priority: 10,
             example_images: vec![],
@@ -931,31 +940,31 @@ mod tests {
             version: 1,
             entries: vec![
                 KnowledgeBaseEntry {
-                    canonical: "蚌埠住了".to_string(),
+                    name: "蚌埠住了".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["绷不住了".to_string(), "绷不住了".to_string()],
                     match_terms: vec!["皇上".to_string()],
-                    description: String::new(),
+                    notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 10,
                     example_images: vec![],
                 },
                 KnowledgeBaseEntry {
-                    canonical: "甄嬛传".to_string(),
+                    name: "甄嬛传".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["笑死".to_string()],
                     match_terms: vec!["皇上".to_string()],
-                    description: String::new(),
+                    notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 5,
                     example_images: vec![],
                 },
                 KnowledgeBaseEntry {
-                    canonical: "蚌埠住了".to_string(),
+                    name: "蚌埠住了".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["蚌住了".to_string()],
                     match_terms: vec!["笑到不行".to_string()],
-                    description: String::new(),
+                    notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 1,
                     example_images: vec![],
@@ -966,7 +975,7 @@ mod tests {
         let report = kb.validate();
 
         assert!(!report.is_valid());
-        assert!(report.errors.iter().any(|error| error.contains("canonical 已存在")));
+        assert!(report.errors.iter().any(|error| error.contains("name 已存在")));
         assert!(report.errors.iter().any(|error| error.contains("检测到重复 aliases")));
         assert_eq!(report.conflicts.len(), 1);
         assert_eq!(report.conflicts[0].term, "皇上");
@@ -979,11 +988,11 @@ mod tests {
             entries: vec![
                 sample_entry("蚌埠住了"),
                 KnowledgeBaseEntry {
-                    canonical: "甄嬛传".to_string(),
+                    name: "甄嬛传".to_string(),
                     category: "source".to_string(),
                     aliases: vec!["甄嬛".to_string()],
                     match_terms: vec!["皇上".to_string()],
-                    description: String::new(),
+                    notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 20,
                     example_images: vec![],
@@ -994,9 +1003,9 @@ mod tests {
         let result = kb.test_match("皇上看到这个真的绷不住了！！");
 
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].canonical, "蚌埠住了");
+        assert_eq!(result[0].name, "蚌埠住了");
         assert_eq!(result[0].match_type, MatchType::AliasSubstring);
-        assert_eq!(result[1].canonical, "甄嬛传");
+        assert_eq!(result[1].name, "甄嬛传");
         assert_eq!(result[1].match_type, MatchType::MatchTermSubstring);
     }
 
@@ -1006,21 +1015,21 @@ mod tests {
             version: 1,
             entries: vec![
                 KnowledgeBaseEntry {
-                    canonical: "马云".to_string(),
+                    name: "马云".to_string(),
                     category: "person".to_string(),
                     aliases: vec!["杰克马".to_string()],
                     match_terms: vec!["马云".to_string()],
-                    description: String::new(),
+                    notes: String::new(),
                     match_mode: "exact_or_contains".to_string(),
                     priority: 10,
                     example_images: vec![],
                 },
                 KnowledgeBaseEntry {
-                    canonical: "臣妾".to_string(),
+                    name: "臣妾".to_string(),
                     category: "meme".to_string(),
                     aliases: vec![],
                     match_terms: vec!["臣妾".to_string()],
-                    description: String::new(),
+                    notes: String::new(),
                     match_mode: "exact".to_string(),
                     priority: 10,
                     example_images: vec![],
@@ -1030,16 +1039,16 @@ mod tests {
 
         let contains_result = kb.test_match("今天又看到杰克马的截图");
         assert_eq!(contains_result.len(), 1);
-        assert_eq!(contains_result[0].canonical, "马云");
+        assert_eq!(contains_result[0].name, "马云");
         assert_eq!(contains_result[0].match_type, MatchType::AliasSubstring);
 
         let exact_result = kb.test_match("臣妾");
         assert_eq!(exact_result.len(), 1);
-        assert_eq!(exact_result[0].canonical, "臣妾");
+        assert_eq!(exact_result[0].name, "臣妾");
         assert_eq!(exact_result[0].match_type, MatchType::CanonicalExact);
 
         let no_contains_for_exact = kb.test_match("臣妾做不到啊");
-        assert!(no_contains_for_exact.iter().all(|item| item.canonical != "臣妾"));
+        assert!(no_contains_for_exact.iter().all(|item| item.name != "臣妾"));
     }
 
     #[test]
@@ -1053,11 +1062,11 @@ mod tests {
             .edit_entry(
                 "蚌埠住了",
                 KnowledgeBaseEntry {
-                    canonical: "蚌埠住了".to_string(),
+                    name: "蚌埠住了".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["绷不住了".to_string(), "笑死".to_string()],
                     match_terms: vec!["忍不住笑".to_string()],
-                    description: "更新说明".to_string(),
+                    notes: "更新说明".to_string(),
                     match_mode: "contains".to_string(),
                     priority: 30,
                     example_images: vec![],
@@ -1069,6 +1078,7 @@ mod tests {
         let reloaded = KnowledgeBaseFile::load(&path).unwrap();
         assert_eq!(reloaded.entries.len(), 1);
         assert_eq!(reloaded.entries[0].aliases, vec!["绷不住了", "笑死"]);
+        assert_eq!(reloaded.entries[0].name, "蚌埠住了");
 
         let mut reopened = KnowledgeBaseStore::open(&path).unwrap();
         reopened.delete_entry("蚌埠住了").unwrap();
@@ -1099,6 +1109,31 @@ mod tests {
         assert_eq!(kb.entries[0].category, "meme");
         assert_eq!(kb.entries[0].match_terms, vec!["搞笑", "表情包"]);
         assert_eq!(kb.entries[0].match_mode, "contains");
+        assert_eq!(kb.entries[0].name, "蚌埠住了");
+        assert_eq!(kb.entries[0].notes, "表示忍不住笑了");
+    }
+
+    #[test]
+    fn load_new_role_schema_maps_name_and_notes() {
+        let kb = KnowledgeBaseFile::from_json_str(
+            r#"{
+              "version": 1,
+              "entries": [
+                {
+                  "name": "阿布",
+                  "category": "person",
+                  "aliases": ["布布"],
+                  "match_terms": ["撇嘴"],
+                  "notes": "私有角色",
+                  "example_images": ["kb_examples/abu/sample-1.jpg"]
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(kb.entries[0].name, "阿布");
+        assert_eq!(kb.entries[0].notes, "私有角色");
     }
 
     #[test]
@@ -1140,7 +1175,7 @@ mod tests {
             "add".to_string(),
             "-f".to_string(),
             path.display().to_string(),
-            "-c".to_string(),
+            "--name".to_string(),
             "蚌埠住了".to_string(),
             "-g".to_string(),
             "meme".to_string(),
@@ -1148,7 +1183,7 @@ mod tests {
             "绷不住了,蚌住了".to_string(),
             "-m".to_string(),
             "忍不住笑,破防了".to_string(),
-            "-d".to_string(),
+            "--notes".to_string(),
             "测试说明".to_string(),
             "-M".to_string(),
             "contains".to_string(),

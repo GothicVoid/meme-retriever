@@ -8,7 +8,7 @@ pub struct QueryNormalization {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrivateRoleMatch {
-    pub canonical: String,
+    pub name: String,
     pub matched_term: String,
     pub related_terms: Vec<String>,
 }

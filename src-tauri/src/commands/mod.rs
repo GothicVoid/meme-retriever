@@ -80,11 +80,11 @@ pub struct ClearGalleryProgress {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KbEntryPayload {
-    pub canonical: String,
+    pub name: String,
     pub category: String,
     pub aliases: Vec<String>,
     pub match_terms: Vec<String>,
-    pub description: String,
+    pub notes: String,
     pub match_mode: String,
     pub priority: i32,
     pub example_images: Vec<String>,
@@ -123,7 +123,7 @@ pub struct KbStatePayload {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KbMatchCandidatePayload {
-    pub canonical: String,
+    pub name: String,
     pub category: String,
     pub match_type: String,
     pub matched_term: String,
@@ -135,7 +135,7 @@ pub struct KbMatchCandidatePayload {
 #[serde(rename_all = "camelCase")]
 pub struct KbTestMatchPayload {
     pub matches: Vec<KbMatchCandidatePayload>,
-    pub recommended_canonical: Option<String>,
+    pub recommended_name: Option<String>,
 }
 
 fn now_secs() -> i64 {
@@ -183,7 +183,7 @@ fn sanitize_path_segment(value: &str) -> String {
     }
 }
 
-fn import_example_image_impl(source_path: &str, canonical: &str, kb_path: &Path) -> Result<String, String> {
+fn import_example_image_impl(source_path: &str, name: &str, kb_path: &Path) -> Result<String, String> {
     let source = Path::new(source_path);
     if !source.exists() {
         return Err("示例图文件不存在".into());
@@ -202,7 +202,7 @@ fn import_example_image_impl(source_path: &str, canonical: &str, kb_path: &Path)
         .ok_or_else(|| "私有角色库目录无效，无法导入示例图".to_string())?;
     let entry_dir = base_dir
         .join("kb_examples")
-        .join(sanitize_path_segment(canonical));
+        .join(sanitize_path_segment(name));
     std::fs::create_dir_all(&entry_dir).map_err(|e| e.to_string())?;
 
     let file_name = format!("{}.{}", Uuid::new_v4(), extension);
@@ -222,11 +222,11 @@ fn kb_file_from_payload(payload: KbFilePayload) -> KnowledgeBaseFile {
             .entries
             .into_iter()
             .map(|entry| KnowledgeBaseEntry {
-                canonical: entry.canonical,
+                name: entry.name,
                 category: entry.category,
                 aliases: entry.aliases,
                 match_terms: entry.match_terms,
-                description: entry.description,
+                notes: entry.notes,
                 match_mode: entry.match_mode,
                 priority: entry.priority,
                 example_images: entry.example_images,
@@ -242,11 +242,11 @@ fn kb_file_to_payload(kb: KnowledgeBaseFile) -> KbFilePayload {
             .entries
             .into_iter()
             .map(|entry| KbEntryPayload {
-                canonical: entry.canonical,
+                name: entry.name,
                 category: entry.category,
                 aliases: entry.aliases,
                 match_terms: entry.match_terms,
-                description: entry.description,
+                notes: entry.notes,
                 match_mode: entry.match_mode,
                 priority: entry.priority,
                 example_images: entry.example_images,
@@ -272,7 +272,7 @@ fn validation_report_to_payload(report: ValidationReport) -> KbValidationReportP
 
 fn match_candidate_to_payload(candidate: MatchCandidate) -> KbMatchCandidatePayload {
     KbMatchCandidatePayload {
-        canonical: candidate.canonical,
+        name: candidate.name,
         category: candidate.category,
         match_type: format!("{:?}", candidate.match_type),
         matched_term: candidate.matched_term,
@@ -1146,10 +1146,10 @@ pub async fn kb_test_match_entries(
     text: String,
 ) -> Result<KbTestMatchPayload, String> {
     let matches = kb_file_from_payload(knowledge_base).test_match(&text);
-    let recommended_canonical = matches.first().map(|item| item.canonical.clone());
+    let recommended_name = matches.first().map(|item| item.name.clone());
     Ok(KbTestMatchPayload {
         matches: matches.into_iter().map(match_candidate_to_payload).collect(),
-        recommended_canonical,
+        recommended_name,
     })
 }
 
@@ -1171,9 +1171,9 @@ pub async fn kb_save_entries(
 }
 
 #[tauri::command]
-pub async fn kb_import_example_image(source_path: String, canonical: String) -> Result<String, String> {
+pub async fn kb_import_example_image(source_path: String, name: String) -> Result<String, String> {
     let kb_path = resolve_kb_path()?;
-    import_example_image_impl(&source_path, &canonical, &kb_path)
+    import_example_image_impl(&source_path, &name, &kb_path)
 }
 
 // ── 测试 ────────────────────────────────────────────────────────────────────

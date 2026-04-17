@@ -13,7 +13,7 @@ pub struct ExampleImageIndex {
 
 #[derive(Debug, Clone)]
 struct ExampleImageEntry {
-    canonical: String,
+    name: String,
     category: TagCategory,
     embeddings: Vec<Vec<f32>>,
 }
@@ -63,7 +63,7 @@ impl ExampleImageIndex {
                     return None;
                 }
                 Some(TagRecord {
-                    tag_text: entry.canonical.clone(),
+                    tag_text: entry.name.clone(),
                     category: entry.category.clone(),
                     is_auto: true,
                     source_strategy: TagSourceStrategy::ExampleImage,
@@ -83,11 +83,11 @@ impl ExampleImageIndex {
 
     pub fn query_role_candidates(
         &self,
-        canonical: &str,
+        name: &str,
         vector_store: &VectorStore,
         top_k: usize,
     ) -> Vec<(String, f32)> {
-        let Some(entry) = self.entries.iter().find(|item| item.canonical == canonical) else {
+        let Some(entry) = self.entries.iter().find(|item| item.name == name) else {
             return vec![];
         };
 
@@ -136,7 +136,7 @@ impl ExampleImageEntry {
                 if !path.exists() {
                     tracing::warn!(
                         "[KB] 示例图不存在，已跳过 {} -> {}",
-                        entry.canonical,
+                        entry.name,
                         path.display()
                     );
                     return None;
@@ -146,7 +146,7 @@ impl ExampleImageEntry {
                     Err(error) => {
                         tracing::warn!(
                             "[KB] 示例图编码失败，已跳过 {} -> {}: {}",
-                            entry.canonical,
+                            entry.name,
                             path.display(),
                             error
                         );
@@ -161,7 +161,7 @@ impl ExampleImageEntry {
         }
 
         Some(Self {
-            canonical: entry.canonical.clone(),
+            name: entry.name.clone(),
             category,
             embeddings,
         })
@@ -220,11 +220,11 @@ mod tests {
         let kb = KnowledgeBaseFile {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
-                canonical: "测试人物".into(),
+                name: "测试人物".into(),
                 category: "person".into(),
                 aliases: vec![],
                 match_terms: vec![],
-                description: String::new(),
+                notes: String::new(),
                 match_mode: "contains".into(),
                 priority: 1,
                 example_images: vec![fixture("sample.jpg")],
@@ -244,11 +244,11 @@ mod tests {
         let kb = KnowledgeBaseFile {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
-                canonical: "测试人物".into(),
+                name: "测试人物".into(),
                 category: "person".into(),
                 aliases: vec![],
                 match_terms: vec![],
-                description: String::new(),
+                notes: String::new(),
                 match_mode: "contains".into(),
                 priority: 1,
                 example_images: vec![fixture("sample.jpg")],

@@ -8,7 +8,8 @@ use crate::db::repo::{TagCategory, TagRecord, TagSourceStrategy};
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 struct KbEntry {
-    canonical: String,
+    #[serde(alias = "canonical")]
+    name: String,
     #[serde(default)]
     category: Option<String>,
     #[serde(default, alias = "type")]
@@ -18,7 +19,8 @@ struct KbEntry {
     #[serde(default)]
     match_terms: Vec<String>,
     #[serde(default)]
-    description: String,
+    #[serde(alias = "description")]
+    notes: String,
     #[serde(default)]
     tags: Vec<String>,
     #[serde(default = "default_match_mode")]
@@ -60,9 +62,9 @@ impl LocalKBProvider {
     fn from_entries(entries: Vec<KbEntry>) -> Self {
         let mut alias_to_canonical = HashMap::new();
         for entry in &entries {
-            alias_to_canonical.insert(normalize(&entry.canonical), entry.canonical.clone());
+            alias_to_canonical.insert(normalize(&entry.name), entry.name.clone());
             for alias in &entry.aliases {
-                alias_to_canonical.insert(normalize(alias), entry.canonical.clone());
+                alias_to_canonical.insert(normalize(alias), entry.name.clone());
             }
         }
         Self {
@@ -82,7 +84,7 @@ impl LocalKBProvider {
     }
 
     fn all_terms<'a>(entry: &'a KbEntry) -> impl Iterator<Item = &'a str> + 'a {
-        std::iter::once(entry.canonical.as_str())
+        std::iter::once(entry.name.as_str())
             .chain(entry.aliases.iter().map(String::as_str))
             .chain(entry.match_terms.iter().map(String::as_str))
     }
@@ -97,7 +99,7 @@ impl LocalKBProvider {
             let mut matched_sources = HashSet::new();
             let mut strongest = 0.0f32;
 
-            let canonical = normalize(&entry.canonical);
+            let canonical = normalize(&entry.name);
             if term_matches(&normalized_ocr, &canonical, &entry.match_mode) {
                 strongest = strongest.max(if normalized_ocr == canonical { 1.0 } else { 0.8 });
                 matched_sources.insert("ocr");
@@ -161,7 +163,7 @@ impl LocalKBProvider {
             }
 
             candidates.push(TagRecord {
-                tag_text: entry.canonical.clone(),
+                tag_text: entry.name.clone(),
                 category,
                 is_auto: true,
                 source_strategy: match (
@@ -208,7 +210,7 @@ impl KnowledgeBaseProvider for LocalKBProvider {
     fn expand_query(&self, query: &str) -> String {
         let normalized = normalize(query);
         for entry in &self.entries {
-            if normalize(&entry.canonical) == normalized
+            if normalize(&entry.name) == normalized
                 || entry
                     .aliases
                     .iter()
@@ -219,7 +221,7 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                 } else {
                     entry.tags.join(" ")
                 };
-                return format!("{} {} {}", entry.canonical, entry.description, extra_terms)
+                return format!("{} {} {}", entry.name, entry.notes, extra_terms)
                     .trim()
                     .to_string();
             }
@@ -243,7 +245,7 @@ impl KnowledgeBaseProvider for LocalKBProvider {
     fn related_terms(&self, query: &str) -> Vec<String> {
         let normalized = normalize(query);
         for entry in &self.entries {
-            if normalize(&entry.canonical) == normalized
+            if normalize(&entry.name) == normalized
                 || entry
                     .aliases
                     .iter()
@@ -253,7 +255,7 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                     .aliases
                     .iter()
                     .cloned()
-                    .chain(std::iter::once(entry.canonical.clone()))
+                    .chain(std::iter::once(entry.name.clone()))
                     .chain(entry.match_terms.iter().cloned())
                     .collect();
             }
@@ -274,7 +276,7 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                     && !entry.example_images.is_empty()
             })
             .filter_map(|entry| {
-                let terms = std::iter::once(entry.canonical.as_str())
+                let terms = std::iter::once(entry.name.as_str())
                     .chain(entry.aliases.iter().map(String::as_str))
                     .collect::<Vec<_>>();
                 let matched_term = terms
@@ -293,13 +295,13 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                     matched_term.1,
                     entry.priority,
                     PrivateRoleMatch {
-                        canonical: entry.canonical.clone(),
+                        name: entry.name.clone(),
                         matched_term: matched_term.0,
                         related_terms: entry
                             .aliases
                             .iter()
                             .cloned()
-                            .chain(std::iter::once(entry.canonical.clone()))
+                            .chain(std::iter::once(entry.name.clone()))
                             .chain(entry.match_terms.iter().cloned())
                             .collect(),
                     },
@@ -376,7 +378,7 @@ mod tests {
     fn provider() -> LocalKBProvider {
         LocalKBProvider::from_entries(vec![
             KbEntry {
-                canonical: "蚌埠住了".into(),
+                name: "蚌埠住了".into(),
                 category: Some("meme".into()),
                 aliases: vec!["绷不住了".into()],
                 match_terms: vec!["笑死".into()],
@@ -385,7 +387,7 @@ mod tests {
                 ..Default::default()
             },
             KbEntry {
-                canonical: "甄嬛传".into(),
+                name: "甄嬛传".into(),
                 category: Some("source".into()),
                 aliases: vec!["后宫甄嬛传".into()],
                 match_terms: vec!["皇上".into(), "臣妾".into()],
@@ -420,7 +422,7 @@ mod tests {
     fn test_detect_private_role_from_query_substring() {
         let provider = LocalKBProvider::from_entries(vec![
             KbEntry {
-                canonical: "阿布".into(),
+                name: "阿布".into(),
                 category: Some("person".into()),
                 aliases: vec!["布布".into()],
                 match_terms: vec!["撇嘴".into()],
@@ -429,7 +431,7 @@ mod tests {
                 ..Default::default()
             },
             KbEntry {
-                canonical: "甄嬛传".into(),
+                name: "甄嬛传".into(),
                 category: Some("source".into()),
                 aliases: vec!["甄嬛".into()],
                 match_terms: vec!["皇上".into()],
@@ -439,7 +441,7 @@ mod tests {
         ]);
 
         let matched = provider.detect_private_role("我想找阿布撇嘴那张").unwrap();
-        assert_eq!(matched.canonical, "阿布");
+        assert_eq!(matched.name, "阿布");
         assert_eq!(matched.matched_term, "阿布");
         assert!(matched.related_terms.contains(&"撇嘴".to_string()));
     }
@@ -447,7 +449,7 @@ mod tests {
     #[test]
     fn test_detect_private_role_requires_example_images() {
         let provider = LocalKBProvider::from_entries(vec![KbEntry {
-            canonical: "老板".into(),
+            name: "老板".into(),
             category: Some("person".into()),
             aliases: vec!["王总".into()],
             match_terms: vec!["冷笑".into()],

@@ -256,12 +256,12 @@ impl SearchEngine {
                 .example_image_index
                 .read()
                 .unwrap()
-                .query_role_candidates(&role_match.canonical, &store, limit * 2);
+                .query_role_candidates(&role_match.name, &store, limit * 2);
             if !role_hits.is_empty() {
                 tracing::info!(
                     "[ROLE] {} matched private role {}",
                     role_hits.len(),
-                    role_match.canonical
+                    role_match.name
                 );
             }
             role_hits.into_iter().collect()
@@ -965,11 +965,11 @@ mod tests {
         let kb_file = KnowledgeBaseFile {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
-                canonical: "阿布".into(),
+                name: "阿布".into(),
                 category: "person".into(),
                 aliases: vec!["布布".into()],
                 match_terms: vec!["撇嘴".into()],
-                description: "私有角色".into(),
+                notes: "私有角色".into(),
                 match_mode: "contains".into(),
                 priority: 10,
                 example_images: vec![sample_path.clone()],
@@ -991,11 +991,11 @@ mod tests {
         let kb_file = KnowledgeBaseFile {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
-                canonical: "老板".into(),
+                name: "老板".into(),
                 category: "person".into(),
                 aliases: vec!["王总".into()],
                 match_terms: vec!["冷笑".into()],
-                description: "私有角色".into(),
+                notes: "私有角色".into(),
                 match_mode: "contains".into(),
                 priority: 10,
                 example_images: vec![],
