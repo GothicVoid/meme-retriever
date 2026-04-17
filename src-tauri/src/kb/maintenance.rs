@@ -695,8 +695,10 @@ fn validate_example_images(
         }
     }
 
-    if matches!(entry.category.as_str(), "person" | "source") && entry.example_images.is_empty() {
-        warnings.push(format!("{} 分类建议补充示例图：{}", entry.category, name));
+    if entry.category != "person" {
+        warnings.push(format!("当前条目不是私有角色卡片：{}", name));
+    } else if entry.example_images.is_empty() {
+        warnings.push(format!("缺少示例图，将降级为普通搜索：{}", name));
     }
 }
 
@@ -1137,12 +1139,65 @@ mod tests {
     }
 
     #[test]
+    fn validate_warns_with_runtime_language_for_private_role_gating() {
+        let kb = KnowledgeBaseFile {
+            version: 1,
+            entries: vec![
+                KnowledgeBaseEntry {
+                    name: "阿布".to_string(),
+                    category: "person".to_string(),
+                    aliases: vec!["布布".to_string()],
+                    match_terms: vec!["撇嘴".to_string()],
+                    notes: String::new(),
+                    match_mode: "contains".to_string(),
+                    priority: 0,
+                    example_images: vec![],
+                },
+                KnowledgeBaseEntry {
+                    name: "甄嬛传".to_string(),
+                    category: "source".to_string(),
+                    aliases: vec!["甄嬛".to_string()],
+                    match_terms: vec!["皇上".to_string()],
+                    notes: String::new(),
+                    match_mode: "contains".to_string(),
+                    priority: 0,
+                    example_images: vec!["kb_examples/zhenhuan/sample-1.jpg".to_string()],
+                },
+            ],
+        };
+
+        let report = kb.validate();
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning == "缺少示例图，将降级为普通搜索：阿布")
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning == "当前条目不是私有角色卡片：甄嬛传")
+        );
+    }
+
+    #[test]
     fn cli_validate_and_test_match_output_are_human_readable() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("knowledge_base.json");
         let kb = KnowledgeBaseFile {
             version: 1,
-            entries: vec![sample_entry("蚌埠住了")],
+            entries: vec![KnowledgeBaseEntry {
+                name: "阿布老师".to_string(),
+                category: "person".to_string(),
+                aliases: vec!["布布老师".to_string()],
+                match_terms: vec!["委屈撇嘴".to_string()],
+                notes: String::new(),
+                match_mode: "contains".to_string(),
+                priority: 0,
+                example_images: vec!["kb_examples/abu/sample-1.jpg".to_string()],
+            }],
         };
         std::fs::write(&path, kb.to_pretty_json().unwrap()).unwrap();
 
@@ -1159,11 +1214,41 @@ mod tests {
             "--file".to_string(),
             path.display().to_string(),
             "--text".to_string(),
-            "这个图我真的绷不住了".to_string(),
+            "这个图是阿布老师委屈撇嘴".to_string(),
         ])
         .unwrap();
-        assert!(test_output.contains("最终推荐角色：蚌埠住了"));
-        assert!(test_output.contains("AliasSubstring"));
+        assert!(test_output.contains("最终推荐角色：阿布老师"));
+        assert!(test_output.contains("CanonicalSubstring"));
+    }
+
+    #[test]
+    fn cli_validate_surfaces_private_role_runtime_warnings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("knowledge_base.json");
+        let kb = KnowledgeBaseFile {
+            version: 1,
+            entries: vec![KnowledgeBaseEntry {
+                name: "老板".to_string(),
+                category: "person".to_string(),
+                aliases: vec!["王总".to_string()],
+                match_terms: vec!["冷笑".to_string()],
+                notes: String::new(),
+                match_mode: "contains".to_string(),
+                priority: 0,
+                example_images: vec![],
+            }],
+        };
+        std::fs::write(&path, kb.to_pretty_json().unwrap()).unwrap();
+
+        let validate_output = execute_cli(&[
+            "validate".to_string(),
+            "--file".to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap();
+
+        assert!(validate_output.contains("警告:"));
+        assert!(validate_output.contains("缺少示例图，将降级为普通搜索：老板"));
     }
 
     #[test]
