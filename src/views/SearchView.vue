@@ -8,7 +8,7 @@
       v-if="settings.showDebugInfo && store.results.length"
       class="debug-formula"
     >
-      得分 = 0.75×Relevance + 0.25×Popularity | Relevance = 0.3×标签 + 0.4×OCR + 0.3×CLIP | Popularity = log(1+点击)/log(1+最大点击)，冷启动=0.1 | Relevance &lt; 0.2 时过滤
+      调试信息：显示当前主路、辅路补充和热度修正，用于解释结果排序
     </div>
     <ImageGrid
       :images="visibleResults"

@@ -547,9 +547,6 @@ fn spawn_index_task(
 pub async fn search(
     query: String,
     limit: usize,
-    w1: Option<f32>,
-    w2: Option<f32>,
-    w3: Option<f32>,
     engine: State<'_, EngineState>,
 ) -> Result<Vec<SearchResult>, String> {
     if limit == 0 {
@@ -561,21 +558,9 @@ pub async fn search(
     } else {
         query
     };
-    // 权重归一化（默认 0.3/0.4/0.3）
-    let (rw1, rw2, rw3) = {
-        let a = w1.unwrap_or(0.3).max(0.0);
-        let b = w2.unwrap_or(0.4).max(0.0);
-        let c = w3.unwrap_or(0.3).max(0.0);
-        let sum = a + b + c;
-        if sum == 0.0 {
-            (0.3, 0.4, 0.3)
-        } else {
-            (a / sum, b / sum, c / sum)
-        }
-    };
-    tracing::info!("search: query={query}, limit={limit}, weights=({rw1:.2},{rw2:.2},{rw3:.2})");
+    tracing::info!("search: query={query}, limit={limit}");
     engine
-        .search(&query, limit, rw1, rw2, rw3)
+        .search(&query, limit, 0.3, 0.4, 0.3)
         .await
         .map_err(|e| {
             tracing::error!("command search failed: {e}");
