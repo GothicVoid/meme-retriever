@@ -262,4 +262,57 @@ describe("PrivateRoleLibraryView", () => {
     expect((wrapper.get("[data-field='example-images']").element as HTMLTextAreaElement).value)
       .toContain("kb_examples/entry/sample.jpg");
   });
+
+  it("维护工具不再暴露旧分类和匹配控制字段，新建角色按私有角色默认值保存", async () => {
+    mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
+      if (cmd === "kb_get_state") return Promise.resolve(mockState);
+      if (cmd === "kb_save_entries") {
+        expect(payload).toMatchObject({
+          knowledgeBase: {
+            entries: expect.arrayContaining([
+              expect.objectContaining({
+                name: "新角色",
+                category: "person",
+                aliases: ["角色别名"],
+                matchTerms: ["摊手"],
+                notes: "测试备注",
+                matchMode: "contains",
+                priority: 0,
+                exampleImages: ["kb_examples/new-role/sample-1.jpg"],
+              }),
+            ]),
+          },
+        });
+        return Promise.resolve(mockState);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const wrapper = mount(PrivateRoleLibraryView);
+    await flushPromises();
+
+    expect(wrapper.find("[data-field='category']").exists()).toBe(false);
+    expect(wrapper.find("[data-field='match-mode']").exists()).toBe(false);
+    expect(wrapper.find("[data-field='priority']").exists()).toBe(false);
+
+    await wrapper.get("[data-action='new-entry']").trigger("click");
+    await wrapper.get("[data-field='name']").setValue("新角色");
+    await wrapper.get("[data-field='aliases']").setValue("角色别名");
+    await wrapper.get("[data-field='match-terms']").setValue("摊手");
+    await wrapper.get("[data-field='notes']").setValue("测试备注");
+    await wrapper
+      .get("[data-field='example-images']")
+      .setValue("kb_examples/new-role/sample-1.jpg");
+    await wrapper.get("[data-action='save-kb']").trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "kb_save_entries",
+      expect.objectContaining({
+        knowledgeBase: expect.objectContaining({
+          entries: expect.any(Array),
+        }),
+      })
+    );
+  });
 });

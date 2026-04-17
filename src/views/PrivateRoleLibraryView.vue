@@ -32,7 +32,7 @@
           :disabled="loading || saving"
           @click="saveKnowledgeBase"
         >
-          {{ saving ? "保存中..." : "保存词库" }}
+          {{ saving ? "保存中..." : "保存角色库" }}
         </button>
       </div>
     </header>
@@ -85,7 +85,7 @@
             @click="selectEntry(entry.id)"
           >
             <span class="entry-title">{{ entry.name || "未命名角色" }}</span>
-            <span class="entry-meta">{{ entry.category }} · {{ entry.matchMode }}</span>
+            <span class="entry-meta">{{ entry.exampleImages.length > 0 ? "已配示例图" : "缺少示例图" }}</span>
           </button>
           <div
             v-if="filteredEntries.length === 0"
@@ -120,40 +120,6 @@
               data-field="name"
               type="text"
               placeholder="如：阿布 / 老板"
-            >
-          </label>
-
-          <label class="field">
-            <span>分类 <em>当前实现仍兼容 meme / source / person，私有角色建议使用 person</em></span>
-            <select
-              v-model="form.category"
-              data-field="category"
-            >
-              <option value="meme">meme</option>
-              <option value="source">source</option>
-              <option value="person">person</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>匹配模式 <em>控制角色名、别名和线索词的命中方式</em></span>
-            <select
-              v-model="form.matchMode"
-              data-field="match-mode"
-            >
-              <option value="exact">exact</option>
-              <option value="contains">contains</option>
-              <option value="exact_or_contains">exact_or_contains</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>优先级 <em>冲突候选重排时使用，值越大越靠前</em></span>
-            <input
-              v-model.number="form.priority"
-              data-field="priority"
-              type="number"
-              step="1"
             >
           </label>
 
@@ -312,12 +278,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 type EntryForm = {
   name: string;
-  category: "meme" | "source" | "person";
   aliases: string;
   matchTerms: string;
   notes: string;
-  matchMode: "exact" | "contains" | "exact_or_contains";
-  priority: number;
   exampleImages: string;
 };
 
@@ -378,12 +341,9 @@ const entries = ref<KbEntry[]>([]);
 
 const form = reactive<EntryForm>({
   name: "",
-  category: "meme",
   aliases: "",
   matchTerms: "",
   notes: "",
-  matchMode: "contains",
-  priority: 1,
   exampleImages: "",
 });
 
@@ -397,7 +357,6 @@ const filteredEntries = computed(() => {
   return entries.value.filter((entry) => {
     const haystack = [
       entry.name,
-      entry.category,
       entry.aliases.join(" "),
       entry.matchTerms.join(" "),
       entry.notes,
@@ -453,12 +412,12 @@ function createEntry() {
   const entry = hydrateEntry(
     {
       name: "",
-      category: "meme",
+      category: "person",
       aliases: [],
       matchTerms: [],
       notes: "",
       matchMode: "contains",
-      priority: 1,
+      priority: 0,
       exampleImages: [],
     },
     entries.value.length
@@ -489,12 +448,9 @@ function syncEntryToForm() {
   if (!selectedEntry.value) {
     syncingForm.value = true;
     form.name = "";
-    form.category = "meme";
     form.aliases = "";
     form.matchTerms = "";
     form.notes = "";
-    form.matchMode = "contains";
-    form.priority = 1;
     form.exampleImages = "";
     syncingForm.value = false;
     return;
@@ -502,12 +458,9 @@ function syncEntryToForm() {
 
   syncingForm.value = true;
   form.name = selectedEntry.value.name;
-  form.category = selectedEntry.value.category;
   form.aliases = selectedEntry.value.aliases.join(", ");
   form.matchTerms = selectedEntry.value.matchTerms.join(", ");
   form.notes = selectedEntry.value.notes;
-  form.matchMode = selectedEntry.value.matchMode;
-  form.priority = selectedEntry.value.priority;
   form.exampleImages = selectedEntry.value.exampleImages.join(", ");
   syncingForm.value = false;
 }
@@ -515,12 +468,12 @@ function syncEntryToForm() {
 function syncFormToEntry() {
   if (!selectedEntry.value) return;
   selectedEntry.value.name = form.name;
-  selectedEntry.value.category = form.category;
+  selectedEntry.value.category = "person";
   selectedEntry.value.aliases = parseList(form.aliases);
   selectedEntry.value.matchTerms = parseList(form.matchTerms);
   selectedEntry.value.notes = form.notes.trim();
-  selectedEntry.value.matchMode = form.matchMode;
-  selectedEntry.value.priority = Number(form.priority) || 0;
+  selectedEntry.value.matchMode = selectedEntry.value.matchMode || "contains";
+  selectedEntry.value.priority = selectedEntry.value.priority || 0;
   selectedEntry.value.exampleImages = parseList(form.exampleImages);
   dirty.value = true;
 }
