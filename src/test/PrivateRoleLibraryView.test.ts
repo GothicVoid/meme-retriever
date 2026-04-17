@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { InvokeArgs } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import PrivateRoleLibraryView from "@/views/PrivateRoleLibraryView.vue";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  convertFileSrc: vi.fn((path: string) => `asset://${path}`),
+}));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -11,6 +16,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 const mockInvoke = vi.mocked(invoke);
 const mockOpen = vi.mocked(open);
+const mockConvertFileSrc = vi.mocked(convertFileSrc);
 
 const mockState = {
   path: "app_data/knowledge_base.json",
@@ -50,6 +56,7 @@ describe("PrivateRoleLibraryView", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
     mockOpen.mockReset();
+    mockConvertFileSrc.mockClear();
   });
 
   it("挂载时读取私有角色库并展示角色列表", async () => {
@@ -194,9 +201,16 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.text()).toContain("命中词：冷笑");
   });
 
-  it("支持编辑示例图字段并随保存一起提交", async () => {
+  it("示例图会以图片卡片展示并随保存一起提交", async () => {
     mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
+      if (cmd === "kb_import_example_image") {
+        expect(payload).toEqual({
+          sourcePath: "/tmp/boss-2.jpg",
+          name: "老板",
+        });
+        return Promise.resolve("kb_examples/boss/sample-2.jpg");
+      }
       if (cmd === "kb_save_entries") {
         expect(payload).toMatchObject({
           knowledgeBase: {
@@ -217,9 +231,14 @@ describe("PrivateRoleLibraryView", () => {
     await flushPromises();
 
     await wrapper.get("[data-entry='老板']").trigger("click");
-    await wrapper
-      .get("[data-field='example-images']")
-      .setValue("kb_examples/boss/sample-1.jpg, kb_examples/boss/sample-2.jpg");
+    expect(wrapper.findAll("[data-role='example-image-card']")).toHaveLength(1);
+    expect(wrapper.find("[data-role='import-example-card']").exists()).toBe(true);
+
+    await wrapper.get("[data-action='remove-example-image']").trigger("click");
+    expect(wrapper.findAll("[data-role='example-image-card']")).toHaveLength(0);
+
+    mockOpen.mockResolvedValueOnce("/tmp/boss-2.jpg");
+    await wrapper.get("[data-action='import-example-image']").trigger("click");
     await wrapper.get("[data-action='save-kb']").trigger("click");
     await flushPromises();
 
@@ -259,13 +278,20 @@ describe("PrivateRoleLibraryView", () => {
       sourcePath: "/tmp/source.jpg",
       name: "老板",
     });
-    expect((wrapper.get("[data-field='example-images']").element as HTMLTextAreaElement).value)
-      .toContain("kb_examples/entry/sample.jpg");
+    expect(wrapper.findAll("[data-role='example-image-card']")).toHaveLength(2);
+    expect(wrapper.html()).toContain("asset://app_data/kb_examples/entry/sample.jpg");
   });
 
   it("维护工具不再暴露旧分类和匹配控制字段，新建角色按私有角色默认值保存", async () => {
     mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
+      if (cmd === "kb_import_example_image") {
+        expect(payload).toEqual({
+          sourcePath: "/tmp/new-role.jpg",
+          name: "新角色",
+        });
+        return Promise.resolve("kb_examples/new-role/sample-1.jpg");
+      }
       if (cmd === "kb_save_entries") {
         expect(payload).toMatchObject({
           knowledgeBase: {
@@ -300,9 +326,8 @@ describe("PrivateRoleLibraryView", () => {
     await wrapper.get("[data-field='aliases']").setValue("角色别名");
     await wrapper.get("[data-field='match-terms']").setValue("摊手");
     await wrapper.get("[data-field='notes']").setValue("测试备注");
-    await wrapper
-      .get("[data-field='example-images']")
-      .setValue("kb_examples/new-role/sample-1.jpg");
+    mockOpen.mockResolvedValueOnce("/tmp/new-role.jpg");
+    await wrapper.get("[data-action='import-example-image']").trigger("click");
     await wrapper.get("[data-action='save-kb']").trigger("click");
     await flushPromises();
 

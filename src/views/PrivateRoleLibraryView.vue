@@ -153,27 +153,48 @@
             />
           </label>
 
-          <label class="field wide">
-            <span>示例图 <em>填写相对角色库文件的本地路径，支持逗号或换行分隔</em></span>
-            <textarea
-              v-model="form.exampleImages"
-              data-field="example-images"
-              rows="4"
-              placeholder="如：kb_examples/abu/sample-1.jpg"
-            />
-            <div class="example-actions">
+          <div class="field wide">
+            <span>示例图 <em>以卡片方式维护角色示例图，导入后会自动复制到角色库目录</em></span>
+            <div class="example-grid">
+              <article
+                v-for="(image, index) in form.exampleImages"
+                :key="image"
+                class="example-card"
+                data-role="example-image-card"
+              >
+                <img
+                  class="example-card-image"
+                  :src="resolveExampleImageSrc(image)"
+                  :alt="`${form.name || '角色'}示例图 ${index + 1}`"
+                >
+                <div class="example-card-overlay">
+                  <span class="example-card-title">示例图 {{ index + 1 }}</span>
+                  <button
+                    class="example-card-remove"
+                    data-action="remove-example-image"
+                    type="button"
+                    @click="removeExampleImage(image)"
+                  >
+                    移除
+                  </button>
+                </div>
+              </article>
+
               <button
-                class="ghost-btn small"
+                class="example-card import-card"
+                data-role="import-example-card"
                 data-action="import-example-image"
                 type="button"
                 :disabled="importingExample || !selectedEntry"
                 @click="importExampleImage"
               >
-                {{ importingExample ? "导入中..." : "导入示例图到应用目录" }}
+                <span class="import-card-icon">{{ importingExample ? "…" : "+" }}</span>
+                <span class="import-card-title">{{ importingExample ? "导入中" : "导入示例图" }}</span>
+                <span class="import-card-copy">选择本地图片后自动复制到角色库目录</span>
               </button>
-              <span class="mini-note">选择本地图片后会复制到角色库目录下的 `kb_examples/` 并自动填入相对路径。</span>
             </div>
-          </label>
+            <span class="mini-note">示例图越贴近真实角色外观，私有角色召回越稳定。</span>
+          </div>
         </div>
 
         <div
@@ -273,7 +294,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 type EntryForm = {
@@ -281,7 +302,7 @@ type EntryForm = {
   aliases: string;
   matchTerms: string;
   notes: string;
-  exampleImages: string;
+  exampleImages: string[];
 };
 
 type KbEntry = {
@@ -344,7 +365,7 @@ const form = reactive<EntryForm>({
   aliases: "",
   matchTerms: "",
   notes: "",
-  exampleImages: "",
+  exampleImages: [],
 });
 
 const selectedEntry = computed(() => entries.value.find((entry) => entry.id === selectedEntryId.value) || null);
@@ -451,7 +472,7 @@ function syncEntryToForm() {
     form.aliases = "";
     form.matchTerms = "";
     form.notes = "";
-    form.exampleImages = "";
+    form.exampleImages = [];
     syncingForm.value = false;
     return;
   }
@@ -461,7 +482,7 @@ function syncEntryToForm() {
   form.aliases = selectedEntry.value.aliases.join(", ");
   form.matchTerms = selectedEntry.value.matchTerms.join(", ");
   form.notes = selectedEntry.value.notes;
-  form.exampleImages = selectedEntry.value.exampleImages.join(", ");
+  form.exampleImages = [...selectedEntry.value.exampleImages];
   syncingForm.value = false;
 }
 
@@ -474,7 +495,7 @@ function syncFormToEntry() {
   selectedEntry.value.notes = form.notes.trim();
   selectedEntry.value.matchMode = selectedEntry.value.matchMode || "contains";
   selectedEntry.value.priority = selectedEntry.value.priority || 0;
-  selectedEntry.value.exampleImages = parseList(form.exampleImages);
+  selectedEntry.value.exampleImages = [...form.exampleImages];
   dirty.value = true;
 }
 
@@ -512,10 +533,10 @@ async function importExampleImage() {
       sourcePath: selected,
       name: selectedEntry.value.name || "entry",
     });
-    const nextImages = parseList(form.exampleImages);
+    const nextImages = [...form.exampleImages];
     if (!nextImages.includes(relativePath)) {
       nextImages.push(relativePath);
-      form.exampleImages = nextImages.join(", ");
+      form.exampleImages = nextImages;
     }
     statusMessage.value = `已导入示例图：${relativePath}`;
   } catch (error) {
@@ -577,6 +598,23 @@ async function testMatch() {
   } catch (error) {
     statusMessage.value = String(error);
   }
+}
+
+function removeExampleImage(target: string) {
+  form.exampleImages = form.exampleImages.filter((image) => image !== target);
+}
+
+function resolveExampleImageSrc(path: string) {
+  const normalizedPath = path.replace(/\\/g, "/");
+  if (/^[a-zA-Z]:\//.test(normalizedPath) || normalizedPath.startsWith("/")) {
+    return convertFileSrc(normalizedPath);
+  }
+
+  const normalizedKbPath = kbPath.value.replace(/\\/g, "/");
+  const lastSlashIndex = normalizedKbPath.lastIndexOf("/");
+  const baseDir = lastSlashIndex >= 0 ? normalizedKbPath.slice(0, lastSlashIndex) : "";
+  const absolutePath = baseDir ? `${baseDir}/${normalizedPath}` : normalizedPath;
+  return convertFileSrc(absolutePath);
 }
 </script>
 
@@ -666,6 +704,110 @@ async function testMatch() {
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-top: 0.65rem;
+}
+
+.example-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.85rem;
+}
+
+.example-card {
+  position: relative;
+  min-height: 170px;
+  border: 1px solid rgba(104, 76, 48, 0.12);
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 240, 232, 0.96));
+  box-shadow: 0 12px 26px rgba(97, 75, 48, 0.08);
+}
+
+.example-card-image {
+  width: 100%;
+  height: 100%;
+  min-height: 170px;
+  object-fit: cover;
+  display: block;
+  background: linear-gradient(135deg, #f3ece2 0%, #e8ddcf 100%);
+}
+
+.example-card-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem;
+  background: linear-gradient(180deg, rgba(32, 25, 20, 0) 0%, rgba(32, 25, 20, 0.78) 100%);
+}
+
+.example-card-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff7f0;
+}
+
+.example-card-remove {
+  border: none;
+  border-radius: 999px;
+  padding: 0.4rem 0.72rem;
+  font: inherit;
+  font-size: 0.78rem;
+  color: #fff7f0;
+  background: rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+}
+
+.example-card-remove:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.import-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.import-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(208, 111, 58, 0.24);
+  box-shadow: 0 16px 28px rgba(97, 75, 48, 0.1);
+}
+
+.import-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.import-card-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  color: #c4541d;
+  background: rgba(196, 84, 29, 0.12);
+}
+
+.import-card-title {
+  font-weight: 700;
+  color: #4f3d30;
+}
+
+.import-card-copy {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #806b59;
 }
 
 .workspace {
