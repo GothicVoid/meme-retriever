@@ -3,19 +3,13 @@
   <Toast />
   <nav class="nav">
     <RouterLink to="/">
-      搜索
+      首页 / 搜索
     </RouterLink>
     <RouterLink to="/library">
-      图库
+      图库管理
     </RouterLink>
     <RouterLink to="/settings">
       设置
-    </RouterLink>
-    <RouterLink
-      v-if="isDev"
-      to="/private-role-maintenance"
-    >
-      私有角色库维护
     </RouterLink>
   </nav>
   <RouterView />
@@ -52,7 +46,6 @@ import { invoke } from "@tauri-apps/api/core";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
 
-const isDev = import.meta.env.DEV;
 const showResumeDialog = ref(false);
 const pendingCount = ref(0);
 
