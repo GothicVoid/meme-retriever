@@ -3,7 +3,7 @@
     <input
       ref="inputRef"
       :value="modelValue"
-      placeholder="搜索表情包..."
+      :placeholder="placeholder"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       @keydown.esc="$emit('update:modelValue', '')"
     >
@@ -19,7 +19,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 
-defineProps<{ modelValue: string }>();
+withDefaults(defineProps<{
+  modelValue: string;
+  placeholder?: string;
+}>(), {
+  placeholder: "搜索表情包...",
+});
 defineEmits<{ "update:modelValue": [value: string] }>();
 
 const inputRef = ref<HTMLInputElement>();

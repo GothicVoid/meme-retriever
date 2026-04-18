@@ -36,6 +36,26 @@ const mockImage: ImageMeta = {
   tags: [],
 };
 
+const mockHomeState = {
+  imageCount: 1,
+  recentSearches: [],
+  recentUsed: [],
+  frequentUsed: [{
+    id: "home-1",
+    filePath: "/img.jpg",
+    fileName: "img.jpg",
+    thumbnailPath: "/thumb.jpg",
+    fileFormat: "jpg",
+    fileStatus: "normal",
+    width: 100,
+    height: 100,
+    fileSize: 100,
+    addedAt: 0,
+    useCount: 2,
+    tags: [],
+  }],
+};
+
 describe("SearchView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -44,32 +64,44 @@ describe("SearchView", () => {
     copyImageMock.mockReset();
   });
 
-  it("图库为空时显示引导文案", async () => {
-    mockInvoke.mockResolvedValue([]);
-    const wrapper = mount(SearchView);
-    await flushPromises();
-    expect(wrapper.text()).toContain("还没有图片哦");
-  });
-
-  it("有图片但搜索无结果时显示搜索提示", async () => {
+  it("首页搜索框显示更明确的占位文案", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "get_images") return Promise.resolve([mockImage]);
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
       return Promise.resolve([]);
     });
     const wrapper = mount(SearchView);
     await flushPromises();
-    expect(wrapper.text()).toContain("没找到相关图片");
+    expect(wrapper.find("input").attributes("placeholder")).toBe("搜台词、角色、动作、场景");
   });
 
-  it("结果整体低相关时显示查询建议", async () => {
+  it("输入非空查询后切换到搜索结果态", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "get_images") return Promise.resolve([mockImage]);
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "阿布" }));
+    expect(wrapper.text()).not.toContain("常用表情");
+    expect(wrapper.findAll(".image-card")).toHaveLength(2);
+  });
+
+  it("清空查询后回到首页启动态", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
       if (cmd === "search") {
-        return Promise.resolve([
-          { id: "a", filePath: "/a.jpg", thumbnailPath: "/a_t.jpg", fileFormat: "jpg", score: 0.44, tags: [], debugInfo: null },
-          { id: "b", filePath: "/b.jpg", thumbnailPath: "/b_t.jpg", fileFormat: "jpg", score: 0.42, tags: [], debugInfo: null },
-          { id: "c", filePath: "/c.jpg", thumbnailPath: "/c_t.jpg", fileFormat: "jpg", score: 0.4, tags: [], debugInfo: null },
-        ]);
+        return Promise.resolve(mockResults());
       }
       return Promise.resolve([]);
     });
@@ -77,18 +109,28 @@ describe("SearchView", () => {
     await flushPromises();
 
     const input = wrapper.find("input");
-    await input.setValue("不知道");
+    await input.setValue("阿布");
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    expect(wrapper.text()).toContain("没找到足够相关的结果");
-    expect(wrapper.text()).toContain("角色名、动作或场景词");
+    await input.setValue("");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("常用表情");
+    expect(wrapper.text()).toContain("按图片里的字、角色名、动作、场景来找表情");
   });
 
   it("点击搜索结果后显示已复制提示", async () => {
     copyImageMock.mockResolvedValue(undefined);
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
 
     const wrapper = mount({
       components: { SearchView, Toast },
@@ -97,6 +139,7 @@ describe("SearchView", () => {
 
     await flushPromises();
     const searchStore = useSearchStore();
+    searchStore.query = "阿布";
     searchStore.results = [{
       id: "uuid-1",
       filePath: "/img.jpg",
@@ -145,6 +188,12 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
+    const input = wrapper.find("input");
+    await input.setValue("调试");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
     expect(wrapper.text()).toContain("开发调试模式");
   });
 
@@ -168,6 +217,7 @@ describe("SearchView", () => {
     await flushPromises();
 
     const searchStore = useSearchStore();
+    searchStore.query = "删除";
     searchStore.results = [{
       id: "uuid-1",
       filePath: "/img.jpg",
@@ -193,3 +243,10 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 });
+
+function mockResults() {
+  return [
+    { id: "a", filePath: "/a.jpg", thumbnailPath: "/a_t.jpg", fileFormat: "jpg", score: 0.9, tags: [], debugInfo: null },
+    { id: "b", filePath: "/b.jpg", thumbnailPath: "/b_t.jpg", fileFormat: "jpg", score: 0.82, tags: [], debugInfo: null },
+  ];
+}

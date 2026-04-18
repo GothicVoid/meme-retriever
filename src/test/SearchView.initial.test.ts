@@ -19,11 +19,16 @@ vi.mock("@/composables/useClipboard", () => ({
 
 const mockInvoke = vi.mocked(invoke);
 
-const mockResults = [
-  { id: "new", filePath: "/library/new.jpg", thumbnailPath: "/library/new_t.jpg", score: 1.0, tags: [] },
-  { id: "mid", filePath: "/library/mid.jpg", thumbnailPath: "/library/mid_t.jpg", score: 1.0, tags: [] },
-  { id: "old", filePath: "/library/old.jpg", thumbnailPath: "/library/old_t.jpg", score: 1.0, tags: [] },
-];
+const mockHomeState = {
+  imageCount: 3,
+  recentSearches: [],
+  recentUsed: [],
+  frequentUsed: [
+    { id: "home-1", filePath: "/library/home-1.jpg", fileName: "home-1.jpg", thumbnailPath: "/library/home-1_t.jpg", fileFormat: "jpg", fileStatus: "normal", width: 100, height: 100, fileSize: 1, addedAt: 1, useCount: 3, tags: [] },
+    { id: "home-2", filePath: "/library/home-2.jpg", fileName: "home-2.jpg", thumbnailPath: "/library/home-2_t.jpg", fileFormat: "jpg", fileStatus: "normal", width: 100, height: 100, fileSize: 1, addedAt: 2, useCount: 2, tags: [] },
+    { id: "home-3", filePath: "/library/home-3.jpg", fileName: "home-3.jpg", thumbnailPath: "/library/home-3_t.jpg", fileFormat: "jpg", fileStatus: "normal", width: 100, height: 100, fileSize: 1, addedAt: 3, useCount: 1, tags: [] },
+  ],
+};
 
 describe("SearchView 初始加载", () => {
   beforeEach(() => {
@@ -31,32 +36,52 @@ describe("SearchView 初始加载", () => {
     mockInvoke.mockReset();
   });
 
-  it("挂载时自动触发空查询搜索", async () => {
-    mockInvoke.mockResolvedValueOnce(mockResults);
+  it("挂载时优先获取首页启动态数据", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
     mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "" }));
+    expect(mockInvoke).toHaveBeenCalledWith("get_home_state");
+    expect(mockInvoke).not.toHaveBeenCalledWith("search", expect.objectContaining({ query: "" }));
   });
 
-  it("空查询返回结果时显示图片列表", async () => {
-    mockInvoke.mockResolvedValueOnce(mockResults);
-    const wrapper = mount(SearchView, { attachTo: document.body });
-    await flushPromises();
-
-    expect(wrapper.findAll(".image-card")).toHaveLength(3);
-    wrapper.unmount();
-  });
-
-  it("空查询无结果时显示提示文案", async () => {
+  it("空查询首页展示常用图片区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "get_images") return Promise.resolve([{ id: "x", filePath: "/x.jpg", fileName: "x.jpg", thumbnailPath: "/x_t.jpg", width: 100, height: 100, addedAt: 0, useCount: 0, tags: [] }]);
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
       return Promise.resolve([]);
     });
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("没找到");
+    expect(wrapper.text()).toContain("按图片里的字、角色名、动作、场景来找表情");
+    expect(wrapper.text()).toContain("常用表情");
+    expect(wrapper.findAll(".image-card")).toHaveLength(3);
+    wrapper.unmount();
+  });
+
+  it("图库为空时显示冷启动引导", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("先把表情包放进来");
+    expect(wrapper.text()).toContain("导入图片");
     wrapper.unmount();
   });
 });

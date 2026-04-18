@@ -8,6 +8,11 @@ describe("SearchBar", () => {
     expect(wrapper.find("input").exists()).toBe(true);
   });
 
+  it("支持自定义 placeholder", () => {
+    const wrapper = mount(SearchBar, { props: { modelValue: "", placeholder: "搜台词、角色、动作、场景" } });
+    expect(wrapper.find("input").attributes("placeholder")).toBe("搜台词、角色、动作、场景");
+  });
+
   it("有值时显示清除按钮", () => {
     const wrapper = mount(SearchBar, { props: { modelValue: "hello" } });
     expect(wrapper.find("button").exists()).toBe(true);

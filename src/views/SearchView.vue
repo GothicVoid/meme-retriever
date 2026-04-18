@@ -2,15 +2,70 @@
   <div class="search-view">
     <SearchBar
       v-model="store.query"
+      :placeholder="searchPlaceholder"
       @update:model-value="onQueryChange"
     />
     <div
-      v-if="settings.devDebugMode && store.results.length"
+      v-if="isHomeMode"
+      class="home-landing"
+    >
+      <p class="home-landing__intro">
+        按图片里的字、角色名、动作、场景来找表情
+      </p>
+      <div class="home-landing__examples">
+        <button
+          v-for="example in exampleQueries"
+          :key="example"
+          class="home-landing__example"
+          @click="applyExampleQuery(example)"
+        >
+          {{ example }}
+        </button>
+      </div>
+
+      <div
+        v-if="showColdStart"
+        class="home-empty"
+      >
+        <p class="home-empty__title">
+          先把表情包放进来
+        </p>
+        <p class="home-empty__text">
+          导入后就可以按图片里的字、角色名、动作或场景直接找图
+        </p>
+        <button
+          type="button"
+          class="home-empty__action"
+        >
+          导入图片
+        </button>
+      </div>
+
+      <section
+        v-else-if="homeImages.length > 0"
+        class="home-section"
+      >
+        <div class="home-section__header">
+          <h2 class="home-section__title">
+            常用表情
+          </h2>
+        </div>
+        <ImageGrid
+          :images="homeImages"
+          :loading="homeLoading"
+          :show-debug-info="false"
+          @open="openDetail"
+        />
+      </section>
+    </div>
+    <div
+      v-else-if="settings.devDebugMode && store.results.length"
       class="debug-formula"
     >
       开发调试模式：显示当前排序主路、贡献项与最终得分，用于辅助排查结果排序
     </div>
     <ImageGrid
+      v-if="!isHomeMode"
       :images="visibleResults"
       :loading="store.loading"
       :show-debug-info="settings.devDebugMode"
@@ -67,17 +122,69 @@ import { useSearch } from "@/composables/useSearch";
 import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
+import type { SearchResult } from "@/stores/search";
 
 const { store, debouncedSearch } = useSearch();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
+
+interface HomeImage {
+  id: string;
+  filePath: string;
+  fileName: string;
+  thumbnailPath: string;
+  fileFormat: string;
+  fileStatus: string;
+  width: number;
+  height: number;
+  fileSize: number;
+  addedAt: number;
+  useCount: number;
+  tags: SearchResult["tags"];
+}
+
+interface HomeState {
+  imageCount: number;
+  recentSearches: { query: string; updatedAt: number }[];
+  recentUsed: HomeImage[];
+  frequentUsed: HomeImage[];
+}
 
 const HIGH_CONFIDENCE_BATCH_SIZE = 12;
 const RESULT_FETCH_STEP = 30;
 const visibleRelevantCount = ref(HIGH_CONFIDENCE_BATCH_SIZE);
 const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
+const homeState = ref<HomeState | null>(null);
+const homeLoading = ref(false);
 let loadMoreObserver: IntersectionObserver | null = null;
+const exampleQueries = ["撤回消息", "阿布 撇嘴", "猫猫 心虚", "领导 冷笑"];
+
+const isHomeMode = computed(() => !store.query.trim());
+
+const searchPlaceholder = computed(() =>
+  isHomeMode.value ? "搜台词、角色、动作、场景" : "搜索表情包..."
+);
+
+const showColdStart = computed(() =>
+  isHomeMode.value && !homeLoading.value && (homeState.value?.imageCount ?? 0) === 0
+);
+
+const homeImages = computed<SearchResult[]>(() =>
+  (homeState.value?.frequentUsed ?? []).map((image) => ({
+    id: image.id,
+    filePath: image.filePath,
+    thumbnailPath: image.thumbnailPath,
+    fileFormat: image.fileFormat,
+    fileStatus: image.fileStatus,
+    score: 1,
+    tags: image.tags,
+    matchedOcrTerms: [],
+    matchedTags: [],
+    matchedRoleName: null,
+    debugInfo: null,
+  }))
+);
 
 const highConfidenceCount = computed(() => {
   const results = store.results;
@@ -206,9 +313,29 @@ function resetResultView() {
   showSecondaryResults.value = false;
 }
 
+async function fetchHomeState() {
+  homeLoading.value = true;
+  try {
+    homeState.value = await invoke<HomeState>("get_home_state");
+  } finally {
+    homeLoading.value = false;
+  }
+}
+
 function onQueryChange(val: string) {
   resetResultView();
+  if (!val.trim()) {
+    debouncedSearch.cancel?.();
+    store.results = [];
+    void fetchHomeState();
+    return;
+  }
   debouncedSearch(val);
+}
+
+function applyExampleQuery(query: string) {
+  store.query = query;
+  onQueryChange(query);
 }
 
 function toggleSecondaryResults() {
@@ -284,8 +411,8 @@ async function handleDeleteFromDetail(id: string) {
 }
 
 onMounted(async () => {
-  await store.search("");
-  libraryStore.fetchImages();
+  await fetchHomeState();
+  void libraryStore.fetchImages();
   await nextTick();
   attachLoadMoreObserver();
 });
@@ -297,6 +424,81 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .search-view { padding: 1rem; }
+.home-landing {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.home-landing__intro {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #4b5563;
+}
+.home-landing__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.home-landing__example {
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  padding: 0.38rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.home-landing__example:hover {
+  background: #f9fafb;
+}
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1.1rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+.home-empty__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+.home-empty__text {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #4b5563;
+}
+.home-empty__action {
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.95rem;
+  border: none;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.home-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.home-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.home-section__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+}
 .debug-formula {
   font-size: 0.78rem;
   color: #888;
