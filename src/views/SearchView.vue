@@ -267,9 +267,7 @@ const exampleQueries = ["撤回消息", "阿布 撇嘴", "猫猫 心虚", "领�
 
 const isHomeMode = computed(() => !store.query.trim());
 
-const searchPlaceholder = computed(() =>
-  isHomeMode.value ? "搜台词、角色、动作、场景" : "搜索表情包..."
-);
+const searchPlaceholder = computed(() => "搜台词、角色、动作、场景");
 
 const showColdStart = computed(() =>
   isHomeMode.value
@@ -474,6 +472,7 @@ async function fetchHomeState() {
 function onQueryChange(val: string) {
   resetResultView();
   if (!val.trim()) {
+    searchFocused.value = false;
     debouncedSearch.cancel?.();
     store.results = [];
     void fetchHomeState();

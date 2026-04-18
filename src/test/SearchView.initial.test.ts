@@ -68,6 +68,39 @@ describe("SearchView 初始加载", () => {
     wrapper.unmount();
   });
 
+  it("清空查询回首页后，只有重新聚焦才展示历史下拉", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve([
+        { id: "a", filePath: "/a.jpg", thumbnailPath: "/a_t.jpg", fileFormat: "jpg", score: 0.9, tags: [], debugInfo: null },
+      ]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    await input.setValue("");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
+
+    await input.trigger("focus");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
   it("图库为空时显示冷启动引导", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {
