@@ -138,11 +138,63 @@ describe("ImageCard", () => {
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
     const reasonPanel = wrapper.find(".reason-panel");
     expect(reasonPanel.exists()).toBe(true);
-    expect(reasonPanel.text()).toContain("高相关");
-    expect(reasonPanel.text()).toContain("文字匹配优先");
+    expect(reasonPanel.text()).toContain("最像你要找的");
+    expect(reasonPanel.text()).toContain("命中文字");
     expect(reasonPanel.text()).toContain("命中文字：撤回");
     expect(reasonPanel.text()).toContain("标签命中：聊天截图");
     expect(wrapper.find(".image-media").exists()).toBe(true);
+  });
+
+  it("普通模式下角色主路优先显示角色命中", () => {
+    const image: SearchResult = {
+      ...mockImage,
+      score: 0.77,
+      matchedRoleName: "阿布",
+      matchedTags: ["撇嘴"],
+      debugInfo: {
+        mainRoute: "privateRole",
+        mainScore: 0.8,
+        auxScore: 0.1,
+        semScore: 0.52,
+        kwScore: 0,
+        tagScore: 0.2,
+        popularityBoost: 0,
+      },
+    };
+    const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
+    const reasonPanel = wrapper.find(".reason-panel");
+    expect(reasonPanel.text()).toContain("最像你要找的");
+    expect(reasonPanel.text()).toContain("角色命中");
+    expect(reasonPanel.text()).toContain("角色命中：阿布");
+    expect(reasonPanel.text()).not.toContain("角色匹配优先");
+  });
+
+  it("普通模式下语义主路显示图片内容接近，并限制为主理由加一条补充证据", () => {
+    const image: SearchResult = {
+      ...mockImage,
+      score: 0.61,
+      matchedOcrTerms: ["撤回"],
+      matchedTags: ["聊天截图"],
+      matchedRoleName: "阿布",
+      debugInfo: {
+        mainRoute: "semantic",
+        mainScore: 0.65,
+        auxScore: 0.2,
+        semScore: 0.7,
+        kwScore: 0.4,
+        tagScore: 0.3,
+        popularityBoost: 0.08,
+      },
+    };
+    const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
+    const reasonPanel = wrapper.find(".reason-panel");
+    const pills = wrapper.findAll(".reason-pill");
+
+    expect(reasonPanel.text()).toContain("可能也对");
+    expect(reasonPanel.text()).toContain("图片内容接近");
+    expect(reasonPanel.text()).not.toContain("语义最接近");
+    expect(pills).toHaveLength(2);
+    expect(pills[0].text()).toContain("图片内容接近");
   });
 
   it("showDebugInfo=true 且 debugInfo 为 null 时不显示叠层", () => {

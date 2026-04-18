@@ -117,7 +117,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
 import type { SearchResult } from "@/stores/search";
-import { getRelevanceBadgeClass, getRelevanceLabel } from "@/utils/relevance";
+import { getRelevanceBadgeClass, getUserFacingRelevanceLabel } from "@/utils/relevance";
 
 const CLOSE_CONTEXT_MENU_EVENT = "image-card:close-context-menu";
 
@@ -162,15 +162,15 @@ const placeholderTitle = computed(() => {
 });
 const debugInfo = computed(() => props.image.debugInfo);
 
-const relevanceLabel = computed(() => getRelevanceLabel(props.image.score));
+const relevanceLabel = computed(() => getUserFacingRelevanceLabel(props.image.score));
 
 const relevanceBadgeClass = computed(() => getRelevanceBadgeClass(props.image.score));
 
 const primaryReasonLabel = computed(() => {
   const route = debugInfo.value?.mainRoute;
-  if (route === "ocr") return "文字匹配优先";
-  if (route === "privateRole") return "角色匹配优先";
-  return "语义最接近";
+  if (route === "ocr") return "命中文字";
+  if (route === "privateRole") return "角色命中";
+  return "图片内容接近";
 });
 
 const debugRouteLabel = computed(() => {
@@ -184,35 +184,39 @@ const evidenceList = computed(() => {
   if (!debugInfo.value) return [];
 
   const items: string[] = [];
-  for (const term of props.image.matchedOcrTerms ?? []) {
-    items.push(`命中文字：${term}`);
-  }
-  for (const tag of props.image.matchedTags ?? []) {
-    items.push(`标签命中：${tag}`);
-  }
-  if (props.image.matchedRoleName) {
-    items.push(`角色命中：${props.image.matchedRoleName}`);
-  }
-  if (items.length === 0 && debugInfo.value.mainRoute === "ocr" && debugInfo.value.kwScore > 0) {
-    items.push(debugInfo.value.kwScore >= 0.6 ? "图片文字高度相关" : "图片文字相关");
-  }
-  if (items.length === 0 && debugInfo.value.mainRoute === "semantic" && debugInfo.value.semScore > 0) {
-    items.push(debugInfo.value.semScore >= 0.65 ? "图片内容很接近" : "图片内容接近");
-  }
-  if (items.length === 0 && debugInfo.value.mainRoute === "privateRole") {
-    items.push("私有角色线索命中");
-  }
-  if ((props.image.matchedTags?.length ?? 0) === 0 && debugInfo.value.tagScore > 0) {
-    items.push(debugInfo.value.tagScore >= 0.6 ? "标签命中较强" : "标签相关");
-  }
-  if (debugInfo.value.mainRoute !== "semantic" && debugInfo.value.semScore > 0.6) {
-    items.push("图片内容也较接近");
-  }
-  if (debugInfo.value.popularityBoost >= 0.06) {
-    items.push("最近常用");
+  const route = debugInfo.value.mainRoute;
+
+  if (route === "ocr") {
+    const term = props.image.matchedOcrTerms?.[0];
+    items.push(term ? `命中文字：${term}` : "命中文字");
+  } else if (route === "privateRole") {
+    items.push(props.image.matchedRoleName ? `角色命中：${props.image.matchedRoleName}` : "角色命中");
+  } else {
+    items.push("图片内容接近");
   }
 
-  return items.slice(0, 3);
+  const supplemental: string[] = [];
+  if (route !== "ocr") {
+    const term = props.image.matchedOcrTerms?.[0];
+    if (term) supplemental.push(`命中文字：${term}`);
+  }
+  if (route !== "privateRole" && props.image.matchedRoleName) {
+    supplemental.push(`角色命中：${props.image.matchedRoleName}`);
+  }
+  const tag = props.image.matchedTags?.[0];
+  if (tag) {
+    supplemental.push(`标签命中：${tag}`);
+  }
+  if (debugInfo.value.popularityBoost >= 0.06) {
+    supplemental.push("最近常用");
+  }
+
+  const extra = supplemental.find((item) => item !== items[0]);
+  if (extra) {
+    items.push(extra);
+  }
+
+  return items.slice(0, 2);
 });
 
 const reasonSummary = computed(() => debugInfo.value ? `${relevanceLabel.value} ${primaryReasonLabel.value}` : "");

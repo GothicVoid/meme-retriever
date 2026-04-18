@@ -223,6 +223,7 @@ import { useSearch } from "@/composables/useSearch";
 import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
+import { getUserFacingRelevanceLabel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
 
 const { store, debouncedSearch } = useSearch();
@@ -419,9 +420,9 @@ const feedbackTitle = computed(() => {
     return "没找到足够相关的结果";
   }
   if (mediumConfidenceCount.value > highConfidenceCount.value) {
-    return `已展示高相关和较相关结果，共 ${mediumConfidenceCount.value} 张`;
+    return `已展示${getUserFacingRelevanceLabel(1)}和${getUserFacingRelevanceLabel(0.6)}的结果，共 ${mediumConfidenceCount.value} 张`;
   }
-  return `已展示全部高相关结果，共 ${highConfidenceCount.value} 张`;
+  return `已展示全部${getUserFacingRelevanceLabel(1)}结果，共 ${highConfidenceCount.value} 张`;
 });
 
 const feedbackText = computed(() => {
@@ -435,7 +436,7 @@ const feedbackText = computed(() => {
     return `后续 ${secondaryResultsCount.value} 张结果相关性较低，当前仅因你主动展开才显示。`;
   }
   if (mediumConfidenceCount.value > highConfidenceCount.value) {
-    return `其中高相关 ${highConfidenceCount.value} 张、较相关 ${mediumConfidenceCount.value - highConfidenceCount.value} 张；后续 ${secondaryResultsCount.value} 张结果相关性明显下降，已默认隐藏。`;
+    return `其中${getUserFacingRelevanceLabel(1)} ${highConfidenceCount.value} 张、${getUserFacingRelevanceLabel(0.6)} ${mediumConfidenceCount.value - highConfidenceCount.value} 张；后续 ${secondaryResultsCount.value} 张结果相关性明显下降，已默认隐藏。`;
   }
   return `后续 ${secondaryResultsCount.value} 张结果相关性明显下降，已默认隐藏，避免把不相关图片混进来。`;
 });

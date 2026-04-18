@@ -3,6 +3,7 @@ import {
   getRelevanceBadgeClass,
   getRelevanceLabel,
   getRelevanceLevel,
+  getUserFacingRelevanceLabel,
 } from "@/utils/relevance";
 
 describe("relevance utils", () => {
@@ -17,6 +18,10 @@ describe("relevance utils", () => {
     expect(getRelevanceLabel(0.8)).toBe("高相关");
     expect(getRelevanceLabel(0.6)).toBe("较相关");
     expect(getRelevanceLabel(0.4)).toBe("弱相关");
+
+    expect(getUserFacingRelevanceLabel(0.8)).toBe("最像你要找的");
+    expect(getUserFacingRelevanceLabel(0.6)).toBe("可能也对");
+    expect(getUserFacingRelevanceLabel(0.4)).toBe("不太确定");
 
     expect(getRelevanceBadgeClass(0.8)).toBe("relevance-badge--strong");
     expect(getRelevanceBadgeClass(0.6)).toBe("relevance-badge--medium");

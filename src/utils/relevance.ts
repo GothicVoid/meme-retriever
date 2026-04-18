@@ -16,6 +16,13 @@ export function getRelevanceLabel(score: number): string {
   return "弱相关";
 }
 
+export function getUserFacingRelevanceLabel(score: number): string {
+  const level = getRelevanceLevel(score);
+  if (level === "high") return "最像你要找的";
+  if (level === "medium") return "可能也对";
+  return "不太确定";
+}
+
 export function getRelevanceBadgeClass(score: number): string {
   const level = getRelevanceLevel(score);
   if (level === "high") return "relevance-badge--strong";

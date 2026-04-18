@@ -143,8 +143,8 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.findAll(".image-card").length).toBe(9);
-    expect(wrapper.text()).toContain("已展示高相关和较相关结果，共 9 张");
-    expect(wrapper.text()).toContain("其中高相关 7 张、较相关 2 张");
+    expect(wrapper.text()).toContain("已展示最像你要找的和可能也对的结果，共 9 张");
+    expect(wrapper.text()).toContain("其中最像你要找的 7 张、可能也对 2 张");
     expect(wrapper.text()).toContain("后续 1 张结果相关性明显下降");
     expect(wrapper.find("[data-action='show-more-secondary']").exists()).toBe(true);
   });
@@ -158,7 +158,7 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.findAll(".image-card").length).toBe(4);
-    expect(wrapper.text()).toContain("其中高相关 2 张、较相关 2 张");
+    expect(wrapper.text()).toContain("其中最像你要找的 2 张、可能也对 2 张");
     expect(wrapper.text()).toContain("后续 1 张结果相关性明显下降");
   });
 
