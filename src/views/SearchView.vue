@@ -117,6 +117,7 @@
             :loading="homeLoading"
             :show-debug-info="false"
             @copied="handleHomeImageCopied"
+            @delete="handleDeleteFromGrid"
             @open="openDetail"
           />
         </section>
@@ -135,6 +136,7 @@
             :loading="homeLoading"
             :show-debug-info="false"
             @copied="handleHomeImageCopied"
+            @delete="handleDeleteFromGrid"
             @open="openDetail"
           />
         </section>
@@ -153,6 +155,7 @@
       :show-debug-info="settings.devDebugMode"
       :empty-message="emptyMessage"
       @copied="handleSearchImageCopied"
+      @delete="handleDeleteFromGrid"
       @open="openDetail"
     />
     <div
@@ -618,6 +621,23 @@ async function handleDeleteFromDetail(id: string) {
   store.results = store.results.filter((img) => img.id !== id);
   libraryStore.images = libraryStore.images.filter((img) => img.id !== id);
   detailId.value = null;
+  if (isHomeMode.value) {
+    await fetchHomeState();
+  }
+}
+
+async function handleDeleteFromGrid(id: string) {
+  const ok = await confirm("确定要删除这张图片吗？此操作不可撤销。", { title: "删除图片" });
+  if (!ok) return;
+
+  await invoke("delete_image", { id });
+  store.results = store.results.filter((img) => img.id !== id);
+  libraryStore.images = libraryStore.images.filter((img) => img.id !== id);
+
+  if (detailId.value === id) {
+    detailId.value = null;
+  }
+
   if (isHomeMode.value) {
     await fetchHomeState();
   }

@@ -311,6 +311,43 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("搜索结果右键删除会调用删除逻辑并从结果中移除", async () => {
+    mockConfirm.mockResolvedValue(true);
+    mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      if (cmd === "delete_image") {
+        expect(args).toEqual({ id: "a" });
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const firstCard = wrapper.find(".image-card-shell");
+    await firstCard.trigger("contextmenu", { clientX: 24, clientY: 24 });
+    await flushPromises();
+
+    const deleteButton = firstCard.get("[data-action='delete']");
+    await deleteButton.trigger("click");
+    await flushPromises();
+
+    expect(mockConfirm).toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledWith("delete_image", { id: "a" });
+    expect(wrapper.findAll(".image-card")).toHaveLength(1);
+
+    wrapper.unmount();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {
