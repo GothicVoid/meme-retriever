@@ -30,6 +30,7 @@ describe("ImageCard — 格式角标", () => {
       props: { image: { ...base, fileFormat: "gif" }, showDebugInfo: false },
     });
     expect(wrapper.find(".format-badge").exists()).toBe(true);
+    expect(wrapper.find(".format-badge").classes()).toContain("ui-result-card__badge");
     expect(wrapper.find(".format-badge").text()).toBe("GIF");
   });
 
@@ -89,6 +90,7 @@ describe("ImageCard — 文件丢失占位图", () => {
     });
     expect(wrapper.find(".img-missing").text()).toContain("图片不存在");
     expect(wrapper.find(".img-missing").attributes("title")).toBe("原文件已丢失");
+    expect(wrapper.find(".status-badge").classes()).toContain("ui-result-card__badge");
     expect(wrapper.find(".status-badge").text()).toContain("文件已丢失");
     expect(wrapper.find("img").exists()).toBe(false);
   });
@@ -116,6 +118,7 @@ describe("ImageCard — 右键菜单新增项", () => {
       attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
+    expect(document.body.querySelector(".context-menu")?.className).toContain("ui-floating-panel");
     expect(document.body.querySelector(".context-menu")?.textContent).toContain("查看详情");
     wrapper.unmount();
   });

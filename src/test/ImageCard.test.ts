@@ -39,6 +39,12 @@ describe("ImageCard", () => {
     expect(img.attributes("src")).toContain("uuid-1");
   });
 
+  it("挂载统一结果卡骨架类，便于首页和搜索结果复用同一视觉语言", () => {
+    const wrapper = mount(ImageCard, { props: { image: mockImage, showDebugInfo: false } });
+    expect(wrapper.get(".image-card").classes()).toContain("ui-result-card");
+    expect(wrapper.get(".image-media").classes()).toContain("ui-result-card__media");
+  });
+
   it("右键点击显示上下文菜单", async () => {
     const wrapper = mount(ImageCard, {
       props: { image: mockImage, showDebugInfo: false },
@@ -143,6 +149,7 @@ describe("ImageCard", () => {
     expect(reasonPanel.text()).toContain("命中文字：撤回");
     expect(reasonPanel.text()).toContain("标签命中：聊天截图");
     expect(wrapper.find(".image-media").exists()).toBe(true);
+    expect(reasonPanel.classes()).toContain("ui-result-card__info");
   });
 
   it("普通模式下角色主路优先显示角色命中", () => {

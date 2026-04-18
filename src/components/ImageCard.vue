@@ -1,11 +1,11 @@
 <template>
   <div
-    class="image-card"
+    class="image-card ui-result-card"
     @click="handleClick"
     @dblclick="emit('open', image.id)"
     @contextmenu.prevent="showMenu"
   >
-    <div class="image-media">
+    <div class="image-media ui-result-card__media">
       <input
         v-if="selectable"
         type="checkbox"
@@ -30,11 +30,11 @@
       </div>
       <span
         v-if="formatBadge"
-        class="format-badge"
+        class="format-badge ui-result-card__badge"
       >{{ formatBadge }}</span>
       <span
         v-if="image.fileStatus === 'missing'"
-        class="status-badge"
+        class="status-badge ui-result-card__badge"
       >文件已丢失</span>
     <div
       v-if="showDebugInfo && image.debugInfo"
@@ -64,7 +64,7 @@
     </div>
     <div
       v-if="reasonSummary"
-      class="reason-panel"
+      class="reason-panel ui-result-card__info"
     >
       <div class="reason-header">
         <span class="relevance-badge" :class="relevanceBadgeClass">{{ relevanceLabel }}</span>
@@ -84,7 +84,7 @@
       <ul
         v-if="menuVisible"
         ref="menuRef"
-        class="context-menu"
+        class="context-menu ui-floating-panel"
         :style="{ top: `${menuY}px`, left: `${menuX}px` }"
       >
         <li>
@@ -297,21 +297,9 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 <style scoped>
 .image-card {
   cursor: pointer;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-  border: 1px solid #e5e7eb;
 }
 
 .image-media {
-  position: relative;
-  aspect-ratio: 1;
-  overflow: hidden;
-  background: #eee;
 }
 
 .image-card img {
@@ -321,8 +309,6 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
   display: block;
 }
 .image-card:hover {
-  border-color: #d0d7de;
-  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
 }
 
 .img-missing {
@@ -337,29 +323,19 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 }
 
 .format-badge {
-  position: absolute;
   top: 5px;
   right: 5px;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 3px;
-  pointer-events: none;
   letter-spacing: 0.03em;
 }
 
 .status-badge {
-  position: absolute;
   left: 5px;
   bottom: 5px;
   background: rgba(192, 57, 43, 0.86);
   color: #fff;
   font-size: 0.64rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  pointer-events: none;
 }
 
 .select-checkbox {
@@ -374,8 +350,6 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 }
 
 .reason-panel {
-  padding: 0.55rem 0.6rem 0.65rem;
-  background: #fff;
   color: #111827;
   min-height: 74px;
 }
@@ -463,10 +437,6 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 
 .context-menu {
   position: fixed;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   list-style: none;
   padding: 0.25rem 0;
   min-width: 140px;

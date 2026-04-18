@@ -229,6 +229,56 @@ button {
   transform: translateY(-1px);
 }
 
+.ui-result-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 96%, white);
+  box-shadow: var(--ui-shadow-soft);
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ui-result-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--ui-border-strong);
+  box-shadow: var(--ui-shadow-floating);
+}
+
+.ui-result-card__media {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: linear-gradient(180deg, #ece7dd, #e5ded0);
+}
+
+.ui-result-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-3);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 96%, white);
+}
+
+.ui-result-card__badge {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
 .ui-button {
   min-height: 40px;
   padding: 0 16px;
