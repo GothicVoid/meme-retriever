@@ -17,7 +17,7 @@ describe("useSearchStore — 搜索接口已移除权重参数", () => {
     await store.search("test");
     expect(mockInvoke).toHaveBeenCalledWith("search", {
       query: "test",
-      limit: 9,
+      limit: 30,
     });
   });
 

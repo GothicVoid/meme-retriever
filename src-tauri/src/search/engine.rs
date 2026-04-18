@@ -29,6 +29,14 @@ fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32, s_role: f32) -> 
     semantic_pass || text_pass
 }
 
+fn popularity_gate(relevance_score: f32) -> f32 {
+    if relevance_score >= 0.55 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
 fn collect_match_candidates(
     raw_query: &str,
     normalized_query: &str,
@@ -404,17 +412,17 @@ impl SearchEngine {
             } else {
                 ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
             };
-            let popularity_boost = 0.1 * popularity;
-
             let (main_score, aux_score) = match main_route {
                 MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
                 MainRoute::Semantic => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
                 MainRoute::PrivateRole => (0.7 * s_role, 0.15 * s_clip + 0.1 * text_score + 0.05 * s_kw),
             };
+            let relevance_score = main_score + aux_score;
+            let popularity_boost = 0.1 * popularity * popularity_gate(relevance_score);
 
             // 纯语义命中只要通过向量召回阈值就应保留；文本分支仍保留最低质量门槛。
             let final_score = if passes_result_filter(raw_cosine, s_ocr, s_kw, s_role) {
-                (main_score + aux_score + popularity_boost).clamp(0.0, 1.0)
+                (relevance_score + popularity_boost).clamp(0.0, 1.0)
             } else {
                 0.0
             };
@@ -1403,6 +1411,17 @@ mod tests {
             passes_result_filter(0.0, 0.0, 0.5, 0.0),
             "strong tag hit should pass filter"
         );
+    }
+
+    #[test]
+    fn test_popularity_gate_blocks_weak_relevance() {
+        assert_eq!(popularity_gate(0.54), 0.0);
+    }
+
+    #[test]
+    fn test_popularity_gate_keeps_medium_relevance_and_above() {
+        assert_eq!(popularity_gate(0.55), 1.0);
+        assert_eq!(popularity_gate(0.8), 1.0);
     }
 
     #[sqlx::test(migrations = "./migrations")]

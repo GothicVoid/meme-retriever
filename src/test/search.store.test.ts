@@ -29,7 +29,7 @@ describe("useSearchStore", () => {
     const store = useSearchStore();
     await store.search("蚌埠住了");
 
-    expect(mockInvoke).toHaveBeenCalledWith("search", { query: "蚌埠住了", limit: 9 });
+    expect(mockInvoke).toHaveBeenCalledWith("search", { query: "蚌埠住了", limit: 30 });
     expect(store.results).toEqual(mockResults);
     expect(store.loading).toBe(false);
     expect(store.error).toBeNull();

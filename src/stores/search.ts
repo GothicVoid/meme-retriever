@@ -28,14 +28,17 @@ export interface SearchResult {
 }
 
 export const useSearchStore = defineStore("search", () => {
+  const DEFAULT_SEARCH_LIMIT = 30;
   const query = ref("");
   const results = ref<SearchResult[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const currentLimit = ref(DEFAULT_SEARCH_LIMIT);
 
-  async function search(q: string, limit = 9) {
+  async function search(q: string, limit = DEFAULT_SEARCH_LIMIT) {
     loading.value = true;
     error.value = null;
+    currentLimit.value = limit;
     try {
       results.value = await invoke<SearchResult[]>("search", { query: q, limit });
     } catch (e) {
@@ -45,5 +48,5 @@ export const useSearchStore = defineStore("search", () => {
     }
   }
 
-  return { query, results, loading, error, search };
+  return { query, results, loading, error, currentLimit, search };
 });

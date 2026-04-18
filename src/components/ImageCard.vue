@@ -117,6 +117,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
 import type { SearchResult } from "@/stores/search";
+import { getRelevanceBadgeClass, getRelevanceLabel } from "@/utils/relevance";
 
 const CLOSE_CONTEXT_MENU_EVENT = "image-card:close-context-menu";
 
@@ -160,17 +161,9 @@ const placeholderTitle = computed(() => {
 });
 const debugInfo = computed(() => props.image.debugInfo);
 
-const relevanceLabel = computed(() => {
-  if (props.image.score >= 0.75) return "高相关";
-  if (props.image.score >= 0.55) return "较相关";
-  return "弱相关";
-});
+const relevanceLabel = computed(() => getRelevanceLabel(props.image.score));
 
-const relevanceBadgeClass = computed(() => {
-  if (props.image.score >= 0.75) return "relevance-badge--strong";
-  if (props.image.score >= 0.55) return "relevance-badge--medium";
-  return "relevance-badge--weak";
-});
+const relevanceBadgeClass = computed(() => getRelevanceBadgeClass(props.image.score));
 
 const primaryReasonLabel = computed(() => {
   const route = debugInfo.value?.mainRoute;

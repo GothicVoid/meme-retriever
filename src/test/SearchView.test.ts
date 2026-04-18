@@ -61,6 +61,31 @@ describe("SearchView", () => {
     expect(wrapper.text()).toContain("没找到相关图片");
   });
 
+  it("结果整体低相关时显示查询建议", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_images") return Promise.resolve([mockImage]);
+      if (cmd === "search") {
+        return Promise.resolve([
+          { id: "a", filePath: "/a.jpg", thumbnailPath: "/a_t.jpg", fileFormat: "jpg", score: 0.44, tags: [], debugInfo: null },
+          { id: "b", filePath: "/b.jpg", thumbnailPath: "/b_t.jpg", fileFormat: "jpg", score: 0.42, tags: [], debugInfo: null },
+          { id: "c", filePath: "/c.jpg", thumbnailPath: "/c_t.jpg", fileFormat: "jpg", score: 0.4, tags: [], debugInfo: null },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("不知道");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("没找到足够相关的结果");
+    expect(wrapper.text()).toContain("角色名、动作或场景词");
+  });
+
   it("点击搜索结果后显示已复制提示", async () => {
     copyImageMock.mockResolvedValue(undefined);
     mockInvoke.mockResolvedValue([]);

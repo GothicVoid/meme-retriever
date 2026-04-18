@@ -20,7 +20,7 @@ describe("useSearch — 不再透传权重", () => {
     debouncedSearch("hello");
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(mockInvoke).toHaveBeenCalledWith("search", { query: "hello", limit: 9 });
+    expect(mockInvoke).toHaveBeenCalledWith("search", { query: "hello", limit: 30 });
 
     vi.useRealTimers();
   });
