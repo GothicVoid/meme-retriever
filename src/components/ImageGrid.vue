@@ -9,6 +9,7 @@
       :show-debug-info="showDebugInfo"
       :selectable="selectable"
       :selected="selectedIds?.has(img.id) ?? false"
+      :focused="focusedId === img.id"
       @delete="$emit('delete', $event)"
       @copied="$emit('copied', $event)"
       @select="$emit('select', $event)"
@@ -27,6 +28,7 @@ defineProps<{
   emptyMessage?: string;
   selectable?: boolean;
   selectedIds?: Set<string>;
+  focusedId?: string | null;
 }>();
 defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string] }>();
 </script>

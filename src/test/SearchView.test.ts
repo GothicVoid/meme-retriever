@@ -390,6 +390,66 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("搜索结果支持键盘焦点移动，并用 Enter 触发复制", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    expect(wrapper.findAll(".image-card--focused")).toHaveLength(1);
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await flushPromises();
+    expect(copyImageMock).toHaveBeenCalledWith("a");
+
+    wrapper.unmount();
+  });
+
+  it("搜索结果支持用 Space 打开轻量预览，并用 Esc 关闭", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(true);
+    expect(wrapper.text()).toContain("查看详情");
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+    expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {

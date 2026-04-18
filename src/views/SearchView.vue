@@ -154,6 +154,7 @@
       :loading="store.loading"
       :show-debug-info="settings.devDebugMode"
       :empty-message="emptyMessage"
+      :focused-id="focusedResultId"
       @copied="handleSearchImageCopied"
       @delete="handleDeleteFromGrid"
       @open="openDetail"
@@ -223,6 +224,13 @@
       @close="detailId = null"
       @delete="handleDeleteFromDetail"
     />
+    <QuickPreviewModal
+      v-if="previewImage"
+      :image="previewImage"
+      @close="closeQuickPreview"
+      @copy="handleQuickPreviewCopy"
+      @detail="openDetail"
+    />
   </div>
 </template>
 
@@ -234,7 +242,9 @@ import { routerKey, type Router } from "vue-router";
 import SearchBar from "@/components/SearchBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
+import QuickPreviewModal from "@/components/QuickPreviewModal.vue";
 import { useSearch } from "@/composables/useSearch";
+import { useClipboard } from "@/composables/useClipboard";
 import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
@@ -242,6 +252,7 @@ import { getUserFacingRelevanceLabel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
 
 const { store, debouncedSearch } = useSearch();
+const { copyImage } = useClipboard();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
 const router = inject<Router | undefined>(routerKey, undefined);
@@ -273,6 +284,8 @@ const RESULT_FETCH_STEP = 30;
 const visibleRelevantCount = ref(HIGH_CONFIDENCE_BATCH_SIZE);
 const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
+const focusedResultIndex = ref(-1);
+const previewImageId = ref<string | null>(null);
 const homeState = ref<HomeState | null>(null);
 const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
@@ -387,6 +400,12 @@ const visibleResults = computed(() => {
   return [];
 });
 
+const focusedResultId = computed(() => visibleResults.value[focusedResultIndex.value]?.id ?? null);
+
+const previewImage = computed(() =>
+  visibleResults.value.find((item) => item.id === previewImageId.value) ?? null
+);
+
 const hasMoreRelevantLoaded = computed(() =>
   !showSecondaryResults.value && visiblePrimaryCount.value < mediumConfidenceCount.value
 );
@@ -484,6 +503,8 @@ const emptyMessage = computed(() =>
 function resetResultView() {
   visibleRelevantCount.value = HIGH_CONFIDENCE_BATCH_SIZE;
   showSecondaryResults.value = false;
+  focusedResultIndex.value = -1;
+  previewImageId.value = null;
 }
 
 async function fetchHomeState() {
@@ -565,6 +586,73 @@ function handleSearchImageCopied() {
   }
 }
 
+function moveFocusedResult(step: 1 | -1) {
+  if (!visibleResults.value.length) return;
+
+  if (focusedResultIndex.value === -1) {
+    focusedResultIndex.value = step > 0 ? 0 : visibleResults.value.length - 1;
+    return;
+  }
+
+  const nextIndex = focusedResultIndex.value + step;
+  focusedResultIndex.value = Math.max(0, Math.min(visibleResults.value.length - 1, nextIndex));
+}
+
+function openQuickPreview(id: string) {
+  previewImageId.value = id;
+}
+
+function closeQuickPreview() {
+  previewImageId.value = null;
+}
+
+async function handleQuickPreviewCopy(id: string) {
+  await copyImage(id);
+  handleSearchImageCopied();
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (isHomeMode.value) return;
+
+  if (event.key === "Escape") {
+    if (previewImageId.value) {
+      event.preventDefault();
+      closeQuickPreview();
+    }
+    return;
+  }
+
+  if (detailId.value || !visibleResults.value.length) return;
+
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    event.preventDefault();
+    moveFocusedResult(1);
+    return;
+  }
+
+  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+    event.preventDefault();
+    moveFocusedResult(-1);
+    return;
+  }
+
+  const focusedResult = visibleResults.value[focusedResultIndex.value];
+  if (!focusedResult) return;
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void handleSearchImageCopied();
+    const target = document.querySelector<HTMLElement>(".image-card--focused");
+    target?.click();
+    return;
+  }
+
+  if (event.key === " " || event.key === "Spacebar") {
+    event.preventDefault();
+    openQuickPreview(focusedResult.id);
+  }
+}
+
 function toggleSecondaryResults() {
   showSecondaryResults.value = !showSecondaryResults.value;
 }
@@ -626,6 +714,7 @@ const detailId = ref<string | null>(null);
 
 function openDetail(id: string) {
   detailId.value = id;
+  previewImageId.value = null;
 }
 
 async function handleDeleteFromDetail(id: string) {
@@ -662,6 +751,7 @@ onMounted(async () => {
   void libraryStore.fetchImages();
   await nextTick();
   attachLoadMoreObserver();
+  document.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onBeforeUnmount(() => {
@@ -669,6 +759,7 @@ onBeforeUnmount(() => {
     window.clearTimeout(searchBlurTimer);
   }
   loadMoreObserver?.disconnect();
+  document.removeEventListener("keydown", handleGlobalKeydown);
 });
 </script>
 

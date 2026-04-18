@@ -6,6 +6,7 @@
   >
     <div
       class="image-card ui-result-card"
+      :class="{ 'image-card--focused': focused }"
       @click="handleClick"
       @dblclick="emit('open', image.id)"
     >
@@ -129,6 +130,7 @@ const props = defineProps<{
   showDebugInfo: boolean;
   selectable?: boolean;
   selected?: boolean;
+  focused?: boolean;
 }>();
 const emit = defineEmits<{
   delete: [id: string];
@@ -309,6 +311,13 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 
 .image-card {
   cursor: pointer;
+}
+
+.image-card--focused {
+  border-color: var(--ui-border-strong);
+  box-shadow:
+    0 0 0 4px rgba(183, 121, 31, 0.14),
+    var(--ui-shadow-floating);
 }
 
 .image-media {
