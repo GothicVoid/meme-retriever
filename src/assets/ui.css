@@ -1,0 +1,233 @@
+:root {
+  color-scheme: light;
+  font-family:
+    "Segoe UI",
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+
+  --ui-bg-page: #f3f1ec;
+  --ui-bg-surface: #fbfaf7;
+  --ui-bg-surface-strong: #ffffff;
+  --ui-bg-muted: #ece7dd;
+  --ui-bg-hover: #f2ede4;
+  --ui-text-primary: #1f2329;
+  --ui-text-secondary: #5c6270;
+  --ui-text-muted: #787f8d;
+  --ui-border-subtle: #ddd5c8;
+  --ui-border-strong: #bda98b;
+  --ui-accent: #b7791f;
+  --ui-accent-hover: #975f12;
+  --ui-success: #267a52;
+  --ui-warning: #b85c38;
+  --ui-danger: #b83245;
+  --ui-info: #2f6f9f;
+  --ui-shadow-soft: 0 10px 30px rgba(48, 40, 25, 0.08);
+  --ui-shadow-floating: 0 18px 44px rgba(48, 40, 25, 0.16);
+  --ui-radius-sm: 10px;
+  --ui-radius-md: 16px;
+  --ui-radius-lg: 22px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-space-6: 32px;
+  --ui-space-7: 40px;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ui-bg-page);
+  color: var(--ui-text-primary);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-accent) 80%, white);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: var(--ui-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-5);
+}
+
+.app-shell__content {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+}
+
+.app-nav {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  padding: var(--ui-space-2);
+  display: flex;
+  gap: var(--ui-space-2);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 88%, white);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-soft);
+}
+
+.app-nav__link {
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: var(--ui-text-secondary);
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.app-nav__link:hover {
+  background: var(--ui-bg-hover);
+  color: var(--ui-text-primary);
+}
+
+.app-nav__link.router-link-active {
+  background: rgba(183, 121, 31, 0.14);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+.ui-input-shell {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2);
+  min-height: 56px;
+  padding: 0 var(--ui-space-3);
+  background: var(--ui-bg-surface-strong);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  box-shadow: var(--ui-shadow-soft);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+
+.ui-input-shell:focus-within {
+  border-color: var(--ui-border-strong);
+  box-shadow:
+    0 0 0 4px rgba(183, 121, 31, 0.12),
+    var(--ui-shadow-soft);
+}
+
+.ui-input {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--ui-text-primary);
+}
+
+.ui-input::placeholder {
+  color: var(--ui-text-muted);
+}
+
+.ui-input:focus {
+  outline: none;
+}
+
+.ui-input-clear {
+  min-width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.ui-input-clear:hover {
+  background: var(--ui-bg-hover);
+  color: var(--ui-text-primary);
+}
+
+.ui-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 35, 41, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.ui-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: var(--ui-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-4);
+  background: var(--ui-bg-surface-strong);
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-floating);
+}
+
+.ui-button {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.ui-button--primary {
+  background: var(--ui-accent);
+  color: #fff;
+}
+
+.ui-button--primary:hover {
+  background: var(--ui-accent-hover);
+}
+
+.ui-button--secondary {
+  background: var(--ui-bg-surface-strong);
+  border-color: var(--ui-border-subtle);
+  color: var(--ui-text-secondary);
+}
+
+.ui-button--secondary:hover {
+  background: var(--ui-bg-hover);
+  color: var(--ui-text-primary);
+}

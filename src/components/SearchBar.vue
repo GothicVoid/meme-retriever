@@ -1,7 +1,8 @@
 <template>
-  <div class="search-bar">
+  <div class="search-bar ui-input-shell">
     <input
       ref="inputRef"
+      class="search-bar__input ui-input"
       :value="modelValue"
       :placeholder="placeholder"
       @input="handleInput"
@@ -13,6 +14,7 @@
     >
     <button
       v-if="modelValue"
+      class="search-bar__clear ui-input-clear"
       @click="$emit('update:modelValue', '')"
     >
       ✕
@@ -65,24 +67,15 @@ onUnmounted(() => window.removeEventListener("keydown", handleGlobalKeydown));
 
 <style scoped>
 .search-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
   margin-bottom: 1rem;
 }
-.search-bar input {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
+
+.search-bar__input {
+  min-height: 48px;
   font-size: 1rem;
-  border: 1px solid #ccc;
-  border-radius: 6px;
 }
-.search-bar button {
-  padding: 0.4rem 0.6rem;
-  cursor: pointer;
-  border: none;
-  background: transparent;
+
+.search-bar__clear {
   font-size: 1rem;
-  color: #888;
 }
 </style>

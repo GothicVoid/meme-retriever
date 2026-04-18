@@ -1,40 +1,56 @@
 <template>
-  <GlobalProgressBar />
-  <Toast />
-  <nav class="nav">
-    <RouterLink to="/">
-      首页 / 搜索
-    </RouterLink>
-    <RouterLink to="/library">
-      图库管理
-    </RouterLink>
-    <RouterLink to="/settings">
-      设置
-    </RouterLink>
-  </nav>
-  <RouterView />
-
-  <!-- 任务恢复对话框 -->
   <div
-    v-if="showResumeDialog"
-    class="resume-backdrop"
-    @click.self="showResumeDialog = false"
+    class="app-shell"
+    data-ui-theme="memedesk"
   >
-    <div class="resume-dialog">
-      <p>检测到 {{ pendingCount }} 个未完成的入库任务，是否继续？</p>
-      <div class="resume-actions">
-        <button
-          class="btn-primary"
-          @click="resumeTasks"
-        >
-          继续入库
-        </button>
-        <button
-          class="btn-secondary"
-          @click="dismissResume"
-        >
-          忽略
-        </button>
+    <GlobalProgressBar />
+    <Toast />
+    <nav class="nav app-nav">
+      <RouterLink
+        to="/"
+        class="app-nav__link"
+      >
+        首页 / 搜索
+      </RouterLink>
+      <RouterLink
+        to="/library"
+        class="app-nav__link"
+      >
+        图库管理
+      </RouterLink>
+      <RouterLink
+        to="/settings"
+        class="app-nav__link"
+      >
+        设置
+      </RouterLink>
+    </nav>
+    <main class="app-shell__content">
+      <RouterView />
+    </main>
+
+    <!-- 任务恢复对话框 -->
+    <div
+      v-if="showResumeDialog"
+      class="resume-backdrop ui-dialog-backdrop"
+      @click.self="showResumeDialog = false"
+    >
+      <div class="resume-dialog ui-dialog">
+        <p>检测到 {{ pendingCount }} 个未完成的入库任务，是否继续？</p>
+        <div class="resume-actions">
+          <button
+            class="btn-primary ui-button ui-button--primary"
+            @click="resumeTasks"
+          >
+            继续入库
+          </button>
+          <button
+            class="btn-secondary ui-button ui-button--secondary"
+            @click="dismissResume"
+          >
+            忽略
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -77,69 +93,15 @@ function dismissResume() {
 }
 </script>
 
-<style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-}
-@media (prefers-color-scheme: dark) {
-  :root { color: #f6f6f6; background-color: #2f2f2f; }
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-</style>
-
 <style scoped>
-.nav {
-  display: flex;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #eee;
+.resume-dialog p {
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
-.nav a { text-decoration: none; color: #555; }
-.nav a.router-link-active { color: #000; font-weight: 600; }
 
-.resume-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+.resume-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
+  gap: 0.75rem;
+  justify-content: flex-end;
 }
-.resume-dialog {
-  background: #fff;
-  border-radius: 10px;
-  padding: 1.5rem 2rem;
-  max-width: 360px;
-  width: 90vw;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-}
-.resume-dialog p { font-size: 0.95rem; line-height: 1.5; }
-.resume-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
-.btn-primary {
-  padding: 0.45rem 1.1rem;
-  background: #646cff;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.btn-primary:hover { background: #535bf2; }
-.btn-secondary {
-  padding: 0.45rem 1.1rem;
-  background: none;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: #555;
-}
-.btn-secondary:hover { background: #f5f5f5; }
 </style>

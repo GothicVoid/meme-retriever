@@ -8,6 +8,13 @@ describe("SearchBar", () => {
     expect(wrapper.find("input").exists()).toBe(true);
   });
 
+  it("挂载统一输入骨架类，便于复用全局设计 token", () => {
+    const wrapper = mount(SearchBar, { props: { modelValue: "hello" } });
+    expect(wrapper.get(".search-bar").classes()).toContain("ui-input-shell");
+    expect(wrapper.get("input").classes()).toContain("ui-input");
+    expect(wrapper.get("button").classes()).toContain("ui-input-clear");
+  });
+
   it("支持自定义 placeholder", () => {
     const wrapper = mount(SearchBar, { props: { modelValue: "", placeholder: "搜台词、角色、动作、场景" } });
     expect(wrapper.find("input").attributes("placeholder")).toBe("搜台词、角色、动作、场景");

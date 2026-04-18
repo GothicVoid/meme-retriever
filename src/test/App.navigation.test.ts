@@ -75,4 +75,38 @@ describe("App 一级导航", () => {
     const activeLink = wrapper.get(".nav a.router-link-active");
     expect(activeLink.text()).toBe("图库管理");
   });
+
+  it("应用外壳挂载统一主题入口和页面骨架类", async () => {
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    const shell = wrapper.get('[data-ui-theme="memedesk"]');
+    expect(shell.classes()).toContain("app-shell");
+    expect(wrapper.get("nav").classes()).toContain("app-nav");
+    expect(wrapper.get("main").classes()).toContain("app-shell__content");
+  });
+
+  it("一级导航链接挂载统一基础导航类", async () => {
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    const links = wrapper.findAll(".app-nav__link");
+    expect(links).toHaveLength(3);
+  });
 });
