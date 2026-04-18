@@ -181,6 +181,7 @@ async fn do_index_inner(
         file_modified_time,
         file_status: "normal".to_string(),
         last_check_time: None,
+        last_used_at: None,
     };
     repo::insert_image(pool, &rec).await?;
     repo::insert_embedding(pool, &id, &embedding).await?;

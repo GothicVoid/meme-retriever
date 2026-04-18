@@ -46,7 +46,7 @@ pub struct SearchResult {
     pub debug_info: Option<ScoreDebugInfo>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageMeta {
     pub id: String,
@@ -61,6 +61,22 @@ pub struct ImageMeta {
     pub added_at: i64,
     pub use_count: i64,
     pub tags: Vec<TagDto>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentSearchItem {
+    pub query: String,
+    pub updated_at: i64,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeStatePayload {
+    pub image_count: i64,
+    pub recent_searches: Vec<RecentSearchItem>,
+    pub recent_used: Vec<ImageMeta>,
+    pub frequent_used: Vec<ImageMeta>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -550,7 +566,17 @@ fn spawn_index_task(
 pub async fn search(
     query: String,
     limit: usize,
+    db: State<'_, DbPool>,
     engine: State<'_, EngineState>,
+) -> Result<Vec<SearchResult>, String> {
+    search_impl(query, limit, db.inner(), engine.inner()).await
+}
+
+async fn search_impl(
+    query: String,
+    limit: usize,
+    db: &DbPool,
+    engine: &EngineState,
 ) -> Result<Vec<SearchResult>, String> {
     if limit == 0 {
         return Err("limit must be > 0".into());
@@ -562,13 +588,19 @@ pub async fn search(
         query
     };
     tracing::info!("search: query={query}, limit={limit}");
-    engine
+    let results = engine
         .search(&query, limit, 0.3, 0.4, 0.3)
         .await
         .map_err(|e| {
             tracing::error!("command search failed: {e}");
             e.to_string()
-        })
+        })?;
+    if !query.trim().is_empty() {
+        repo::upsert_search_history(db, &query, now_secs())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(results)
 }
 
 #[tauri::command]
@@ -860,7 +892,7 @@ where
     tracing::debug!("copy_to_clipboard: path={}", img.file_path);
     let image_data = load_image_for_clipboard(&img.file_path)?;
     set_image(image_data)?;
-    repo::increment_use_count(db, id)
+    repo::increment_use_count(db, id, now_secs())
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -923,9 +955,75 @@ pub async fn relocate_image(
 #[tauri::command]
 pub async fn increment_use_count(id: String, db: State<'_, DbPool>) -> Result<(), String> {
     tracing::info!("increment_use_count: {id}");
-    repo::increment_use_count(db.inner(), &id)
+    repo::increment_use_count(db.inner(), &id, now_secs())
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_home_state(db: State<'_, DbPool>) -> Result<HomeStatePayload, String> {
+    get_home_state_impl(db.inner()).await
+}
+
+async fn get_home_state_impl(db: &DbPool) -> Result<HomeStatePayload, String> {
+    const RECENT_SEARCH_LIMIT: i64 = 5;
+    const RECENT_USED_LIMIT: i64 = 8;
+    const FREQUENT_USED_LIMIT: i64 = 12;
+
+    let image_count = repo::get_image_count(db).await.map_err(|e| e.to_string())?;
+    let recent_searches = repo::get_recent_search_history(db, RECENT_SEARCH_LIMIT)
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|item| RecentSearchItem {
+            query: item.query,
+            updated_at: item.updated_at,
+        })
+        .collect();
+
+    let recent_used = collect_home_images(
+        db,
+        repo::get_recently_used_images(db, RECENT_USED_LIMIT)
+            .await
+            .map_err(|e| e.to_string())?,
+    )
+    .await?;
+
+    let frequent_source = if repo::has_any_usage(db).await.map_err(|e| e.to_string())? {
+        repo::get_top_used_images(db, FREQUENT_USED_LIMIT)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        repo::get_latest_images(db, FREQUENT_USED_LIMIT)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+    let frequent_used = collect_home_images(db, frequent_source).await?;
+
+    Ok(HomeStatePayload {
+        image_count,
+        recent_searches,
+        recent_used,
+        frequent_used,
+    })
+}
+
+async fn collect_home_images(
+    db: &DbPool,
+    images: Vec<repo::ImageRecord>,
+) -> Result<Vec<ImageMeta>, String> {
+    let mut output = Vec::with_capacity(images.len());
+    for img in images {
+        let file_status = sync_file_status(db, &img.id, &img.file_path, &img.file_status).await?;
+        if file_status == "missing" {
+            continue;
+        }
+        let tags = repo::get_tags_for_image(db, &img.id)
+            .await
+            .map_err(|e| e.to_string())?;
+        output.push(to_image_meta(img, tags, file_status));
+    }
+    Ok(output)
 }
 
 #[tauri::command]
@@ -1203,6 +1301,14 @@ mod tests {
         Arc::new(SearchEngine::new(pool, kb).await.unwrap())
     }
 
+    fn write_test_image(dir: &tempfile::TempDir, name: &str) -> String {
+        let path = dir.path().join(name);
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_pixel(2, 2, Rgba([12, 34, 56, 255]));
+        img.save(&path).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
     #[test]
     fn test_image_meta_serializes_camel_case() {
         let meta = ImageMeta {
@@ -1370,6 +1476,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1381,6 +1488,7 @@ mod tests {
 
         let image = repo::get_image(&pool, "img-copy").await.unwrap().unwrap();
         assert_eq!(image.use_count, 1);
+        assert!(image.last_used_at.is_some());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1408,6 +1516,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1424,6 +1533,141 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(image.use_count, 0);
+        assert_eq!(image.last_used_at, None);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_impl_records_non_empty_query_history(pool: SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_test_image(&dir, "search-history.png");
+
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "img-search".into(),
+                file_path: path,
+                file_name: "search-history.png".into(),
+                format: "png".into(),
+                width: Some(2),
+                height: Some(2),
+                added_at: 1,
+                use_count: 0,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+                last_used_at: None,
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_ocr(&pool, "img-search", "阿布正在撇嘴")
+            .await
+            .unwrap();
+        repo::insert_embedding(&pool, "img-search", &vec![0.1; 512])
+            .await
+            .unwrap();
+
+        let engine = make_engine(pool.clone()).await;
+        let _ = search_impl("阿布 撇嘴".into(), 10, &pool, &engine)
+            .await
+            .unwrap();
+        let _ = search_impl("".into(), 10, &pool, &engine).await.unwrap();
+
+        let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].query, "阿布 撇嘴");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_home_state_impl_returns_recent_and_frequent_images(pool: SqlitePool) {
+        let dir = tempfile::tempdir().unwrap();
+        let recent_path = write_test_image(&dir, "recent.png");
+        let frequent_path = write_test_image(&dir, "frequent.png");
+
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "recent-img".into(),
+                file_path: recent_path,
+                file_name: "recent.png".into(),
+                format: "png".into(),
+                width: Some(2),
+                height: Some(2),
+                added_at: 10,
+                use_count: 2,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+                last_used_at: Some(200),
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "frequent-img".into(),
+                file_path: frequent_path,
+                file_name: "frequent.png".into(),
+                format: "png".into(),
+                width: Some(2),
+                height: Some(2),
+                added_at: 20,
+                use_count: 5,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+                last_used_at: Some(100),
+            },
+        )
+        .await
+        .unwrap();
+        repo::insert_image(
+            &pool,
+            &repo::ImageRecord {
+                id: "missing-img".into(),
+                file_path: "/definitely/not/found-home.png".into(),
+                file_name: "missing.png".into(),
+                format: "png".into(),
+                width: Some(2),
+                height: Some(2),
+                added_at: 30,
+                use_count: 9,
+                thumbnail_path: None,
+                file_hash: None,
+                file_size: None,
+                file_modified_time: None,
+                file_status: "normal".to_string(),
+                last_check_time: None,
+                last_used_at: Some(300),
+            },
+        )
+        .await
+        .unwrap();
+
+        repo::upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
+        repo::upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+
+        let home = get_home_state_impl(&pool).await.unwrap();
+
+        assert_eq!(home.image_count, 3);
+        assert_eq!(home.recent_searches.len(), 2);
+        assert_eq!(home.recent_searches[0].query, "猫猫 心虚");
+        assert_eq!(home.recent_used.len(), 2);
+        assert_eq!(home.recent_used[0].id, "recent-img");
+        assert_eq!(home.recent_used[1].id, "frequent-img");
+        assert_eq!(home.frequent_used[0].id, "frequent-img");
+        assert!(!home.recent_used.iter().any(|img| img.id == "missing-img"));
+        assert!(!home.frequent_used.iter().any(|img| img.id == "missing-img"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1445,6 +1689,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1482,6 +1727,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1531,6 +1777,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "missing".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1596,6 +1843,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1617,6 +1865,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1695,6 +1944,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1748,6 +1998,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await

@@ -133,9 +133,9 @@ async fn test_use_count_increment(pool: sqlx::SqlitePool) {
     assert_eq!(indexed[0].status, "completed");
 
     let id = &indexed[0].id;
-    repo::increment_use_count(&pool, id).await.unwrap();
-    repo::increment_use_count(&pool, id).await.unwrap();
-    repo::increment_use_count(&pool, id).await.unwrap();
+    repo::increment_use_count(&pool, id, 1).await.unwrap();
+    repo::increment_use_count(&pool, id, 2).await.unwrap();
+    repo::increment_use_count(&pool, id, 3).await.unwrap();
 
     let img = repo::get_image(&pool, id).await.unwrap().unwrap();
     assert_eq!(img.use_count, 3);
@@ -278,6 +278,7 @@ async fn test_clear_all_images_cleans_ocr_fts(pool: sqlx::SqlitePool) {
             file_modified_time: None,
             file_status: "normal".into(),
             last_check_time: None,
+            last_used_at: None,
         },
     )
     .await

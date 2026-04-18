@@ -778,6 +778,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -824,6 +825,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -845,6 +847,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -866,6 +869,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -900,6 +904,7 @@ mod tests {
                     file_modified_time: None,
                     file_status: "normal".to_string(),
                     last_check_time: None,
+                    last_used_at: None,
                 },
             )
             .await
@@ -930,6 +935,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -977,6 +983,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1126,6 +1133,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await
@@ -1318,6 +1326,7 @@ mod tests {
                 file_modified_time: None,
                 file_status: "normal".to_string(),
                 last_check_time: None,
+                last_used_at: None,
             },
         )
         .await

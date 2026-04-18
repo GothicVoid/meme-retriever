@@ -18,6 +18,13 @@ pub struct ImageRecord {
     pub file_modified_time: Option<i64>,
     pub file_status: String,
     pub last_check_time: Option<i64>,
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchHistoryRecord {
+    pub query: String,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -107,14 +114,14 @@ pub async fn insert_image(pool: &DbPool, rec: &ImageRecord) -> anyhow::Result<()
     tracing::debug!("insert_image: id={}", rec.id);
     sqlx::query(
         "INSERT OR IGNORE INTO images(id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-                              file_hash,file_size,file_modified_time,file_status,last_check_time)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"
+                              file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"
     )
     .bind(&rec.id).bind(&rec.file_path).bind(&rec.file_name).bind(&rec.format)
     .bind(rec.width).bind(rec.height).bind(rec.added_at).bind(rec.use_count)
     .bind(&rec.thumbnail_path)
     .bind(&rec.file_hash).bind(rec.file_size).bind(rec.file_modified_time)
-    .bind(&rec.file_status).bind(rec.last_check_time)
+    .bind(&rec.file_status).bind(rec.last_check_time).bind(rec.last_used_at)
     .execute(pool)
     .await?;
     Ok(())
@@ -124,7 +131,7 @@ pub async fn get_image(pool: &DbPool, id: &str) -> anyhow::Result<Option<ImageRe
     tracing::debug!("get_image: id={id}");
     let row = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-               file_hash,file_size,file_modified_time,file_status,last_check_time
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
          FROM images WHERE id=?1",
     )
     .bind(id)
@@ -146,13 +153,14 @@ pub async fn get_image(pool: &DbPool, id: &str) -> anyhow::Result<Option<ImageRe
         file_modified_time: r.get("file_modified_time"),
         file_status: r.get("file_status"),
         last_check_time: r.get("last_check_time"),
+        last_used_at: r.get("last_used_at"),
     }))
 }
 
 pub async fn get_image_by_hash(pool: &DbPool, hash: &str) -> anyhow::Result<Option<ImageRecord>> {
     let row = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-               file_hash,file_size,file_modified_time,file_status,last_check_time
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
          FROM images WHERE file_hash=?1",
     )
     .bind(hash)
@@ -173,6 +181,7 @@ pub async fn get_image_by_hash(pool: &DbPool, hash: &str) -> anyhow::Result<Opti
         file_modified_time: r.get("file_modified_time"),
         file_status: r.get("file_status"),
         last_check_time: r.get("last_check_time"),
+        last_used_at: r.get("last_used_at"),
     }))
 }
 
@@ -363,7 +372,7 @@ pub async fn get_images_paged(
     let offset = page * page_size;
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-               file_hash,file_size,file_modified_time,file_status,last_check_time
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
          FROM images ORDER BY added_at DESC LIMIT ?1 OFFSET ?2",
     )
     .bind(page_size)
@@ -387,6 +396,7 @@ pub async fn get_images_paged(
             file_modified_time: r.get("file_modified_time"),
             file_status: r.get("file_status"),
             last_check_time: r.get("last_check_time"),
+            last_used_at: r.get("last_used_at"),
         })
         .collect())
 }
@@ -398,10 +408,11 @@ pub async fn get_image_count(pool: &DbPool) -> anyhow::Result<i64> {
     Ok(row.get("cnt"))
 }
 
-pub async fn increment_use_count(pool: &DbPool, id: &str) -> anyhow::Result<()> {
+pub async fn increment_use_count(pool: &DbPool, id: &str, used_at: i64) -> anyhow::Result<()> {
     tracing::debug!("increment_use_count: id={id}");
-    sqlx::query("UPDATE images SET use_count = use_count + 1 WHERE id=?1")
+    sqlx::query("UPDATE images SET use_count = use_count + 1, last_used_at=?2 WHERE id=?1")
         .bind(id)
+        .bind(used_at)
         .execute(pool)
         .await?;
     Ok(())
@@ -444,7 +455,7 @@ pub async fn has_any_usage(pool: &DbPool) -> anyhow::Result<bool> {
 pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-               file_hash,file_size,file_modified_time,file_status,last_check_time
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
          FROM images ORDER BY added_at DESC LIMIT ?1",
     )
     .bind(limit)
@@ -467,6 +478,7 @@ pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<
             file_modified_time: r.get("file_modified_time"),
             file_status: r.get("file_status"),
             last_check_time: r.get("last_check_time"),
+            last_used_at: r.get("last_used_at"),
         })
         .collect())
 }
@@ -474,7 +486,7 @@ pub async fn get_latest_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<
 pub async fn get_all_images(pool: &DbPool) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-               file_hash,file_size,file_modified_time,file_status,last_check_time
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
          FROM images ORDER BY added_at ASC",
     )
     .fetch_all(pool)
@@ -496,6 +508,7 @@ pub async fn get_all_images(pool: &DbPool) -> anyhow::Result<Vec<ImageRecord>> {
             file_modified_time: r.get("file_modified_time"),
             file_status: r.get("file_status"),
             last_check_time: r.get("last_check_time"),
+            last_used_at: r.get("last_used_at"),
         })
         .collect())
 }
@@ -531,8 +544,9 @@ pub async fn update_image_file_info(pool: &DbPool, rec: &ImageRecord) -> anyhow:
              file_size=?8,
              file_modified_time=?9,
              file_status=?10,
-             last_check_time=?11
-         WHERE id=?12",
+             last_check_time=?11,
+             last_used_at=?12
+         WHERE id=?13",
     )
     .bind(&rec.file_path)
     .bind(&rec.file_name)
@@ -545,6 +559,7 @@ pub async fn update_image_file_info(pool: &DbPool, rec: &ImageRecord) -> anyhow:
     .bind(rec.file_modified_time)
     .bind(&rec.file_status)
     .bind(rec.last_check_time)
+    .bind(rec.last_used_at)
     .bind(&rec.id)
     .execute(pool)
     .await?;
@@ -574,7 +589,7 @@ pub async fn get_ocr_texts(
 pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<ImageRecord>> {
     let rows = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
-               file_hash,file_size,file_modified_time,file_status,last_check_time
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
          FROM images ORDER BY use_count DESC, added_at DESC LIMIT ?1",
     )
     .bind(limit)
@@ -597,6 +612,84 @@ pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Ve
             file_modified_time: r.get("file_modified_time"),
             file_status: r.get("file_status"),
             last_check_time: r.get("last_check_time"),
+            last_used_at: r.get("last_used_at"),
+        })
+        .collect())
+}
+
+pub async fn get_recently_used_images(
+    pool: &DbPool,
+    limit: i64,
+) -> anyhow::Result<Vec<ImageRecord>> {
+    let rows = sqlx::query(
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+               file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
+         FROM images
+         WHERE last_used_at IS NOT NULL
+         ORDER BY last_used_at DESC, added_at DESC
+         LIMIT ?1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| ImageRecord {
+            id: r.get("id"),
+            file_path: r.get("file_path"),
+            file_name: r.get("file_name"),
+            format: r.get("format"),
+            width: r.get("width"),
+            height: r.get("height"),
+            added_at: r.get("added_at"),
+            use_count: r.get("use_count"),
+            thumbnail_path: r.get("thumbnail_path"),
+            file_hash: r.get("file_hash"),
+            file_size: r.get("file_size"),
+            file_modified_time: r.get("file_modified_time"),
+            file_status: r.get("file_status"),
+            last_check_time: r.get("last_check_time"),
+            last_used_at: r.get("last_used_at"),
+        })
+        .collect())
+}
+
+pub async fn upsert_search_history(pool: &DbPool, query: &str, updated_at: i64) -> anyhow::Result<()> {
+    let normalized = query.trim();
+    if normalized.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO search_history(query, updated_at)
+         VALUES(?1, ?2)
+         ON CONFLICT(query) DO UPDATE SET updated_at=excluded.updated_at",
+    )
+    .bind(normalized)
+    .bind(updated_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_recent_search_history(
+    pool: &DbPool,
+    limit: i64,
+) -> anyhow::Result<Vec<SearchHistoryRecord>> {
+    let rows = sqlx::query(
+        "SELECT query, updated_at
+         FROM search_history
+         ORDER BY updated_at DESC, id DESC
+         LIMIT ?1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| SearchHistoryRecord {
+            query: r.get("query"),
+            updated_at: r.get("updated_at"),
         })
         .collect())
 }
@@ -654,6 +747,7 @@ mod tests {
             file_modified_time: None,
             file_status: "normal".to_string(),
             last_check_time: None,
+            last_used_at: None,
         }
     }
 
@@ -829,10 +923,44 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_increment_use_count(pool: SqlitePool) {
         insert_image(&pool, &make_image("img1")).await.unwrap();
-        increment_use_count(&pool, "img1").await.unwrap();
-        increment_use_count(&pool, "img1").await.unwrap();
+        increment_use_count(&pool, "img1", 100).await.unwrap();
+        increment_use_count(&pool, "img1", 200).await.unwrap();
         let got = get_image(&pool, "img1").await.unwrap().unwrap();
         assert_eq!(got.use_count, 2);
+        assert_eq!(got.last_used_at, Some(200));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_recently_used_images(pool: SqlitePool) {
+        let mut img1 = make_image("img1");
+        img1.last_used_at = Some(100);
+        insert_image(&pool, &img1).await.unwrap();
+
+        let mut img2 = make_image("img2");
+        img2.last_used_at = Some(300);
+        insert_image(&pool, &img2).await.unwrap();
+
+        let img3 = make_image("img3");
+        insert_image(&pool, &img3).await.unwrap();
+
+        let images = get_recently_used_images(&pool, 10).await.unwrap();
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0].id, "img2");
+        assert_eq!(images[1].id, "img1");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_history_upsert_and_order(pool: SqlitePool) {
+        upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
+        upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+        upsert_search_history(&pool, "阿布 撇嘴", 300).await.unwrap();
+        upsert_search_history(&pool, "   ", 400).await.unwrap();
+
+        let rows = get_recent_search_history(&pool, 10).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].query, "阿布 撇嘴");
+        assert_eq!(rows[0].updated_at, 300);
+        assert_eq!(rows[1].query, "猫猫 心虚");
     }
 
     #[sqlx::test(migrations = "./migrations")]
