@@ -44,10 +44,10 @@ describe("LibraryView 进度条", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises(); // 完成 get_images
 
-    await wrapper.findAll("button")[0].trigger("click");
+    await wrapper.get("[data-action='add-images']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.find(".progress-bar").exists()).toBe(true);
+    expect(wrapper.find(".index-status .progress-bar").exists()).toBe(true);
     expect(wrapper.find(".index-status").text()).toContain("0/2");
 
     wrapper.unmount();
@@ -63,10 +63,10 @@ describe("LibraryView 进度条", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    await wrapper.findAll("button")[1].trigger("click");
+    await wrapper.get("[data-action='add-folder']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.find(".progress-bar").exists()).toBe(true);
+    expect(wrapper.find(".index-status .progress-bar").exists()).toBe(true);
     expect(wrapper.find(".index-status").text()).toContain("0/3");
 
     wrapper.unmount();
@@ -78,7 +78,7 @@ describe("LibraryView 进度条", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.find(".progress-bar").exists()).toBe(false);
+    expect(wrapper.find(".index-status .progress-bar").exists()).toBe(false);
     wrapper.unmount();
   });
 });

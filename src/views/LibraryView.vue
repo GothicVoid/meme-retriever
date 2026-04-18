@@ -1,14 +1,53 @@
 <template>
   <div class="library-view">
+    <div class="page-head">
+      <div class="page-head__copy">
+        <h2>图库管理</h2>
+        <p>在这里导入、整理和排查图片问题。搜索不到时，也可以先来这里检查新增内容和异常图片。</p>
+      </div>
+      <div class="gallery-total">
+        共 {{ store.total }} 张
+      </div>
+    </div>
+
+    <div class="view-switches">
+      <button
+        class="view-switch"
+        :class="{ active: currentView === 'all' }"
+        data-view="all"
+        @click="currentView = 'all'"
+      >
+        全部图片
+      </button>
+      <button
+        class="view-switch"
+        :class="{ active: currentView === 'recent' }"
+        data-view="recent"
+        @click="currentView = 'recent'"
+      >
+        最近新增
+      </button>
+      <button
+        class="view-switch"
+        :class="{ active: currentView === 'issues' }"
+        data-view="issues"
+        @click="currentView = 'issues'"
+      >
+        异常图片
+      </button>
+    </div>
+
     <div class="toolbar">
       <div class="toolbar-actions">
         <button
+          data-action="add-images"
           :disabled="store.indexing"
           @click="handleAdd"
         >
           添加图片
         </button>
         <button
+          data-action="add-folder"
           :disabled="store.indexing"
           @click="handleAddFolder"
         >
@@ -33,9 +72,6 @@
       </div>
       <div class="usage-notice">
         图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
-      </div>
-      <div class="gallery-total">
-        共 {{ store.total }} 张
       </div>
     </div>
     <div
@@ -69,18 +105,18 @@
       </div>
       <ImageGrid
         v-else
-        :images="store.images as unknown as SearchResult[]"
+        :images="visibleImages as unknown as SearchResult[]"
         :loading="store.loading && store.images.length === 0"
         :show-debug-info="false"
         :selectable="true"
         :selected-ids="store.selectedIds"
-        empty-message="图库为空，请先添加图片"
+        :empty-message="emptyMessage"
         @delete="handleDelete"
         @select="store.toggleSelection"
         @open="detailId = $event"
       />
       <div
-        v-if="store.images.length > 0"
+        v-if="visibleImages.length > 0"
         class="gallery-footer"
       >
         <p
@@ -145,12 +181,37 @@ const loadError = ref(false);
 const pagingError = ref(false);
 const showBackToTop = ref(false);
 const clearingMissing = ref(false);
+const currentView = ref<"all" | "recent" | "issues">("all");
 
 const progressPercent = computed(() =>
   store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
 );
 
 const hasMore = computed(() => store.images.length < store.total);
+
+const visibleImages = computed(() => {
+  if (currentView.value === "recent") {
+    return [...store.images].sort((a, b) => b.addedAt - a.addedAt);
+  }
+
+  if (currentView.value === "issues") {
+    return store.images.filter((image) => image.fileStatus && image.fileStatus !== "normal");
+  }
+
+  return store.images;
+});
+
+const emptyMessage = computed(() => {
+  if (currentView.value === "issues") {
+    return "当前没有异常图片";
+  }
+
+  if (currentView.value === "recent") {
+    return "最近暂无新增";
+  }
+
+  return "图库为空，请先添加图片";
+});
 
 onMounted(() => {
   void reloadGallery();
@@ -284,6 +345,44 @@ async function handleClearMissing() {
 
 <style scoped>
 .library-view { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.page-head__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.page-head__copy h2 { font-size: 1.25rem; }
+.page-head__copy p {
+  max-width: 720px;
+  color: #666;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.view-switches {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.view-switch {
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #444;
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.view-switch.active {
+  border-color: #111827;
+  background: #111827;
+  color: #fff;
+}
 .usage-notice {
   flex: 1 1 360px;
   min-width: 240px;
