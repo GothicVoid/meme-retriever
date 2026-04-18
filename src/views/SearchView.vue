@@ -184,6 +184,14 @@
         看看最近用过
       </button>
       <button
+        v-if="showZeroResultHint || showLowConfidenceHint"
+        class="result-feedback__action"
+        data-action="go-gallery-management"
+        @click="goToGalleryManagement(showLowConfidenceHint ? 'issues' : 'recent')"
+      >
+        去图库管理
+      </button>
+      <button
         v-if="canShowSecondaryResults"
         class="result-feedback__action"
         :data-action="showSecondaryResults ? 'show-less' : 'show-more-secondary'"
@@ -213,9 +221,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, computed, ref, watch, nextTick } from "vue";
+import { onMounted, onBeforeUnmount, computed, ref, watch, nextTick, inject } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { routerKey, type Router } from "vue-router";
 import SearchBar from "@/components/SearchBar.vue";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
@@ -229,6 +238,7 @@ import type { SearchResult } from "@/stores/search";
 const { store, debouncedSearch } = useSearch();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
+const router = inject<Router | undefined>(routerKey, undefined);
 
 interface HomeImage {
   id: string;
@@ -491,6 +501,17 @@ function goBackToHome() {
   searchFocused.value = false;
   store.query = "";
   onQueryChange("");
+}
+
+function goToGalleryManagement(targetView: "recent" | "issues") {
+  if (router) {
+    void router.push({ path: "/library", query: { view: targetView } });
+    return;
+  }
+
+  const search = new URLSearchParams(window.location.search);
+  search.set("view", targetView);
+  window.history.pushState({}, "", `/library?${search.toString()}`);
 }
 
 function handleSearchFocus() {

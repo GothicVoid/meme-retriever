@@ -164,15 +164,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed, ref } from "vue";
+import { onMounted, computed, ref, inject, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
+import { routeLocationKey, type RouteLocationNormalizedLoaded } from "vue-router";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore } from "@/stores/library";
 import type { SearchResult } from "@/stores/search";
 
 const store = useLibraryStore();
+const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
 const detailId = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const currentPage = ref(0);
@@ -212,6 +214,31 @@ const emptyMessage = computed(() => {
 
   return "图库为空，请先添加图片";
 });
+
+function normalizeView(raw: unknown): "all" | "recent" | "issues" {
+  if (raw === "recent" || raw === "issues") {
+    return raw;
+  }
+  return "all";
+}
+
+function resolveRouteView() {
+  const routeView = route?.query.view;
+  if (typeof routeView === "string") {
+    return normalizeView(routeView);
+  }
+
+  const browserView = new URLSearchParams(window.location.search).get("view");
+  return normalizeView(browserView);
+}
+
+watch(
+  () => route?.query.view,
+  () => {
+    currentView.value = resolveRouteView();
+  },
+  { immediate: true }
+);
 
 onMounted(() => {
   void reloadGallery();
