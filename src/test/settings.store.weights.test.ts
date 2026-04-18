@@ -19,10 +19,11 @@ describe("useSettingsStore — 搜索权重已移除", () => {
 
   it("持久化 settings 时不写入历史权重字段", async () => {
     const s = useSettingsStore();
-    s.showDebugInfo = true;
+    s.devDebugMode = true;
     await nextTick();
     const saved = JSON.parse(localStorage.getItem("settings")!);
-    expect(saved.showDebugInfo).toBe(true);
+    expect(saved.devDebugMode).toBe(true);
+    expect(saved.showDebugInfo).toBeUndefined();
     expect(saved.w1).toBeUndefined();
     expect(saved.w2).toBeUndefined();
     expect(saved.w3).toBeUndefined();
@@ -34,7 +35,7 @@ describe("useSettingsStore — 搜索权重已移除", () => {
       JSON.stringify({ defaultLimit: 9, showDebugInfo: true, w1: 0.6, w2: 0.2, w3: 0.2 })
     );
     const s = useSettingsStore() as unknown as Record<string, unknown>;
-    expect(s.showDebugInfo).toBe(true);
+    expect(s.devDebugMode).toBe(true);
     expect("w1" in s).toBe(false);
     expect("w2" in s).toBe(false);
     expect("w3" in s).toBe(false);

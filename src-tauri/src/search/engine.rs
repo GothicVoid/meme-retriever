@@ -29,6 +29,76 @@ fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32, s_role: f32) -> 
     semantic_pass || text_pass
 }
 
+fn collect_match_candidates(
+    raw_query: &str,
+    normalized_query: &str,
+    related_terms: &[String],
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let mut push_unique = |term: &str| {
+        let trimmed = term.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if candidates.iter().any(|existing| existing == trimmed) {
+            return;
+        }
+        candidates.push(trimmed.to_string());
+    };
+
+    push_unique(raw_query);
+    push_unique(normalized_query);
+    for term in related_terms {
+        push_unique(term);
+    }
+    candidates
+}
+
+fn extract_text_matches(content: &str, candidates: &[String], limit: usize) -> Vec<String> {
+    if content.is_empty() {
+        return vec![];
+    }
+    let content_lower = content.to_lowercase();
+    let mut matches = Vec::new();
+    for candidate in candidates {
+        let candidate_lower = candidate.to_lowercase();
+        if candidate_lower.is_empty() {
+            continue;
+        }
+        if content_lower.contains(&candidate_lower)
+            && !matches.iter().any(|existing| existing == candidate)
+        {
+            matches.push(candidate.clone());
+        }
+        if matches.len() >= limit {
+            break;
+        }
+    }
+    matches
+}
+
+fn extract_tag_matches(
+    tags: &[repo::TagRecord],
+    candidates: &[String],
+    limit: usize,
+) -> Vec<String> {
+    let mut matches = Vec::new();
+    for tag in tags {
+        let tag_lower = tag.tag_text.to_lowercase();
+        if candidates.iter().any(|candidate| {
+            let candidate_lower = candidate.to_lowercase();
+            !candidate_lower.is_empty() && tag_lower.contains(&candidate_lower)
+        }) && !matches.iter().any(|existing| existing == &tag.tag_text)
+        {
+            matches.push(tag.tag_text.clone());
+        }
+        if matches.len() >= limit {
+            break;
+        }
+    }
+    matches
+}
+
 fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -170,6 +240,9 @@ impl SearchEngine {
                     file_status: actual_status.to_string(),
                     score: 1.0,
                     tags: tags.into_iter().map(TagDto::from).collect(),
+                    matched_ocr_terms: vec![],
+                    matched_tags: vec![],
+                    matched_role_name: None,
                     debug_info: None,
                 });
             }
@@ -188,6 +261,8 @@ impl SearchEngine {
             let kb = self.kb.read().unwrap();
             kb.detect_private_role(query)
         };
+        let evidence_candidates =
+            collect_match_candidates(query, &normalized_query.tag_query, &related_terms);
         if normalized_query.tag_query != query {
             tracing::info!(
                 "[KB] Tag query normalized: {:?} → {:?}",
@@ -545,7 +620,20 @@ impl SearchEngine {
                     file_format: img.format,
                     file_status: actual_status.to_string(),
                     score,
-                    tags: tags.into_iter().map(TagDto::from).collect(),
+                    tags: tags.iter().cloned().map(TagDto::from).collect(),
+                    matched_ocr_terms: extract_text_matches(
+                        ocr_text_map.get(&id).map(|text| text.as_str()).unwrap_or(""),
+                        &evidence_candidates,
+                        2,
+                    ),
+                    matched_tags: extract_tag_matches(&tags, &evidence_candidates, 2),
+                    matched_role_name: private_role_match.as_ref().and_then(|role_match| {
+                        if role_score_map.contains_key(&id) {
+                            Some(role_match.name.clone())
+                        } else {
+                            None
+                        }
+                    }),
                     debug_info: debug_map.remove(&id),
                 });
             }
@@ -982,6 +1070,7 @@ mod tests {
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "abu-role");
         assert_eq!(results[0].debug_info.as_ref().unwrap().main_route, "privateRole");
+        assert_eq!(results[0].matched_role_name.as_deref(), Some("阿布"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1124,6 +1213,19 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_search_result_contains_debug_info(pool: SqlitePool) {
         insert_test_image(&pool, "img1", "test content", unit_vec(1)).await;
+        repo::insert_tags(
+            &pool,
+            "img1",
+            &[repo::TagRecord {
+                tag_text: "test-tag".into(),
+                category: repo::TagCategory::Custom,
+                is_auto: false,
+                source_strategy: repo::TagSourceStrategy::Manual,
+                confidence: 1.0,
+            }],
+        )
+        .await
+        .unwrap();
 
         let engine = make_engine(pool).await;
         let results = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
@@ -1165,6 +1267,14 @@ mod tests {
                 di.popularity_boost
             );
         }
+        assert!(
+            results[0].matched_ocr_terms.iter().any(|term| term == "test"),
+            "should include matched OCR term"
+        );
+        assert!(
+            results[0].matched_tags.iter().any(|term| term == "test-tag"),
+            "should include matched tag"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -13,13 +13,13 @@
     </label>
     <label>
       <input
-        v-model="settings.showDebugInfo"
+        v-model="settings.devDebugMode"
         type="checkbox"
       >
-      显示调试信息
+      开发调试模式
     </label>
     <div class="reindex-desc">
-      开启后，搜索结果每张图片显示得分详情和计算公式
+      开启后，搜索结果会额外显示底层排序构成，仅用于排查问题
     </div>
 
     <div class="reindex-section">

@@ -119,6 +119,32 @@ describe("ImageCard", () => {
     expect(wrapper.find(".debug-overlay").exists()).toBe(false);
   });
 
+  it("有 debugInfo 时默认显示用户态排序理由", () => {
+    const image: SearchResult = {
+      ...mockImage,
+      score: 0.82,
+      matchedOcrTerms: ["撤回"],
+      matchedTags: ["聊天截图"],
+      debugInfo: {
+        mainRoute: "ocr",
+        mainScore: 0.8,
+        auxScore: 0.2,
+        semScore: 0.4,
+        kwScore: 0.72,
+        tagScore: 0.25,
+        popularityBoost: 0.02,
+      },
+    };
+    const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
+    const reasonPanel = wrapper.find(".reason-panel");
+    expect(reasonPanel.exists()).toBe(true);
+    expect(reasonPanel.text()).toContain("高相关");
+    expect(reasonPanel.text()).toContain("文字匹配优先");
+    expect(reasonPanel.text()).toContain("命中文字：撤回");
+    expect(reasonPanel.text()).toContain("标签命中：聊天截图");
+    expect(wrapper.find(".image-media").exists()).toBe(true);
+  });
+
   it("showDebugInfo=true 且 debugInfo 为 null 时不显示叠层", () => {
     const wrapper = mount(ImageCard, {
       props: { image: { ...mockImage, debugInfo: null }, showDebugInfo: true },
@@ -142,13 +168,15 @@ describe("ImageCard", () => {
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
     const overlay = wrapper.find(".debug-overlay");
     expect(overlay.exists()).toBe(true);
-    expect(overlay.text()).toContain("主路 ocr");
+    expect(overlay.text()).toContain("最终得分");
+    expect(overlay.text()).toContain("主路 文字");
     expect(overlay.text()).toContain("80");
-    expect(overlay.text()).toContain("30");
-    expect(overlay.text()).toContain("标签 0%");
+    expect(overlay.text()).toContain("辅路补充");
+    expect(overlay.text()).toContain("标签贡献");
+    expect(overlay.text()).toContain("热度加成");
   });
 
-  it("标签得分固定显示", () => {
+  it("调试层不再显示旧的 CLIP/OCR/标签逐项原始名称", () => {
     const image: SearchResult = {
       ...mockImage,
       debugInfo: {
@@ -162,8 +190,12 @@ describe("ImageCard", () => {
       },
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: true } });
-    expect(wrapper.find(".debug-overlay").text()).toContain("标签 70%");
-    expect(wrapper.find(".debug-overlay").text()).toContain("热度修正");
+    const text = wrapper.find(".debug-overlay").text();
+    expect(text).toContain("主路 语义");
+    expect(text).toContain("60");
+    expect(text).not.toContain("CLIP");
+    expect(text).not.toContain("OCR");
+    expect(text).not.toContain("标签 70%");
   });
 
   it("selectable=true 时渲染 checkbox", () => {

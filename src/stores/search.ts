@@ -21,6 +21,9 @@ export interface SearchResult {
   fileStatus?: string;
   score: number;
   tags: StructuredTag[];
+  matchedOcrTerms?: string[];
+  matchedTags?: string[];
+  matchedRoleName?: string | null;
   debugInfo: ScoreDebugInfo | null;
 }
 

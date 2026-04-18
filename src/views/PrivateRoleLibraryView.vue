@@ -511,8 +511,9 @@ function buildPayload() {
   return {
     version: version.value,
     entries: entries.value.map((entry) => {
-      const nextEntry = { ...entry };
-      delete nextEntry.id;
+      const nextEntry = Object.fromEntries(
+        Object.entries(entry).filter(([key]) => key !== "id")
+      );
       return nextEntry;
     }),
   };

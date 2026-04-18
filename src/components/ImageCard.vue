@@ -5,64 +5,79 @@
     @dblclick="emit('open', image.id)"
     @contextmenu.prevent="showMenu"
   >
-    <input
-      v-if="selectable"
-      type="checkbox"
-      class="select-checkbox"
-      :checked="selected"
-      @change.stop="emit('select', image.id)"
-      @click.stop
-    >
-    <img
-      v-if="placeholderState === 'normal'"
-      :src="convertFileSrc(image.thumbnailPath || image.filePath)"
-      :alt="image.id"
-      loading="lazy"
-      @error="handleImageError"
-    >
-    <div
-      v-else
-      class="img-missing"
-      :title="placeholderTitle"
-    >
-      <span>{{ placeholderText }}</span>
-    </div>
-    <span
-      v-if="formatBadge"
-      class="format-badge"
-    >{{ formatBadge }}</span>
-    <span
-      v-if="image.fileStatus === 'missing'"
-      class="status-badge"
-    >文件已丢失</span>
+    <div class="image-media">
+      <input
+        v-if="selectable"
+        type="checkbox"
+        class="select-checkbox"
+        :checked="selected"
+        @change.stop="emit('select', image.id)"
+        @click.stop
+      >
+      <img
+        v-if="placeholderState === 'normal'"
+        :src="convertFileSrc(image.thumbnailPath || image.filePath)"
+        :alt="image.id"
+        loading="lazy"
+        @error="handleImageError"
+      >
+      <div
+        v-else
+        class="img-missing"
+        :title="placeholderTitle"
+      >
+        <span>{{ placeholderText }}</span>
+      </div>
+      <span
+        v-if="formatBadge"
+        class="format-badge"
+      >{{ formatBadge }}</span>
+      <span
+        v-if="image.fileStatus === 'missing'"
+        class="status-badge"
+      >文件已丢失</span>
     <div
       v-if="showDebugInfo && image.debugInfo"
       class="debug-overlay"
+      :class="{ 'debug-overlay--compact': !reasonSummary }"
     >
-      <div class="debug-score">
-        {{ (image.score * 100).toFixed(1) }}%
+        <div class="debug-score">
+          最终得分 {{ (image.score * 100).toFixed(1) }}%
+        </div>
+        <div class="debug-row">
+          <span>主路 {{ debugRouteLabel }}</span>
+          <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(0) }}%</span>
+        </div>
+        <div class="debug-row">
+          <span>辅路补充</span>
+          <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(0) }}%</span>
+        </div>
+        <div class="debug-row">
+          <span>标签贡献</span>
+          <span class="dim">{{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
+        </div>
+        <div class="debug-row">
+          <span>热度加成</span>
+          <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(0) }}%</span>
+        </div>
       </div>
-      <div class="debug-row">
-        <span>主路 {{ image.debugInfo.mainRoute }}</span>
-        <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(0) }}%</span>
+    </div>
+    <div
+      v-if="reasonSummary"
+      class="reason-panel"
+    >
+      <div class="reason-header">
+        <span class="relevance-badge" :class="relevanceBadgeClass">{{ relevanceLabel }}</span>
+        <span class="reason-title">{{ primaryReasonLabel }}</span>
       </div>
-      <div class="debug-row">
-        <span>辅路补充</span>
-        <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(0) }}%</span>
-      </div>
-      <div class="debug-row">
-        <span>热度修正</span>
-        <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(0) }}%</span>
-      </div>
-      <div class="debug-divider" />
-      <div class="debug-row">
-        <span>CLIP {{ (image.debugInfo.semScore * 100).toFixed(0) }}%</span>
-      </div>
-      <div class="debug-row">
-        <span>OCR {{ (image.debugInfo.kwScore * 100).toFixed(0) }}%</span>
-      </div>
-      <div class="debug-row">
-        <span>标签 {{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
+      <div class="reason-evidence">
+        <span
+          v-for="item in evidenceList"
+          :key="item"
+          class="reason-pill"
+        >
+          {{ item }}
+        </span>
       </div>
     </div>
     <Teleport to="body">
@@ -143,6 +158,70 @@ const placeholderTitle = computed(() => {
   if (placeholderState.value === "gif-damaged") return "GIF文件损坏";
   return "";
 });
+const debugInfo = computed(() => props.image.debugInfo);
+
+const relevanceLabel = computed(() => {
+  if (props.image.score >= 0.75) return "高相关";
+  if (props.image.score >= 0.55) return "较相关";
+  return "弱相关";
+});
+
+const relevanceBadgeClass = computed(() => {
+  if (props.image.score >= 0.75) return "relevance-badge--strong";
+  if (props.image.score >= 0.55) return "relevance-badge--medium";
+  return "relevance-badge--weak";
+});
+
+const primaryReasonLabel = computed(() => {
+  const route = debugInfo.value?.mainRoute;
+  if (route === "ocr") return "文字匹配优先";
+  if (route === "privateRole") return "角色匹配优先";
+  return "语义最接近";
+});
+
+const debugRouteLabel = computed(() => {
+  const route = debugInfo.value?.mainRoute;
+  if (route === "ocr") return "文字";
+  if (route === "privateRole") return "角色";
+  return "语义";
+});
+
+const evidenceList = computed(() => {
+  if (!debugInfo.value) return [];
+
+  const items: string[] = [];
+  for (const term of props.image.matchedOcrTerms ?? []) {
+    items.push(`命中文字：${term}`);
+  }
+  for (const tag of props.image.matchedTags ?? []) {
+    items.push(`标签命中：${tag}`);
+  }
+  if (props.image.matchedRoleName) {
+    items.push(`角色命中：${props.image.matchedRoleName}`);
+  }
+  if (items.length === 0 && debugInfo.value.mainRoute === "ocr" && debugInfo.value.kwScore > 0) {
+    items.push(debugInfo.value.kwScore >= 0.6 ? "图片文字高度相关" : "图片文字相关");
+  }
+  if (items.length === 0 && debugInfo.value.mainRoute === "semantic" && debugInfo.value.semScore > 0) {
+    items.push(debugInfo.value.semScore >= 0.65 ? "图片内容很接近" : "图片内容接近");
+  }
+  if (items.length === 0 && debugInfo.value.mainRoute === "privateRole") {
+    items.push("私有角色线索命中");
+  }
+  if ((props.image.matchedTags?.length ?? 0) === 0 && debugInfo.value.tagScore > 0) {
+    items.push(debugInfo.value.tagScore >= 0.6 ? "标签命中较强" : "标签相关");
+  }
+  if (debugInfo.value.mainRoute !== "semantic" && debugInfo.value.semScore > 0.6) {
+    items.push("图片内容也较接近");
+  }
+  if (debugInfo.value.popularityBoost >= 0.06) {
+    items.push("最近常用");
+  }
+
+  return items.slice(0, 3);
+});
+
+const reasonSummary = computed(() => debugInfo.value ? `${relevanceLabel.value} ${primaryReasonLabel.value}` : "");
 
 async function handleClick() {
   try {
@@ -219,19 +298,33 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 <style scoped>
 .image-card {
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e5e7eb;
+}
+
+.image-media {
+  position: relative;
+  aspect-ratio: 1;
   overflow: hidden;
   background: #eee;
-  aspect-ratio: 1;
-  position: relative;
 }
+
 .image-card img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
-.image-card:hover { opacity: 0.85; }
+.image-card:hover {
+  border-color: #d0d7de;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12);
+}
 
 .img-missing {
   width: 100%;
@@ -281,23 +374,93 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
   accent-color: #646cff;
 }
 
+.reason-panel {
+  padding: 0.55rem 0.6rem 0.65rem;
+  background: #fff;
+  color: #111827;
+  min-height: 74px;
+}
+
+.reason-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.relevance-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 0.22rem 0.35rem;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
+}
+
+.relevance-badge--strong {
+  background: #f3c64d;
+  color: #1d1600;
+}
+
+.relevance-badge--medium {
+  background: #89d0a0;
+  color: #08331b;
+}
+
+.relevance-badge--weak {
+  background: #d0d7de;
+  color: #1f2933;
+}
+
+.reason-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #111827;
+}
+
+.reason-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.reason-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.18rem 0.38rem;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.64rem;
+  line-height: 1.2;
+}
+
 .debug-overlay {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.65);
+  top: 6px;
+  left: 6px;
+  min-width: 108px;
+  background: rgba(7, 14, 22, 0.82);
   color: #fff;
-  font-size: 0.68rem;
-  padding: 0.25rem 0.4rem;
-  line-height: 1.5;
+  font-size: 0.64rem;
+  padding: 0.35rem 0.45rem;
+  line-height: 1.45;
   pointer-events: none;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
 }
-.debug-score { font-size: 0.82rem; font-weight: 600; }
+.debug-overlay--compact {
+  max-width: calc(100% - 12px);
+}
+.debug-score { font-size: 0.72rem; font-weight: 700; margin-bottom: 0.15rem; }
 .debug-row { display: flex; justify-content: space-between; }
 .dim { opacity: 0.7; }
-.debug-divider { border-top: 1px solid rgba(255,255,255,0.2); margin: 0.15rem 0; }
-.debug-tag { color: #ffd700; font-weight: 600; }
 
 .context-menu {
   position: fixed;

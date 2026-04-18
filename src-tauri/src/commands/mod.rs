@@ -40,6 +40,9 @@ pub struct SearchResult {
     pub file_status: String,
     pub score: f32,
     pub tags: Vec<TagDto>,
+    pub matched_ocr_terms: Vec<String>,
+    pub matched_tags: Vec<String>,
+    pub matched_role_name: Option<String>,
     pub debug_info: Option<ScoreDebugInfo>,
 }
 
@@ -1239,6 +1242,9 @@ mod tests {
             file_status: "normal".into(),
             score: 0.9,
             tags: vec![],
+            matched_ocr_terms: vec!["老板".into()],
+            matched_tags: vec!["摸鱼".into()],
+            matched_role_name: Some("老板".into()),
             debug_info: None,
         };
         let json = serde_json::to_value(&result).unwrap();
@@ -1255,6 +1261,9 @@ mod tests {
             json.get("debugInfo").is_some(),
             "should have debugInfo (null)"
         );
+        assert!(json.get("matchedOcrTerms").is_some(), "should have matchedOcrTerms");
+        assert!(json.get("matchedTags").is_some(), "should have matchedTags");
+        assert!(json.get("matchedRoleName").is_some(), "should have matchedRoleName");
     }
 
     #[test]
@@ -1641,6 +1650,9 @@ mod tests {
             file_status: "normal".into(),
             score: 0.9,
             tags: vec![],
+            matched_ocr_terms: vec!["老板".into()],
+            matched_tags: vec!["摸鱼".into()],
+            matched_role_name: Some("老板".into()),
             debug_info: Some(ScoreDebugInfo {
                 main_route: "semantic".into(),
                 main_score: 0.8,
@@ -1658,6 +1670,9 @@ mod tests {
         assert!((di["semScore"].as_f64().unwrap() - 0.8).abs() < 1e-5);
         assert_eq!(di["tagScore"].as_f64().unwrap(), 0.0);
         assert_eq!(di["kwScore"].as_f64().unwrap(), 0.0);
+        assert_eq!(json["matchedOcrTerms"][0].as_str().unwrap(), "老板");
+        assert_eq!(json["matchedTags"][0].as_str().unwrap(), "摸鱼");
+        assert_eq!(json["matchedRoleName"].as_str().unwrap(), "老板");
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -1829,6 +1844,9 @@ mod tests {
             file_status: "normal".into(),
             score: 0.9,
             tags: vec![],
+            matched_ocr_terms: vec![],
+            matched_tags: vec![],
+            matched_role_name: None,
             debug_info: None,
         };
         let json = serde_json::to_value(&result).unwrap();

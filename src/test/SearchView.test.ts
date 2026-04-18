@@ -92,6 +92,37 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("开启开发调试模式时显示顶部提示", async () => {
+    localStorage.setItem("settings", JSON.stringify({ devDebugMode: true }));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_images") return Promise.resolve([mockImage]);
+      if (cmd === "search") {
+        return Promise.resolve([{
+          id: "uuid-1",
+          filePath: "/img.jpg",
+          thumbnailPath: "/thumb.jpg",
+          fileFormat: "jpg",
+          score: 1,
+          tags: [],
+          debugInfo: {
+            mainRoute: "semantic",
+            mainScore: 0.7,
+            auxScore: 0.2,
+            semScore: 0.9,
+            kwScore: 0,
+            tagScore: 0,
+            popularityBoost: 0.02,
+          },
+        }]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("开发调试模式");
+  });
+
   it("详情页删除事件会调用 delete_image 并关闭弹窗", async () => {
     mockConfirm.mockResolvedValue(true);
     mockInvoke.mockImplementation((cmd: string) => {

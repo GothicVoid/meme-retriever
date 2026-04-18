@@ -5,15 +5,15 @@
       @update:model-value="onQueryChange"
     />
     <div
-      v-if="settings.showDebugInfo && store.results.length"
+      v-if="settings.devDebugMode && store.results.length"
       class="debug-formula"
     >
-      调试信息：显示当前主路、辅路补充和热度修正，用于解释结果排序
+      开发调试模式：显示当前排序主路、贡献项与最终得分，用于辅助排查结果排序
     </div>
     <ImageGrid
       :images="visibleResults"
       :loading="store.loading"
-      :show-debug-info="settings.showDebugInfo"
+      :show-debug-info="settings.devDebugMode"
       :empty-message="emptyMessage"
       @open="openDetail"
     />
@@ -21,7 +21,10 @@
       v-if="store.results.length > visibleCount"
       class="show-more"
     >
-      <button data-action="show-more" @click="showMore">
+      <button
+        data-action="show-more"
+        @click="showMore"
+      >
         展示更多（{{ store.results.length - visibleCount }} 张）
       </button>
     </div>
