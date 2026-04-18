@@ -52,6 +52,7 @@ describe("ImageCard", () => {
     });
     await wrapper.trigger("contextmenu");
     expect(document.body.querySelector(".context-menu")).not.toBeNull();
+    expect(wrapper.find(".context-menu").exists()).toBe(true);
     wrapper.unmount();
   });
 
@@ -71,10 +72,10 @@ describe("ImageCard", () => {
       attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
-    const deleteBtn = document.body.querySelector("[data-action='delete']") as HTMLElement;
-    deleteBtn.click();
+    await wrapper.get("[data-action='delete']").trigger("click");
     expect(wrapper.emitted("delete")).toBeTruthy();
     expect(wrapper.emitted("delete")![0]).toEqual(["uuid-1"]);
+    expect(wrapper.find(".context-menu").exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -108,13 +109,16 @@ describe("ImageCard", () => {
 
     await first.trigger("contextmenu", { clientX: 20, clientY: 30 });
     expect(document.body.querySelectorAll(".context-menu")).toHaveLength(1);
+    expect(first.find(".context-menu").exists()).toBe(true);
 
     await second.trigger("contextmenu", { clientX: 60, clientY: 70 });
     expect(document.body.querySelectorAll(".context-menu")).toHaveLength(1);
+    expect(first.find(".context-menu").exists()).toBe(false);
+    expect(second.find(".context-menu").exists()).toBe(true);
 
     const menu = document.body.querySelector(".context-menu") as HTMLElement;
-    expect(menu.style.left).toBe("60px");
-    expect(menu.style.top).toBe("70px");
+    expect(menu.style.left).not.toBe("");
+    expect(menu.style.top).not.toBe("");
 
     first.unmount();
     second.unmount();

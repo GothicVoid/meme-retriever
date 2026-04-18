@@ -1,113 +1,116 @@
 <template>
   <div
-    class="image-card ui-result-card"
-    @click="handleClick"
-    @dblclick="emit('open', image.id)"
+    ref="cardRef"
+    class="image-card-shell"
     @contextmenu.prevent="showMenu"
   >
-    <div class="image-media ui-result-card__media">
-      <input
-        v-if="selectable"
-        type="checkbox"
-        class="select-checkbox"
-        :checked="selected"
-        @change.stop="emit('select', image.id)"
-        @click.stop
-      >
-      <img
-        v-if="placeholderState === 'normal'"
-        :src="convertFileSrc(image.thumbnailPath || image.filePath)"
-        :alt="image.id"
-        loading="lazy"
-        @error="handleImageError"
-      >
-      <div
-        v-else
-        class="img-missing"
-        :title="placeholderTitle"
-      >
-        <span>{{ placeholderText }}</span>
-      </div>
-      <span
-        v-if="formatBadge"
-        class="format-badge ui-result-card__badge"
-      >{{ formatBadge }}</span>
-      <span
-        v-if="image.fileStatus === 'missing'"
-        class="status-badge ui-result-card__badge"
-      >文件已丢失</span>
     <div
-      v-if="showDebugInfo && image.debugInfo"
-      class="debug-overlay"
-      :class="{ 'debug-overlay--compact': !reasonSummary }"
+      class="image-card ui-result-card"
+      @click="handleClick"
+      @dblclick="emit('open', image.id)"
     >
-        <div class="debug-score">
-          最终得分 {{ (image.score * 100).toFixed(1) }}%
-        </div>
-        <div class="debug-row">
-          <span>主路 {{ debugRouteLabel }}</span>
-          <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(0) }}%</span>
-        </div>
-        <div class="debug-row">
-          <span>辅路补充</span>
-          <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(0) }}%</span>
-        </div>
-        <div class="debug-row">
-          <span>标签贡献</span>
-          <span class="dim">{{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
-        </div>
-        <div class="debug-row">
-          <span>热度加成</span>
-          <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(0) }}%</span>
-        </div>
-      </div>
-    </div>
-    <div
-      v-if="reasonSummary"
-      class="reason-panel ui-result-card__info"
-    >
-      <div class="reason-header">
-        <span class="relevance-badge" :class="relevanceBadgeClass">{{ relevanceLabel }}</span>
-        <span class="reason-title">{{ primaryReasonLabel }}</span>
-      </div>
-      <div class="reason-evidence">
-        <span
-          v-for="item in evidenceList"
-          :key="item"
-          class="reason-pill"
+      <div class="image-media ui-result-card__media">
+        <input
+          v-if="selectable"
+          type="checkbox"
+          class="select-checkbox"
+          :checked="selected"
+          @change.stop="emit('select', image.id)"
+          @click.stop
         >
-          {{ item }}
-        </span>
+        <img
+          v-if="placeholderState === 'normal'"
+          :src="convertFileSrc(image.thumbnailPath || image.filePath)"
+          :alt="image.id"
+          loading="lazy"
+          @error="handleImageError"
+        >
+        <div
+          v-else
+          class="img-missing"
+          :title="placeholderTitle"
+        >
+          <span>{{ placeholderText }}</span>
+        </div>
+        <span
+          v-if="formatBadge"
+          class="format-badge ui-result-card__badge"
+        >{{ formatBadge }}</span>
+        <span
+          v-if="image.fileStatus === 'missing'"
+          class="status-badge ui-result-card__badge"
+        >文件已丢失</span>
+        <div
+          v-if="showDebugInfo && image.debugInfo"
+          class="debug-overlay"
+          :class="{ 'debug-overlay--compact': !reasonSummary }"
+        >
+          <div class="debug-score">
+            最终得分 {{ (image.score * 100).toFixed(1) }}%
+          </div>
+          <div class="debug-row">
+            <span>主路 {{ debugRouteLabel }}</span>
+            <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(0) }}%</span>
+          </div>
+          <div class="debug-row">
+            <span>辅路补充</span>
+            <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(0) }}%</span>
+          </div>
+          <div class="debug-row">
+            <span>标签贡献</span>
+            <span class="dim">{{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
+          </div>
+          <div class="debug-row">
+            <span>热度加成</span>
+            <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(0) }}%</span>
+          </div>
+        </div>
+      </div>
+      <div
+        v-if="reasonSummary"
+        class="reason-panel ui-result-card__info"
+      >
+        <div class="reason-header">
+          <span class="relevance-badge" :class="relevanceBadgeClass">{{ relevanceLabel }}</span>
+          <span class="reason-title">{{ primaryReasonLabel }}</span>
+        </div>
+        <div class="reason-evidence">
+          <span
+            v-for="item in evidenceList"
+            :key="item"
+            class="reason-pill"
+          >
+            {{ item }}
+          </span>
+        </div>
       </div>
     </div>
-    <Teleport to="body">
-      <ul
-        v-if="menuVisible"
-        ref="menuRef"
-        class="context-menu ui-floating-panel"
-        :style="{ top: `${menuY}px`, left: `${menuX}px` }"
-      >
-        <li>
-          <button @click.stop="handleOpen">
-            查看详情
-          </button>
-        </li>
-        <li>
-          <button @click.stop="handleReveal">
-            在文件夹中显示
-          </button>
-        </li>
-        <li>
-          <button
-            data-action="delete"
-            class="danger"
-            @click.stop="handleDelete"
-          >
-            删除
-          </button>
-        </li>
-      </ul>
-    </Teleport>
+    <ul
+      v-if="menuVisible"
+      ref="menuRef"
+      class="context-menu ui-floating-panel"
+      :style="{ top: `${menuY}px`, left: `${menuX}px` }"
+    >
+      <li>
+        <button @click.stop="handleOpen">
+          查看详情
+        </button>
+      </li>
+      <li>
+        <button @click.stop="handleReveal">
+          在文件夹中显示
+        </button>
+      </li>
+      <li>
+        <button
+          data-action="delete"
+          class="danger"
+          @click.stop="handleDelete"
+        >
+          删除
+        </button>
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -139,6 +142,7 @@ const menuVisible = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
 const menuRef = ref<HTMLElement | null>(null);
+const cardRef = ref<HTMLElement | null>(null);
 const imgError = ref<"normal" | "missing" | "load-failed" | "gif-damaged">(
   props.image.fileStatus === "missing" ? "missing" : "normal",
 );
@@ -253,19 +257,23 @@ async function handleReveal() {
 function showMenu(e: MouseEvent) {
   e.stopPropagation();
   document.dispatchEvent(new CustomEvent(CLOSE_CONTEXT_MENU_EVENT));
-  menuX.value = e.clientX;
-  menuY.value = e.clientY;
+  const card = cardRef.value;
+  if (!card) return;
+
+  const cardRect = card.getBoundingClientRect();
+  menuX.value = e.clientX - cardRect.left;
+  menuY.value = e.clientY - cardRect.top;
   menuVisible.value = true;
   void nextTick(() => {
     const menu = menuRef.value;
     if (!menu) return;
 
     const padding = 8;
-    const { innerWidth, innerHeight } = window;
+    const { width: cardWidth, height: cardHeight } = cardRect;
     const { width, height } = menu.getBoundingClientRect();
 
-    menuX.value = Math.min(menuX.value, innerWidth - width - padding);
-    menuY.value = Math.min(menuY.value, innerHeight - height - padding);
+    menuX.value = Math.min(menuX.value, cardWidth - width - padding);
+    menuY.value = Math.min(menuY.value, cardHeight - height - padding);
     menuX.value = Math.max(padding, menuX.value);
     menuY.value = Math.max(padding, menuY.value);
   });
@@ -295,6 +303,10 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 </script>
 
 <style scoped>
+.image-card-shell {
+  position: relative;
+}
+
 .image-card {
   cursor: pointer;
 }
@@ -436,11 +448,11 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
 .dim { opacity: 0.7; }
 
 .context-menu {
-  position: fixed;
+  position: absolute;
   list-style: none;
   padding: 0.25rem 0;
   min-width: 140px;
-  z-index: 100;
+  z-index: 120;
 }
 .context-menu li button {
   width: 100%;

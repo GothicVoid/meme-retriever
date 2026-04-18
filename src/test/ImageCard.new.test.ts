@@ -103,7 +103,7 @@ describe("ImageCard — 双击 open 事件", () => {
     const wrapper = mount(ImageCard, {
       props: { image: base, showDebugInfo: false },
     });
-    await wrapper.trigger("dblclick");
+    await wrapper.get(".image-card").trigger("dblclick");
     expect(wrapper.emitted("open")).toBeTruthy();
     expect(wrapper.emitted("open")![0]).toEqual(["img-1"]);
   });
@@ -139,9 +139,10 @@ describe("ImageCard — 右键菜单新增项", () => {
       attachTo: document.body,
     });
     await wrapper.trigger("contextmenu");
-    const btn = Array.from(document.body.querySelectorAll(".context-menu button"))
-      .find(button => button.textContent?.includes("查看详情")) as HTMLButtonElement;
-    btn.click();
+    const btn = wrapper.findAll(".context-menu button")
+      .find((button) => button.text().includes("查看详情"));
+    expect(btn).toBeTruthy();
+    await btn!.trigger("click");
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("open")).toBeTruthy();
     expect(document.body.querySelector(".context-menu")).toBeNull();
