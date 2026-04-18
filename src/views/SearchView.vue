@@ -153,7 +153,7 @@
       @open="openDetail"
     />
     <div
-      v-if="showLowConfidenceHint || showLowRelevanceStopNotice"
+      v-if="showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
       class="result-feedback"
     >
       <p class="result-feedback__title">
@@ -162,6 +162,27 @@
       <p class="result-feedback__text">
         {{ feedbackText }}
       </p>
+      <div
+        v-if="showGuidanceList"
+        class="result-feedback__guidance"
+      >
+        <span
+          v-for="item in guidanceItems"
+          :key="item"
+          class="result-feedback__guidance-item"
+          data-testid="search-guidance-item"
+        >
+          {{ item }}
+        </span>
+      </div>
+      <button
+        v-if="showRecentUsedShortcut"
+        class="result-feedback__action"
+        data-action="show-recent-used"
+        @click="goBackToHome"
+      >
+        看看最近用过
+      </button>
       <button
         v-if="canShowSecondaryResults"
         class="result-feedback__action"
@@ -361,10 +382,28 @@ const showLowConfidenceHint = computed(() =>
   !!store.query.trim() && store.results.length > 0 && mediumConfidenceCount.value === 0
 );
 
+const showZeroResultHint = computed(() =>
+  !!store.query.trim() && !store.loading && store.results.length === 0
+);
+
 const showLowRelevanceStopNotice = computed(() =>
   !!store.query.trim()
   && mediumConfidenceCount.value > 0
   && secondaryResultsCount.value > 0
+);
+
+const guidanceItems = [
+  "试试图片里的原文",
+  "试试角色名 + 动作",
+  "试试更短的关键词",
+  "试试更长一点的描述",
+];
+
+const showGuidanceList = computed(() => showZeroResultHint.value || showLowConfidenceHint.value);
+
+const showRecentUsedShortcut = computed(() =>
+  (showZeroResultHint.value || showLowConfidenceHint.value)
+  && recentUsedImages.value.length > 0
 );
 
 const canShowSecondaryResults = computed(() =>
@@ -373,6 +412,9 @@ const canShowSecondaryResults = computed(() =>
 );
 
 const feedbackTitle = computed(() => {
+  if (showZeroResultHint.value) {
+    return "没找到这类图片";
+  }
   if (showLowConfidenceHint.value) {
     return "没找到足够相关的结果";
   }
@@ -383,6 +425,9 @@ const feedbackTitle = computed(() => {
 });
 
 const feedbackText = computed(() => {
+  if (showZeroResultHint.value) {
+    return "换个说法试试。可以从图片里的原文、角色名、动作或场景词开始搜。";
+  }
   if (showLowConfidenceHint.value) {
     return "试试补充图片里的文字、角色名、动作或场景词，例如“阿布 撇嘴”“撤回消息 猫猫”“领导 冷笑”。";
   }
@@ -440,6 +485,12 @@ function applyExampleQuery(query: string) {
   searchFocused.value = false;
   store.query = query;
   onQueryChange(query);
+}
+
+function goBackToHome() {
+  searchFocused.value = false;
+  store.query = "";
+  onQueryChange("");
 }
 
 function handleSearchFocus() {
@@ -733,6 +784,19 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 0.88rem;
   line-height: 1.5;
+}
+.result-feedback__guidance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.result-feedback__guidance-item {
+  padding: 0.35rem 0.625rem;
+  border-radius: 999px;
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+  font-size: 0.85rem;
 }
 .result-feedback__action {
   margin-top: 0.75rem;

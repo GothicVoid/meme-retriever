@@ -487,6 +487,36 @@ describe("SearchView", () => {
     expect(wrapper.text()).toContain("常用表情");
     wrapper.unmount();
   });
+
+  it("搜索失败且存在最近用过时展示快捷入口，并可回到首页启动态", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("完全搜不到");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const recentUsedAction = wrapper.find('[data-action="show-recent-used"]');
+    expect(recentUsedAction.exists()).toBe(true);
+
+    await recentUsedAction.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("input").element.value).toBe("");
+    expect(wrapper.text()).toContain("最近用过");
+    expect(wrapper.text()).toContain("常用表情");
+
+    wrapper.unmount();
+  });
 });
 
 function mockResults() {

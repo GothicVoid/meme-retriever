@@ -190,6 +190,7 @@ describe("SearchView — 结果展示体验", () => {
     expect(wrapper.findAll(".image-card").length).toBe(0);
     expect(wrapper.text()).toContain("没找到足够相关的结果");
     expect(wrapper.text()).toContain("角色名、动作或场景词");
+    expect(wrapper.findAll('[data-testid="search-guidance-item"]').length).toBeGreaterThanOrEqual(3);
   });
 
   it("整批结果都低相关时用户手动展开会显示全部候选", async () => {
@@ -205,5 +206,20 @@ describe("SearchView — 结果展示体验", () => {
 
     expect(wrapper.findAll(".image-card").length).toBe(4);
     expect(wrapper.find("[data-action='show-less']").exists()).toBe(true);
+  });
+
+  it("无结果时展示失败反馈区和多条下一步建议", async () => {
+    const wrapper = mount(SearchView);
+    await flushPromises();
+    const store = useSearchStore();
+    store.query = "完全搜不到";
+    store.results = [];
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".result-feedback").exists()).toBe(true);
+    expect(wrapper.text()).toContain("没找到这类图片");
+    expect(wrapper.findAll('[data-testid="search-guidance-item"]').length).toBeGreaterThanOrEqual(3);
+    expect(wrapper.text()).toContain("试试图片里的原文");
+    expect(wrapper.text()).toContain("试试角色名 + 动作");
   });
 });
