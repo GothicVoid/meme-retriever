@@ -69,4 +69,20 @@ describe("SearchBar", () => {
     await wrapper.find("input").trigger("blur");
     expect(wrapper.emitted("blur")).toBeTruthy();
   });
+
+  it("组合输入期间不派发 update:modelValue，结束后再派发最终值", async () => {
+    const wrapper = mount(SearchBar, { props: { modelValue: "" } });
+    const input = wrapper.find("input");
+
+    await input.trigger("compositionstart");
+    await input.setValue("a");
+    expect(wrapper.emitted("update:modelValue")).toBeFalsy();
+
+    await input.setValue("阿");
+    expect(wrapper.emitted("update:modelValue")).toBeFalsy();
+
+    await input.trigger("compositionend");
+    expect(wrapper.emitted("update:modelValue")).toBeTruthy();
+    expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual(["阿"]);
+  });
 });

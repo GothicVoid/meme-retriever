@@ -4,10 +4,12 @@
       ref="inputRef"
       :value="modelValue"
       :placeholder="placeholder"
-      @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      @input="handleInput"
       @keydown.esc="$emit('update:modelValue', '')"
       @focus="$emit('focus')"
       @blur="$emit('blur')"
+      @compositionstart="handleCompositionStart"
+      @compositionend="handleCompositionEnd"
     >
     <button
       v-if="modelValue"
@@ -27,13 +29,28 @@ withDefaults(defineProps<{
 }>(), {
   placeholder: "搜索表情包...",
 });
-defineEmits<{
+const emit = defineEmits<{
   "update:modelValue": [value: string];
   focus: [];
   blur: [];
 }>();
 
 const inputRef = ref<HTMLInputElement>();
+const isComposing = ref(false);
+
+function handleInput(event: Event) {
+  if (isComposing.value) return;
+  emit("update:modelValue", (event.target as HTMLInputElement).value);
+}
+
+function handleCompositionStart() {
+  isComposing.value = true;
+}
+
+function handleCompositionEnd(event: CompositionEvent) {
+  isComposing.value = false;
+  emit("update:modelValue", (event.target as HTMLInputElement).value);
+}
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === "f") {

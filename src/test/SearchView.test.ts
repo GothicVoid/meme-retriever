@@ -110,6 +110,36 @@ describe("SearchView", () => {
     expect(wrapper.findAll(".image-card")).toHaveLength(2);
   });
 
+  it("拼音组合输入期间不会触发搜索，结束后才搜索", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    const input = wrapper.find("input");
+    await input.trigger("compositionstart");
+    await input.setValue("a");
+    await vi.advanceTimersByTimeAsync(350);
+    await flushPromises();
+    expect(mockInvoke).not.toHaveBeenCalledWith("search", expect.anything());
+
+    await input.setValue("阿");
+    await input.trigger("compositionend");
+    await vi.advanceTimersByTimeAsync(350);
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "阿" }));
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("清空查询后回到首页启动态", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
