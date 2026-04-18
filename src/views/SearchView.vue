@@ -1,45 +1,48 @@
 <template>
   <div class="search-view">
-    <div class="search-input-wrap">
-      <SearchBar
-        v-model="store.query"
-        :placeholder="searchPlaceholder"
-        @update:model-value="onQueryChange"
-        @focus="handleSearchFocus"
-        @blur="handleSearchBlur"
-      />
-      <div
-        v-if="showSearchHistoryDropdown"
-        class="search-history-dropdown"
-        data-testid="search-history-dropdown"
-      >
+    <section class="search-view__hero">
+      <div class="search-input-wrap search-view__search-wrap">
+        <SearchBar
+          v-model="store.query"
+          class="search-view__search search-view__search--hero"
+          :placeholder="searchPlaceholder"
+          @update:model-value="onQueryChange"
+          @focus="handleSearchFocus"
+          @blur="handleSearchBlur"
+        />
         <div
-          v-for="item in recentSearches"
-          :key="item.query"
-          class="search-history-dropdown__item"
+          v-if="showSearchHistoryDropdown"
+          class="search-history-dropdown ui-floating-panel"
+          data-testid="search-history-dropdown"
         >
-          <button
-            type="button"
-            class="search-history-dropdown__query"
-            data-testid="search-history-dropdown-item"
-            @mousedown.prevent
-            @click="applyExampleQuery(item.query)"
+          <div
+            v-for="item in recentSearches"
+            :key="item.query"
+            class="search-history-dropdown__item"
           >
-            {{ item.query }}
-          </button>
-          <button
-            type="button"
-            class="search-history-dropdown__delete"
-            data-testid="search-history-delete"
-            aria-label="删除最近搜索"
-            @mousedown.prevent
-            @click="removeRecentSearch(item.query)"
-          >
-            删除
-          </button>
+            <button
+              type="button"
+              class="search-history-dropdown__query"
+              data-testid="search-history-dropdown-item"
+              @mousedown.prevent
+              @click="applyExampleQuery(item.query)"
+            >
+              {{ item.query }}
+            </button>
+            <button
+              type="button"
+              class="search-history-dropdown__delete"
+              data-testid="search-history-delete"
+              aria-label="删除最近搜索"
+              @mousedown.prevent
+              @click="removeRecentSearch(item.query)"
+            >
+              删除
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
     <div
       v-if="isHomeMode"
       class="home-landing"
@@ -47,11 +50,11 @@
       <p class="home-landing__intro">
         按图片里的字、角色名、动作、场景来找表情
       </p>
-      <div class="home-landing__examples">
+      <div class="home-landing__examples search-view__examples">
         <button
           v-for="example in exampleQueries"
           :key="example"
-          class="home-landing__example"
+          class="home-landing__example ui-chip-button"
           @click="applyExampleQuery(example)"
         >
           {{ example }}
@@ -636,24 +639,48 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.search-view { padding: 1rem; }
+.search-view {
+  padding: 1rem;
+}
+
+.search-view__hero {
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .search-input-wrap {
   position: relative;
 }
+
+.search-view__search-wrap {
+  z-index: 20;
+}
+
+.search-view__search {
+  margin-bottom: 0;
+}
+
+.search-view__search--hero {
+  min-height: 64px;
+  padding-inline: 1rem;
+}
+
+.search-view__examples {
+  gap: 0.625rem;
+}
+
 .search-history-dropdown {
   position: absolute;
-  top: calc(100% - 0.5rem);
+  top: calc(100% + 0.5rem);
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  padding: 0.5rem;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  padding: 0.625rem;
 }
 .search-history-dropdown__item {
   display: flex;
@@ -672,83 +699,84 @@ onBeforeUnmount(() => {
   padding: 0.5rem 0.625rem;
   text-align: left;
   border-radius: 8px;
-  color: #111827;
+  color: var(--ui-text-primary);
 }
 .search-history-dropdown__query:hover {
-  background: #f3f4f6;
+  background: var(--ui-bg-hover);
 }
 .search-history-dropdown__delete {
   padding: 0.35rem 0.5rem;
   border-radius: 6px;
-  color: #6b7280;
+  color: var(--ui-text-secondary);
 }
 .search-history-dropdown__delete:hover {
-  background: #f9fafb;
-  color: #111827;
+  background: var(--ui-bg-hover);
+  color: var(--ui-text-primary);
 }
 .home-landing {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(251, 248, 242, 0.9));
+  box-shadow: var(--ui-shadow-soft);
 }
 .home-landing__intro {
   margin: 0;
-  font-size: 0.95rem;
-  color: #4b5563;
+  max-width: 42rem;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--ui-text-secondary);
 }
 .home-landing__examples {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
 }
 .home-landing__example {
-  border: 1px solid #d1d5db;
-  border-radius: 999px;
-  background: #fff;
-  color: #111827;
-  padding: 0.38rem 0.8rem;
   font-size: 0.85rem;
-  cursor: pointer;
-}
-.home-landing__example:hover {
-  background: #f9fafb;
 }
 .home-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.5rem;
-  padding: 1.1rem 1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #fff;
+  gap: 0.75rem;
+  padding: 1.25rem 1.125rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 95%, white);
 }
 .home-empty__title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--ui-text-primary);
 }
 .home-empty__text {
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: #4b5563;
+  color: var(--ui-text-secondary);
 }
 .home-empty__action {
   margin-top: 0.25rem;
-  padding: 0.5rem 0.95rem;
-  border: none;
-  border-radius: 8px;
-  background: #111827;
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--ui-accent);
   color: #fff;
   cursor: pointer;
   font-size: 0.88rem;
 }
+.home-empty__action:hover {
+  background: var(--ui-accent-hover);
+}
 .home-section {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.875rem;
 }
 .home-searches {
   display: flex;
@@ -756,16 +784,16 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
 }
 .home-searches__item {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--ui-border-subtle);
   border-radius: 999px;
-  background: #fff;
-  color: #111827;
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
+  color: var(--ui-text-primary);
   padding: 0.38rem 0.8rem;
   font-size: 0.85rem;
   cursor: pointer;
 }
 .home-searches__item:hover {
-  background: #f9fafb;
+  background: var(--ui-bg-hover);
 }
 .home-section__header {
   display: flex;
@@ -774,9 +802,9 @@ onBeforeUnmount(() => {
 }
 .home-section__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
-  color: #111827;
+  color: var(--ui-text-primary);
 }
 .debug-formula {
   font-size: 0.78rem;

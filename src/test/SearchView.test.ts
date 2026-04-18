@@ -88,6 +88,22 @@ describe("SearchView", () => {
     expect(wrapper.find("input").attributes("placeholder")).toBe("搜台词、角色、动作、场景");
   });
 
+  it("首页首屏挂载高权重搜索英雄区和示例词样式类", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    expect(wrapper.get(".search-view__hero").exists()).toBe(true);
+    expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search");
+    expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search--hero");
+    expect(wrapper.get(".home-landing__examples").classes()).toContain("search-view__examples");
+    expect(wrapper.get(".home-landing__example").classes()).toContain("ui-chip-button");
+  });
+
   it("输入非空查询后切换到搜索结果态", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
@@ -227,6 +243,7 @@ describe("SearchView", () => {
     await flushPromises();
 
     const dropdownItems = wrapper.findAll('[data-testid="search-history-dropdown-item"]');
+    expect(wrapper.get('[data-testid="search-history-dropdown"]').classes()).toContain("ui-floating-panel");
     expect(dropdownItems).toHaveLength(1);
     expect(dropdownItems[0].text()).toContain("阿布 撇嘴");
 
