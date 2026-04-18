@@ -88,4 +88,18 @@ describe("SearchView 初始加载", () => {
     expect(wrapper.text()).toContain("导入图片");
     wrapper.unmount();
   });
+
+  it("首页数据加载失败时仍保留搜索启动区", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.reject(new Error("home failed"));
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("按图片里的字、角色名、动作、场景来找表情");
+    expect(wrapper.text()).not.toContain("先把表情包放进来");
+    wrapper.unmount();
+  });
 });

@@ -10,6 +10,7 @@
       :selectable="selectable"
       :selected="selectedIds?.has(img.id) ?? false"
       @delete="$emit('delete', $event)"
+      @copied="$emit('copied', $event)"
       @select="$emit('select', $event)"
       @open="$emit('open', $event)"
     />
@@ -27,7 +28,7 @@ defineProps<{
   selectable?: boolean;
   selectedIds?: Set<string>;
 }>();
-defineEmits<{ delete: [id: string]; select: [id: string]; open: [id: string] }>();
+defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string] }>();
 </script>
 
 <style scoped>

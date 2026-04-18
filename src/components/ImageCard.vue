@@ -131,6 +131,7 @@ const emit = defineEmits<{
   delete: [id: string];
   select: [id: string];
   open: [id: string];
+  copied: [id: string];
 }>();
 const { copyImage } = useClipboard();
 
@@ -220,6 +221,7 @@ async function handleClick() {
   try {
     await copyImage(props.image.id);
     showToast("已复制", "info", 1500);
+    emit("copied", props.image.id);
   } catch (error) {
     const message = String(error);
     showToast(

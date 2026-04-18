@@ -78,6 +78,7 @@
             :images="recentUsedImages"
             :loading="homeLoading"
             :show-debug-info="false"
+            @copied="handleHomeImageCopied"
             @open="openDetail"
           />
         </section>
@@ -95,6 +96,7 @@
             :images="homeImages"
             :loading="homeLoading"
             :show-debug-info="false"
+            @copied="handleHomeImageCopied"
             @open="openDetail"
           />
         </section>
@@ -112,6 +114,7 @@
       :loading="store.loading"
       :show-debug-info="settings.devDebugMode"
       :empty-message="emptyMessage"
+      @copied="handleSearchImageCopied"
       @open="openDetail"
     />
     <div
@@ -199,6 +202,7 @@ const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 const homeState = ref<HomeState | null>(null);
 const homeLoading = ref(false);
+const homeLoadFailed = ref(false);
 let loadMoreObserver: IntersectionObserver | null = null;
 const exampleQueries = ["撤回消息", "阿布 撇嘴", "猫猫 心虚", "领导 冷笑"];
 
@@ -209,7 +213,10 @@ const searchPlaceholder = computed(() =>
 );
 
 const showColdStart = computed(() =>
-  isHomeMode.value && !homeLoading.value && (homeState.value?.imageCount ?? 0) === 0
+  isHomeMode.value
+  && !homeLoading.value
+  && !homeLoadFailed.value
+  && (homeState.value?.imageCount ?? 0) === 0
 );
 
 const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
@@ -369,6 +376,10 @@ async function fetchHomeState() {
   homeLoading.value = true;
   try {
     homeState.value = await invoke<HomeState>("get_home_state");
+    homeLoadFailed.value = false;
+  } catch {
+    homeState.value = null;
+    homeLoadFailed.value = true;
   } finally {
     homeLoading.value = false;
   }
@@ -388,6 +399,16 @@ function onQueryChange(val: string) {
 function applyExampleQuery(query: string) {
   store.query = query;
   onQueryChange(query);
+}
+
+function handleHomeImageCopied() {
+  void fetchHomeState();
+}
+
+function handleSearchImageCopied() {
+  if (isHomeMode.value) {
+    void fetchHomeState();
+  }
 }
 
 function toggleSecondaryResults() {
@@ -460,6 +481,9 @@ async function handleDeleteFromDetail(id: string) {
   store.results = store.results.filter((img) => img.id !== id);
   libraryStore.images = libraryStore.images.filter((img) => img.id !== id);
   detailId.value = null;
+  if (isHomeMode.value) {
+    await fetchHomeState();
+  }
 }
 
 onMounted(async () => {

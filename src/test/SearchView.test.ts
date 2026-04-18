@@ -191,6 +191,47 @@ describe("SearchView", () => {
     expect(text.indexOf("最近用过")).toBeLessThan(text.indexOf("常用表情"));
   });
 
+  it("首页点击图片复制后会刷新首页数据", async () => {
+    copyImageMock.mockResolvedValue(undefined);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 1,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [{
+            id: "home-1",
+            filePath: "/img.jpg",
+            fileName: "img.jpg",
+            thumbnailPath: "/thumb.jpg",
+            fileFormat: "jpg",
+            fileStatus: "normal",
+            width: 100,
+            height: 100,
+            fileSize: 100,
+            addedAt: 0,
+            useCount: 2,
+            tags: [],
+          }],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount({
+      components: { SearchView, Toast },
+      template: "<div><SearchView /><Toast /></div>",
+    }, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.find(".image-card").trigger("click");
+    await flushPromises();
+
+    expect(copyImageMock).toHaveBeenCalledWith("home-1");
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "get_home_state")).toHaveLength(2);
+  });
+
   it("点击搜索结果后显示已复制提示", async () => {
     copyImageMock.mockResolvedValue(undefined);
     mockInvoke.mockImplementation((cmd: string) => {
@@ -308,6 +349,61 @@ describe("SearchView", () => {
     expect(searchStore.results).toEqual([]);
     expect(wrapper.findComponent({ name: "DetailModal" }).exists()).toBe(false);
 
+    wrapper.unmount();
+  });
+
+  it("删除后清空查询会重新获取首页数据", async () => {
+    mockConfirm.mockResolvedValue(true);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "get_image_meta") {
+        return Promise.resolve({
+          ...mockImage,
+          fileFormat: "jpg",
+          fileStatus: "missing",
+          fileSize: 100,
+        });
+      }
+      if (cmd === "delete_image") return Promise.resolve(undefined);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("删除");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const searchStore = useSearchStore();
+    searchStore.results = [{
+      id: "uuid-1",
+      filePath: "/img.jpg",
+      thumbnailPath: "/thumb.jpg",
+      fileFormat: "jpg",
+      fileStatus: "missing",
+      score: 1,
+      tags: [],
+      debugInfo: null,
+    }];
+    await wrapper.vm.$nextTick();
+    await wrapper.find(".image-card").trigger("dblclick");
+    await flushPromises();
+
+    await wrapper.find(".delete-btn").trigger("click");
+    await flushPromises();
+
+    await input.setValue("");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "get_home_state")).toHaveLength(2);
+    expect(wrapper.text()).toContain("常用表情");
     wrapper.unmount();
   });
 });
