@@ -21,8 +21,10 @@ const mockInvoke = vi.mocked(invoke);
 
 const mockHomeState = {
   imageCount: 3,
-  recentSearches: [],
-  recentUsed: [],
+  recentSearches: [{ query: "阿布 撇嘴", updatedAt: 3 }],
+  recentUsed: [
+    { id: "recent-1", filePath: "/library/recent-1.jpg", fileName: "recent-1.jpg", thumbnailPath: "/library/recent-1_t.jpg", fileFormat: "jpg", fileStatus: "normal", width: 100, height: 100, fileSize: 1, addedAt: 4, useCount: 1, tags: [] },
+  ],
   frequentUsed: [
     { id: "home-1", filePath: "/library/home-1.jpg", fileName: "home-1.jpg", thumbnailPath: "/library/home-1_t.jpg", fileFormat: "jpg", fileStatus: "normal", width: 100, height: 100, fileSize: 1, addedAt: 1, useCount: 3, tags: [] },
     { id: "home-2", filePath: "/library/home-2.jpg", fileName: "home-2.jpg", thumbnailPath: "/library/home-2_t.jpg", fileFormat: "jpg", fileStatus: "normal", width: 100, height: 100, fileSize: 1, addedAt: 2, useCount: 2, tags: [] },
@@ -59,8 +61,10 @@ describe("SearchView 初始加载", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("按图片里的字、角色名、动作、场景来找表情");
+    expect(wrapper.text()).toContain("最近搜索");
+    expect(wrapper.text()).toContain("最近用过");
     expect(wrapper.text()).toContain("常用表情");
-    expect(wrapper.findAll(".image-card")).toHaveLength(3);
+    expect(wrapper.findAll(".image-card")).toHaveLength(4);
     wrapper.unmount();
   });
 

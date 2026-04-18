@@ -38,8 +38,21 @@ const mockImage: ImageMeta = {
 
 const mockHomeState = {
   imageCount: 1,
-  recentSearches: [],
-  recentUsed: [],
+  recentSearches: [{ query: "阿布 撇嘴", updatedAt: 2 }],
+  recentUsed: [{
+    id: "recent-1",
+    filePath: "/recent.jpg",
+    fileName: "recent.jpg",
+    thumbnailPath: "/recent_t.jpg",
+    fileFormat: "jpg",
+    fileStatus: "normal",
+    width: 100,
+    height: 100,
+    fileSize: 100,
+    addedAt: 10,
+    useCount: 1,
+    tags: [],
+  }],
   frequentUsed: [{
     id: "home-1",
     filePath: "/img.jpg",
@@ -121,6 +134,61 @@ describe("SearchView", () => {
 
     expect(wrapper.text()).toContain("常用表情");
     expect(wrapper.text()).toContain("按图片里的字、角色名、动作、场景来找表情");
+  });
+
+  it("最近搜索存在时展示并支持点击重搜", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("最近搜索");
+    const button = wrapper.find('[data-testid="recent-search-item"]');
+    expect(button.exists()).toBe(true);
+
+    await button.trigger("click");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.find("input").element.value).toBe("阿布 撇嘴");
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "阿布 撇嘴" }));
+  });
+
+  it("最近搜索为空时不显示最近搜索区", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          recentSearches: [],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    expect(wrapper.text()).not.toContain("最近搜索");
+  });
+
+  it("最近用过显示在常用表情之前", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    const text = wrapper.text();
+    expect(text.indexOf("最近用过")).toBeGreaterThan(-1);
+    expect(text.indexOf("常用表情")).toBeGreaterThan(-1);
+    expect(text.indexOf("最近用过")).toBeLessThan(text.indexOf("常用表情"));
   });
 
   it("点击搜索结果后显示已复制提示", async () => {

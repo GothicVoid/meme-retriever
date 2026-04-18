@@ -41,22 +41,64 @@
         </button>
       </div>
 
-      <section
-        v-else-if="homeImages.length > 0"
-        class="home-section"
-      >
-        <div class="home-section__header">
-          <h2 class="home-section__title">
-            常用表情
-          </h2>
-        </div>
-        <ImageGrid
-          :images="homeImages"
-          :loading="homeLoading"
-          :show-debug-info="false"
-          @open="openDetail"
-        />
-      </section>
+      <template v-else>
+        <section
+          v-if="recentSearches.length > 0"
+          class="home-section"
+        >
+          <div class="home-section__header">
+            <h2 class="home-section__title">
+              最近搜索
+            </h2>
+          </div>
+          <div class="home-searches">
+            <button
+              v-for="item in recentSearches"
+              :key="item.query"
+              type="button"
+              class="home-searches__item"
+              data-testid="recent-search-item"
+              @click="applyExampleQuery(item.query)"
+            >
+              {{ item.query }}
+            </button>
+          </div>
+        </section>
+
+        <section
+          v-if="recentUsedImages.length > 0"
+          class="home-section"
+        >
+          <div class="home-section__header">
+            <h2 class="home-section__title">
+              最近用过
+            </h2>
+          </div>
+          <ImageGrid
+            :images="recentUsedImages"
+            :loading="homeLoading"
+            :show-debug-info="false"
+            @open="openDetail"
+          />
+        </section>
+
+        <section
+          v-if="homeImages.length > 0"
+          class="home-section"
+        >
+          <div class="home-section__header">
+            <h2 class="home-section__title">
+              常用表情
+            </h2>
+          </div>
+          <ImageGrid
+            :images="homeImages"
+            :loading="homeLoading"
+            :show-debug-info="false"
+            @open="openDetail"
+          />
+        </section>
+      </template>
     </div>
     <div
       v-else-if="settings.devDebugMode && store.results.length"
@@ -170,8 +212,10 @@ const showColdStart = computed(() =>
   isHomeMode.value && !homeLoading.value && (homeState.value?.imageCount ?? 0) === 0
 );
 
-const homeImages = computed<SearchResult[]>(() =>
-  (homeState.value?.frequentUsed ?? []).map((image) => ({
+const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
+
+function toHomeSearchResults(images: HomeImage[]): SearchResult[] {
+  return images.map((image) => ({
     id: image.id,
     filePath: image.filePath,
     thumbnailPath: image.thumbnailPath,
@@ -183,7 +227,15 @@ const homeImages = computed<SearchResult[]>(() =>
     matchedTags: [],
     matchedRoleName: null,
     debugInfo: null,
-  }))
+  }));
+}
+
+const recentUsedImages = computed<SearchResult[]>(() =>
+  toHomeSearchResults(homeState.value?.recentUsed ?? [])
+);
+
+const homeImages = computed<SearchResult[]>(() =>
+  toHomeSearchResults(homeState.value?.frequentUsed ?? [])
 );
 
 const highConfidenceCount = computed(() => {
@@ -487,6 +539,23 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+.home-searches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.home-searches__item {
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  padding: 0.38rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.home-searches__item:hover {
+  background: #f9fafb;
 }
 .home-section__header {
   display: flex;
