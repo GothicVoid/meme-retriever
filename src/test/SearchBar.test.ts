@@ -57,4 +57,16 @@ describe("SearchBar", () => {
     expect(spy).toHaveBeenCalled();
     wrapper.unmount();
   });
+
+  it("输入框 focus 时向外派发 focus 事件", async () => {
+    const wrapper = mount(SearchBar, { props: { modelValue: "" } });
+    await wrapper.find("input").trigger("focus");
+    expect(wrapper.emitted("focus")).toBeTruthy();
+  });
+
+  it("输入框 blur 时向外派发 blur 事件", async () => {
+    const wrapper = mount(SearchBar, { props: { modelValue: "" } });
+    await wrapper.find("input").trigger("blur");
+    expect(wrapper.emitted("blur")).toBeTruthy();
+  });
 });

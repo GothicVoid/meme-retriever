@@ -159,6 +159,87 @@ describe("SearchView", () => {
     expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "阿布 撇嘴" }));
   });
 
+  it("搜索框聚焦且输入为空时展示最近搜索下拉", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.trigger("focus");
+    await flushPromises();
+
+    const dropdownItems = wrapper.findAll('[data-testid="search-history-dropdown-item"]');
+    expect(dropdownItems).toHaveLength(1);
+    expect(dropdownItems[0].text()).toContain("阿布 撇嘴");
+
+    wrapper.unmount();
+  });
+
+  it("搜索框有值时不展示最近搜索下拉", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await input.trigger("focus");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("删除单条最近搜索后刷新首页和下拉", async () => {
+    let currentHomeState = {
+      ...mockHomeState,
+      recentSearches: [
+        { query: "阿布 撇嘴", updatedAt: 2 },
+        { query: "猫猫 心虚", updatedAt: 1 },
+      ],
+    };
+
+    mockInvoke.mockImplementation((cmd: string, payload?: Record<string, unknown>) => {
+      if (cmd === "get_home_state") return Promise.resolve(currentHomeState);
+      if (cmd === "delete_search_history") {
+        currentHomeState = {
+          ...currentHomeState,
+          recentSearches: currentHomeState.recentSearches.filter((item) => item.query !== payload?.query),
+        };
+        return Promise.resolve(null);
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.find("input").trigger("focus");
+    await flushPromises();
+    expect(wrapper.findAll('[data-testid="search-history-dropdown-item"]')).toHaveLength(2);
+
+    await wrapper.find('[data-testid="search-history-delete"]').trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("delete_search_history", { query: "阿布 撇嘴" });
+    const remainingDropdownItems = wrapper.findAll('[data-testid="search-history-dropdown-item"]');
+    const remainingHomeItems = wrapper.findAll('[data-testid="recent-search-item"]');
+    expect(remainingDropdownItems).toHaveLength(1);
+    expect(remainingDropdownItems[0].text()).toContain("猫猫 心虚");
+    expect(remainingHomeItems).toHaveLength(1);
+    expect(remainingHomeItems[0].text()).toContain("猫猫 心虚");
+
+    wrapper.unmount();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {

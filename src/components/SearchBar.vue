@@ -6,6 +6,8 @@
       :placeholder="placeholder"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       @keydown.esc="$emit('update:modelValue', '')"
+      @focus="$emit('focus')"
+      @blur="$emit('blur')"
     >
     <button
       v-if="modelValue"
@@ -25,7 +27,11 @@ withDefaults(defineProps<{
 }>(), {
   placeholder: "搜索表情包...",
 });
-defineEmits<{ "update:modelValue": [value: string] }>();
+defineEmits<{
+  "update:modelValue": [value: string];
+  focus: [];
+  blur: [];
+}>();
 
 const inputRef = ref<HTMLInputElement>();
 

@@ -965,6 +965,17 @@ pub async fn get_home_state(db: State<'_, DbPool>) -> Result<HomeStatePayload, S
     get_home_state_impl(db.inner()).await
 }
 
+#[tauri::command]
+pub async fn delete_search_history(query: String, db: State<'_, DbPool>) -> Result<(), String> {
+    delete_search_history_impl(query, db.inner()).await
+}
+
+async fn delete_search_history_impl(query: String, db: &DbPool) -> Result<(), String> {
+    repo::delete_search_history(db, &query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 async fn get_home_state_impl(db: &DbPool) -> Result<HomeStatePayload, String> {
     const RECENT_SEARCH_LIMIT: i64 = 5;
     const RECENT_USED_LIMIT: i64 = 8;
@@ -1668,6 +1679,18 @@ mod tests {
         assert_eq!(home.frequent_used[0].id, "frequent-img");
         assert!(!home.recent_used.iter().any(|img| img.id == "missing-img"));
         assert!(!home.frequent_used.iter().any(|img| img.id == "missing-img"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_delete_search_history_impl_removes_target_query(pool: SqlitePool) {
+        repo::upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
+        repo::upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+
+        delete_search_history_impl("阿布 撇嘴".into(), &pool).await.unwrap();
+
+        let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].query, "猫猫 心虚");
     }
 
     #[sqlx::test(migrations = "./migrations")]

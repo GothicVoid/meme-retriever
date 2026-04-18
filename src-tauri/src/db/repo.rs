@@ -694,6 +694,19 @@ pub async fn get_recent_search_history(
         .collect())
 }
 
+pub async fn delete_search_history(pool: &DbPool, query: &str) -> anyhow::Result<()> {
+    let normalized = query.trim();
+    if normalized.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query("DELETE FROM search_history WHERE query=?1")
+        .bind(normalized)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn get_tags_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result<Vec<TagRecord>> {
     let rows = sqlx::query(
         "SELECT tag_text, category, is_auto, source_strategy, confidence
@@ -961,6 +974,18 @@ mod tests {
         assert_eq!(rows[0].query, "阿布 撇嘴");
         assert_eq!(rows[0].updated_at, 300);
         assert_eq!(rows[1].query, "猫猫 心虚");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_delete_search_history_removes_only_target(pool: SqlitePool) {
+        upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
+        upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+
+        delete_search_history(&pool, "阿布 撇嘴").await.unwrap();
+
+        let rows = get_recent_search_history(&pool, 10).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].query, "猫猫 心虚");
     }
 
     #[sqlx::test(migrations = "./migrations")]

@@ -1,10 +1,45 @@
 <template>
   <div class="search-view">
-    <SearchBar
-      v-model="store.query"
-      :placeholder="searchPlaceholder"
-      @update:model-value="onQueryChange"
-    />
+    <div class="search-input-wrap">
+      <SearchBar
+        v-model="store.query"
+        :placeholder="searchPlaceholder"
+        @update:model-value="onQueryChange"
+        @focus="handleSearchFocus"
+        @blur="handleSearchBlur"
+      />
+      <div
+        v-if="showSearchHistoryDropdown"
+        class="search-history-dropdown"
+        data-testid="search-history-dropdown"
+      >
+        <div
+          v-for="item in recentSearches"
+          :key="item.query"
+          class="search-history-dropdown__item"
+        >
+          <button
+            type="button"
+            class="search-history-dropdown__query"
+            data-testid="search-history-dropdown-item"
+            @mousedown.prevent
+            @click="applyExampleQuery(item.query)"
+          >
+            {{ item.query }}
+          </button>
+          <button
+            type="button"
+            class="search-history-dropdown__delete"
+            data-testid="search-history-delete"
+            aria-label="删除最近搜索"
+            @mousedown.prevent
+            @click="removeRecentSearch(item.query)"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+    </div>
     <div
       v-if="isHomeMode"
       class="home-landing"
@@ -203,6 +238,8 @@ const loadMoreTrigger = ref<HTMLElement | null>(null);
 const homeState = ref<HomeState | null>(null);
 const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
+const searchFocused = ref(false);
+let searchBlurTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
 const exampleQueries = ["撤回消息", "阿布 撇嘴", "猫猫 心虚", "领导 冷笑"];
 
@@ -220,6 +257,9 @@ const showColdStart = computed(() =>
 );
 
 const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
+const showSearchHistoryDropdown = computed(() =>
+  searchFocused.value && !store.query.trim() && recentSearches.value.length > 0
+);
 
 function toHomeSearchResults(images: HomeImage[]): SearchResult[] {
   return images.map((image) => ({
@@ -397,8 +437,30 @@ function onQueryChange(val: string) {
 }
 
 function applyExampleQuery(query: string) {
+  searchFocused.value = false;
   store.query = query;
   onQueryChange(query);
+}
+
+function handleSearchFocus() {
+  if (searchBlurTimer !== null) {
+    window.clearTimeout(searchBlurTimer);
+    searchBlurTimer = null;
+  }
+  searchFocused.value = true;
+}
+
+function handleSearchBlur() {
+  searchBlurTimer = window.setTimeout(() => {
+    searchFocused.value = false;
+    searchBlurTimer = null;
+  }, 120);
+}
+
+async function removeRecentSearch(query: string) {
+  await invoke("delete_search_history", { query });
+  await fetchHomeState();
+  searchFocused.value = true;
 }
 
 function handleHomeImageCopied() {
@@ -494,12 +556,64 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (searchBlurTimer !== null) {
+    window.clearTimeout(searchBlurTimer);
+  }
   loadMoreObserver?.disconnect();
 });
 </script>
 
 <style scoped>
 .search-view { padding: 1rem; }
+.search-input-wrap {
+  position: relative;
+}
+.search-history-dropdown {
+  position: absolute;
+  top: calc(100% - 0.5rem);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+.search-history-dropdown__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.search-history-dropdown__query,
+.search-history-dropdown__delete {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.search-history-dropdown__query {
+  flex: 1;
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  border-radius: 8px;
+  color: #111827;
+}
+.search-history-dropdown__query:hover {
+  background: #f3f4f6;
+}
+.search-history-dropdown__delete {
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: #6b7280;
+}
+.search-history-dropdown__delete:hover {
+  background: #f9fafb;
+  color: #111827;
+}
 .home-landing {
   display: flex;
   flex-direction: column;
