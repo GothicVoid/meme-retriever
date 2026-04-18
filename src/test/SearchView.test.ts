@@ -348,6 +348,48 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("首页卡片右键查看详情会打开详情弹层", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "get_image_meta") {
+        return Promise.resolve({
+          id: "recent-1",
+          filePath: "/recent.jpg",
+          fileName: "recent.jpg",
+          thumbnailPath: "/recent_t.jpg",
+          fileFormat: "jpg",
+          width: 100,
+          height: 100,
+          fileSize: 100,
+          fileStatus: "normal",
+          addedAt: 10,
+          useCount: 1,
+          tags: [],
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const firstCard = wrapper.find(".image-card-shell");
+    await firstCard.trigger("contextmenu", { clientX: 24, clientY: 24 });
+    await flushPromises();
+
+    const openButton = firstCard.findAll(".context-menu button")
+      .find((button) => button.text().includes("查看详情"));
+    expect(openButton).toBeTruthy();
+    await openButton!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".modal-backdrop").exists()).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith("get_image_meta", { id: "recent-1" });
+
+    wrapper.unmount();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {

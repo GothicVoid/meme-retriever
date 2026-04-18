@@ -219,7 +219,7 @@
     <DetailModal
       v-if="detailId"
       :image-id="detailId"
-      :images="store.results"
+      :images="detailImages"
       @close="detailId = null"
       @delete="handleDeleteFromDetail"
     />
@@ -320,6 +320,20 @@ const recentUsedImages = computed<SearchResult[]>(() =>
 const homeImages = computed<SearchResult[]>(() =>
   toHomeSearchResults(homeState.value?.frequentUsed ?? [])
 );
+
+const detailImages = computed<SearchResult[]>(() => {
+  if (!isHomeMode.value) {
+    return store.results;
+  }
+
+  const merged = [...recentUsedImages.value, ...homeImages.value];
+  const seen = new Set<string>();
+  return merged.filter((image) => {
+    if (seen.has(image.id)) return false;
+    seen.add(image.id);
+    return true;
+  });
+});
 
 const highConfidenceCount = computed(() => {
   const results = store.results;
