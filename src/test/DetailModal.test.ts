@@ -277,7 +277,8 @@ describe("DetailModal — 文件丢失", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("原文件已丢失");
     expect(wrapper.find(".relocate-btn").exists()).toBe(true);
-    expect(wrapper.find(".save-btn").exists()).toBe(true);
+    expect(wrapper.find(".save-btn").exists()).toBe(false);
+    expect(wrapper.find(".tag-editor").exists()).toBe(false);
     expect(wrapper.find(".main-img").exists()).toBe(false);
   });
 

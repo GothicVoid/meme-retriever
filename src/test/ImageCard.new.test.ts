@@ -88,7 +88,7 @@ describe("ImageCard — 文件丢失占位图", () => {
     const wrapper = mount(ImageCard, {
       props: { image: { ...base, fileStatus: "missing" }, showDebugInfo: false },
     });
-    expect(wrapper.find(".img-missing").text()).toContain("图片不存在");
+    expect(wrapper.find(".img-missing").text()).toContain("原文件已丢失");
     expect(wrapper.find(".img-missing").attributes("title")).toBe("原文件已丢失");
     expect(wrapper.find(".status-badge").classes()).toContain("ui-result-card__badge");
     expect(wrapper.find(".status-badge").text()).toContain("文件已丢失");

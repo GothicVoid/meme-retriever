@@ -188,7 +188,7 @@ const formatBadge = computed(() => {
 
 const placeholderState = computed(() => imgError.value);
 const placeholderText = computed(() => {
-  if (placeholderState.value === "missing") return "图片不存在";
+  if (placeholderState.value === "missing") return "原文件已丢失";
   return "加载失败";
 });
 const placeholderTitle = computed(() => {

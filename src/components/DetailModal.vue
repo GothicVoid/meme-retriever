@@ -96,7 +96,10 @@
             </div>
           </div>
 
-          <div class="tags-section">
+          <div
+            v-if="!isMissing"
+            class="tags-section"
+          >
             <div class="tags-header">
               <div>
                 <div class="meta-label">标签</div>

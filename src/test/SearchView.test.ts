@@ -833,7 +833,7 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
-  it("正式快速预览中定位缺失文件时显示错误提示", async () => {
+  it("正式快速预览打开缺失文件时显示统一缺图态，并隐藏定位操作", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -848,9 +848,6 @@ describe("SearchView", () => {
           tags: [],
           debugInfo: null,
         }]);
-      }
-      if (cmd === "reveal_in_finder") {
-        return Promise.reject(new Error("原文件已丢失"));
       }
       return Promise.resolve([]);
     });
@@ -872,11 +869,10 @@ describe("SearchView", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
     await flushPromises();
 
-    await wrapper.get('[data-testid="quick-preview-reveal"]').trigger("click");
-    await flushPromises();
-
-    const toast = document.body.querySelector(".toast.error");
-    expect(toast?.textContent).toContain("原文件已丢失，无法定位");
+    expect(wrapper.text()).toContain("原文件已丢失");
+    expect(wrapper.text()).toContain("可查看详情重新定位，或删除这条记录。");
+    expect(wrapper.find(".quick-preview__image").exists()).toBe(false);
+    expect(wrapper.find('[data-testid="quick-preview-reveal"]').exists()).toBe(false);
 
     wrapper.unmount();
   });

@@ -20,10 +20,22 @@
           ←
         </button>
         <img
+          v-if="!isMissing"
           :src="convertFileSrc(image.filePath)"
           :alt="image.id"
           class="quick-preview__image"
         >
+        <div
+          v-else
+          class="quick-preview__missing"
+        >
+          <p class="quick-preview__missing-title">
+            原文件已丢失
+          </p>
+          <p class="quick-preview__missing-desc">
+            可查看详情重新定位，或删除这条记录。
+          </p>
+        </div>
         <button
           class="quick-preview__nav quick-preview__nav--next"
           :disabled="!canNext"
@@ -35,6 +47,7 @@
       </div>
       <div class="quick-preview__actions">
         <button
+          v-if="!isMissing"
           class="quick-preview__action quick-preview__action--primary"
           @click="$emit('copy', image.id)"
         >
@@ -47,6 +60,7 @@
           查看详情
         </button>
         <button
+          v-if="!isMissing"
           class="quick-preview__action"
           data-testid="quick-preview-reveal"
           @click="$emit('reveal', image.id)"
@@ -64,7 +78,7 @@
         class="quick-preview__shortcuts"
         data-testid="quick-preview-shortcuts-hint"
       >
-        Enter 复制 · Esc 关闭
+        {{ isMissing ? "Esc 关闭" : "Enter 复制 · Esc 关闭" }}
       </p>
     </div>
   </div>
@@ -72,13 +86,16 @@
 
 <script setup lang="ts">
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { computed } from "vue";
 import type { SearchResult } from "@/stores/search";
 
-defineProps<{
+const props = defineProps<{
   image: SearchResult;
   canPrev: boolean;
   canNext: boolean;
 }>();
+
+const isMissing = computed(() => props.image.fileStatus === "missing");
 
 defineEmits<{
   close: [];
@@ -143,6 +160,25 @@ defineEmits<{
   max-width: 100%;
   max-height: 60vh;
   object-fit: contain;
+}
+
+.quick-preview__missing {
+  max-width: 28rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: var(--ui-text-primary);
+}
+
+.quick-preview__missing-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.quick-preview__missing-desc {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
 }
 
 .quick-preview__nav {
