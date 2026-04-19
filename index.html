@@ -1,14 +1,118 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + Vue + Typescript App</title>
+    <title>表情包检索器</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: #f3f1ec;
+        color: #1f2329;
+      }
+
+      html,
+      body,
+      #app {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: #f3f1ec;
+      }
+
+      #app {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .boot-shell {
+        min-height: 100vh;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        box-sizing: border-box;
+      }
+
+      .boot-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .boot-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .boot-mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 14px;
+        background: rgba(183, 121, 31, 0.15);
+      }
+
+      .boot-title,
+      .boot-button,
+      .boot-block {
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(221, 213, 200, 0.9);
+      }
+
+      .boot-title {
+        width: 88px;
+        height: 14px;
+      }
+
+      .boot-button {
+        width: 56px;
+        height: 34px;
+      }
+
+      .boot-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .boot-block--hero {
+        height: 88px;
+      }
+
+      .boot-block--grid {
+        flex: 1;
+      }
+
+      .boot-block--search {
+        height: 60px;
+        box-shadow: 0 20px 40px rgba(48, 40, 25, 0.08);
+      }
+    </style>
   </head>
 
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="boot-shell">
+        <div class="boot-topbar">
+          <div class="boot-brand">
+            <div class="boot-mark"></div>
+            <div class="boot-title"></div>
+          </div>
+          <div class="boot-button"></div>
+        </div>
+        <div class="boot-body">
+          <div class="boot-block boot-block--hero"></div>
+          <div class="boot-block boot-block--grid"></div>
+          <div class="boot-block boot-block--search"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

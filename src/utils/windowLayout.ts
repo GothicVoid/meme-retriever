@@ -9,10 +9,10 @@ export async function applyWindowLayout(mode: WindowMode, dockSide: DockSide) {
   }
 }
 
-export async function showMainWindow() {
+export async function saveWindowPreferences(mode: WindowMode, dockSide: DockSide) {
   try {
-    await invoke("show_main_window");
+    await invoke("save_window_preferences", { mode, dockSide });
   } catch (error) {
-    console.warn("show_main_window failed:", error);
+    console.warn("save_window_preferences failed:", error);
   }
 }

@@ -47,6 +47,11 @@ pub fn run() {
                 app.manage(pool);
                 app.manage(Arc::new(engine) as commands::EngineState);
             });
+
+            if let Some(window) = app.get_webview_window("main") {
+                let prefs = commands::load_window_preferences_from_dir(&app_data);
+                commands::apply_window_layout_to_window(&window, &prefs.mode, &prefs.dock_side)?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -73,6 +78,7 @@ pub fn run() {
             commands::resume_pending_tasks,
             commands::clear_task_queue,
             commands::apply_window_layout,
+            commands::save_window_preferences,
             commands::show_main_window,
             commands::kb_get_state,
             commands::kb_validate_entries,

@@ -164,11 +164,47 @@ pub struct WindowLayoutPayload {
     pub dock_side: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPreferences {
+    pub mode: String,
+    pub dock_side: String,
+}
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+impl Default for WindowPreferences {
+    fn default() -> Self {
+        Self {
+            mode: "sidebar".to_string(),
+            dock_side: "right".to_string(),
+        }
+    }
+}
+
+fn window_preferences_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("window-preferences.json")
+}
+
+pub fn load_window_preferences_from_dir(app_data_dir: &Path) -> WindowPreferences {
+    let path = window_preferences_path(app_data_dir);
+    let raw = std::fs::read_to_string(path).ok();
+    raw.and_then(|content| serde_json::from_str::<WindowPreferences>(&content).ok())
+        .unwrap_or_default()
+}
+
+fn save_window_preferences_to_dir(
+    app_data_dir: &Path,
+    prefs: &WindowPreferences,
+) -> Result<(), String> {
+    let path = window_preferences_path(app_data_dir);
+    let json = serde_json::to_string_pretty(prefs).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
 }
 
 fn resolve_window_metrics(
@@ -181,13 +217,14 @@ fn resolve_window_metrics(
 ) -> ((f64, f64), (f64, f64), (f64, f64)) {
     if mode == "sidebar" {
         let width = (work_area_width * 0.25).clamp(380.0, 460.0);
-        let height = work_area_height.max(640.0);
+        let height = (work_area_height * 0.88).clamp(640.0, 860.0);
+        let top_offset = ((work_area_height - height) / 2.0).clamp(16.0, 40.0);
         let x = if dock_side == "left" {
             work_area_x
         } else {
             work_area_x + work_area_width - width
         };
-        return ((width, height), (360.0, 560.0), (x, work_area_y));
+        return ((width, height), (360.0, 560.0), (x, work_area_y + top_offset));
     }
 
     let width = (work_area_width * 0.72).clamp(960.0, 1320.0);
@@ -195,6 +232,48 @@ fn resolve_window_metrics(
     let x = work_area_x + ((work_area_width - width) / 2.0);
     let y = work_area_y + ((work_area_height - height) / 2.0);
     ((width, height), (820.0, 620.0), (x, y))
+}
+
+pub fn apply_window_layout_to_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    mode: &str,
+    dock_side: &str,
+) -> Result<(), String> {
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or_else(|| "未找到可用显示器".to_string())?;
+
+    if mode == "sidebar" {
+        window.unmaximize().ok();
+        window.set_maximizable(false).map_err(|e| e.to_string())?;
+    } else {
+        window.set_maximizable(true).map_err(|e| e.to_string())?;
+    }
+
+    let work_area = monitor.work_area();
+    let ((width, height), (min_width, min_height), (x, y)) = resolve_window_metrics(
+        mode,
+        dock_side,
+        work_area.size.width as f64,
+        work_area.size.height as f64,
+        work_area.position.x as f64,
+        work_area.position.y as f64,
+    );
+
+    window
+        .set_min_size(Some(Size::Logical(LogicalSize::new(
+            min_width, min_height,
+        ))))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(Size::Logical(LogicalSize::new(width, height)))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_position(Position::Logical(LogicalPosition::new(x, y)))
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn resolve_kb_path() -> Result<PathBuf, String> {
@@ -1330,42 +1409,21 @@ pub async fn apply_window_layout(
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "主窗口不存在".to_string())?;
+    apply_window_layout_to_window(&window, &mode, &dock_side)
+}
 
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .or_else(|| window.primary_monitor().ok().flatten())
-        .ok_or_else(|| "未找到可用显示器".to_string())?;
-
-    if mode == "sidebar" {
-        window.unmaximize().ok();
-        window.set_maximizable(false).map_err(|e| e.to_string())?;
-    } else {
-        window.set_maximizable(true).map_err(|e| e.to_string())?;
-    }
-
-    let work_area = monitor.work_area();
-    let ((width, height), (min_width, min_height), (x, y)) = resolve_window_metrics(
-        &mode,
-        &dock_side,
-        work_area.size.width as f64,
-        work_area.size.height as f64,
-        work_area.position.x as f64,
-        work_area.position.y as f64,
-    );
-
-    window
-        .set_min_size(Some(Size::Logical(LogicalSize::new(
-            min_width, min_height,
-        ))))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(Size::Logical(LogicalSize::new(width, height)))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_position(Position::Logical(LogicalPosition::new(x, y)))
-        .map_err(|e| e.to_string())?;
-    Ok(())
+#[tauri::command]
+pub async fn save_window_preferences(
+    mode: String,
+    dock_side: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
+    save_window_preferences_to_dir(
+        &app_data_dir,
+        &WindowPreferences { mode, dock_side },
+    )
 }
 
 #[tauri::command]

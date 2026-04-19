@@ -151,7 +151,7 @@ import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
 import { useSettingsStore, type WindowMode } from "@/stores/settings";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
-import { applyWindowLayout } from "@/utils/windowLayout";
+import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 
 const recoveryStore = useTaskRecoveryStore();
 const settings = useSettingsStore();
@@ -261,7 +261,10 @@ watch(
   [effectiveWindowMode, () => settings.dockSide, () => route.fullPath],
   async ([mode, dockSide]) => {
     await nextTick();
-    await applyWindowLayout(mode, dockSide);
+    await Promise.all([
+      applyWindowLayout(mode, dockSide),
+      saveWindowPreferences(mode, dockSide),
+    ]);
   },
   { immediate: true }
 );
