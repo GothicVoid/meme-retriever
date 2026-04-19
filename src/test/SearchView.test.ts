@@ -88,7 +88,7 @@ describe("SearchView", () => {
     expect(wrapper.find("input").attributes("placeholder")).toBe("搜台词、角色、动作、场景");
   });
 
-  it("首页首屏挂载高权重搜索英雄区和示例词样式类", async () => {
+  it("首页首屏挂载极简摘要区和底部主搜索栏", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -97,11 +97,11 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
-    expect(wrapper.get(".search-view__hero").exists()).toBe(true);
+    expect(wrapper.get(".search-view__summary").exists()).toBe(true);
     expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search");
-    expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search--hero");
-    expect(wrapper.get(".home-landing__examples").classes()).toContain("search-view__examples");
-    expect(wrapper.get(".home-landing__example").classes()).toContain("ui-chip-button");
+    expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search--dock");
+    expect(wrapper.get(".search-dock").exists()).toBe(true);
+    expect(wrapper.text()).toContain("直接挑一张");
   });
 
   it("输入非空查询后切换到搜索结果态", async () => {
@@ -179,12 +179,12 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    expect(wrapper.text()).toContain("常用表情");
-    expect(wrapper.text()).toContain("按图片里的字、角色名、动作、场景来找表情");
+    expect(wrapper.text()).toContain("直接挑一张");
+    expect(wrapper.text()).toContain("先发出去再说");
     expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
   });
 
-  it("首页示例词可直接触发搜索，且搜索后不显示历史下拉", async () => {
+  it("首页辅助词可直接触发搜索，且搜索后不显示历史下拉", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -194,19 +194,21 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    await wrapper.find(".home-landing__example").trigger("click");
+    await wrapper.find("input").trigger("focus");
+    await flushPromises();
+    await wrapper.find(".search-assist-panel__chip").trigger("click");
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "撤回消息" }));
     expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("常用表情");
+    expect(wrapper.text()).not.toContain("直接挑一张");
 
     wrapper.unmount();
   });
 
-  it("最近搜索存在时展示并支持点击重搜", async () => {
+  it("最近搜索存在时在辅助面板展示并支持点击重搜", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -216,8 +218,11 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("最近搜索");
-    const button = wrapper.find('[data-testid="recent-search-item"]');
+    await wrapper.find("input").trigger("focus");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("最近搜过");
+    const button = wrapper.find('[data-testid="search-history-dropdown-item"]');
     expect(button.exists()).toBe(true);
 
     await button.trigger("click");
@@ -342,11 +347,8 @@ describe("SearchView", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("delete_search_history", { query: "阿布 撇嘴" });
     const remainingDropdownItems = wrapper.findAll('[data-testid="search-history-dropdown-item"]');
-    const remainingHomeItems = wrapper.findAll('[data-testid="recent-search-item"]');
     expect(remainingDropdownItems).toHaveLength(1);
     expect(remainingDropdownItems[0].text()).toContain("猫猫 心虚");
-    expect(remainingHomeItems).toHaveLength(1);
-    expect(remainingHomeItems[0].text()).toContain("猫猫 心虚");
 
     wrapper.unmount();
   });
@@ -953,10 +955,10 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
-    expect(wrapper.text()).not.toContain("最近搜索");
+    expect(wrapper.text()).not.toContain("最近搜过");
   });
 
-  it("最近用过显示在常用表情之前", async () => {
+  it("首页合并展示最近用过和常用表情的候选池", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -965,10 +967,10 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
-    const text = wrapper.text();
-    expect(text.indexOf("最近用过")).toBeGreaterThan(-1);
-    expect(text.indexOf("常用表情")).toBeGreaterThan(-1);
-    expect(text.indexOf("最近用过")).toBeLessThan(text.indexOf("常用表情"));
+    expect(wrapper.text()).toContain("直接挑一张");
+    expect(wrapper.text()).not.toContain("最近用过");
+    expect(wrapper.text()).not.toContain("常用表情");
+    expect(wrapper.findAll(".image-card")).toHaveLength(2);
   });
 
   it("首页点击图片复制后会刷新首页数据", async () => {
@@ -1183,7 +1185,7 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "get_home_state")).toHaveLength(2);
-    expect(wrapper.text()).toContain("常用表情");
+    expect(wrapper.text()).toContain("直接挑一张");
     wrapper.unmount();
   });
 
@@ -1211,8 +1213,8 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(wrapper.find("input").element.value).toBe("");
-    expect(wrapper.text()).toContain("最近用过");
-    expect(wrapper.text()).toContain("常用表情");
+    expect(wrapper.text()).toContain("直接挑一张");
+    expect(wrapper.text()).toContain("先发出去再说");
 
     wrapper.unmount();
   });

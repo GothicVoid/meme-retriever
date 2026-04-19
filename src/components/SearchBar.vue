@@ -1,10 +1,17 @@
 <template>
   <div class="search-bar ui-input-shell">
+    <span
+      class="search-bar__icon"
+      aria-hidden="true"
+    >
+      搜
+    </span>
     <input
       ref="inputRef"
       class="search-bar__input ui-input"
       :value="modelValue"
       :placeholder="placeholder"
+      aria-label="搜索表情"
       @input="handleInput"
       @keydown.esc="$emit('update:modelValue', '')"
       @focus="$emit('focus')"
@@ -82,6 +89,20 @@ defineExpose({
 .search-bar__input {
   min-height: 48px;
   font-size: 1rem;
+}
+
+.search-bar__icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(183, 121, 31, 0.12);
+  color: var(--ui-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .search-bar__clear {

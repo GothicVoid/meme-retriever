@@ -1,240 +1,150 @@
 <template>
   <div class="search-view">
-    <section class="search-view__hero">
-      <div class="search-input-wrap search-view__search-wrap">
-        <SearchBar
-          ref="searchBarRef"
-          v-model="store.query"
-          class="search-view__search search-view__search--hero"
-          :placeholder="searchPlaceholder"
-          @update:model-value="onQueryChange"
-          @focus="handleSearchFocus"
-          @blur="handleSearchBlur"
+    <section class="search-view__summary">
+      <p class="search-view__eyebrow">
+        聊天旁边快速取图
+      </p>
+      <p
+        v-if="!isHomeMode"
+        class="search-view__summary-text"
+      >
+        {{ visibleResults.length > 0 ? `已准备 ${visibleResults.length} 张候选图` : "继续改几个词试试" }}
+      </p>
+    </section>
+    <section class="search-view__body">
+      <div
+        v-if="isHomeMode"
+        class="home-landing"
+      >
+        <div
+          v-if="showColdStart"
+          class="home-empty"
+        >
+          <p class="home-empty__title">
+            先把表情包放进来
+          </p>
+          <p class="home-empty__text">
+            导入后就可以按图片里的字、角色名、动作或场景直接找图
+          </p>
+          <button
+            type="button"
+            class="home-empty__action"
+            data-action="open-gallery-management"
+            @click="goToGalleryManagement('recent')"
+          >
+            导入图片
+          </button>
+        </div>
+
+        <template v-else>
+          <section
+            v-if="quickPickImages.length > 0"
+            class="home-section"
+          >
+            <div class="home-section__header">
+              <h2 class="home-section__title">
+                直接挑一张
+              </h2>
+              <span class="home-section__hint">先发出去再说</span>
+            </div>
+            <ImageGrid
+              :images="quickPickImages"
+              :loading="homeLoading"
+              :show-debug-info="false"
+              @copied="handleHomeImageCopied"
+              @delete="handleDeleteFromGrid"
+              @open="openDetail"
+              @preview="openQuickPreview"
+            />
+          </section>
+        </template>
+      </div>
+      <template v-else>
+        <div
+          v-if="settings.devDebugMode && store.results.length"
+          class="debug-formula"
+        >
+          开发调试模式：显示当前排序主路、贡献项与最终得分，用于辅助排查结果排序
+        </div>
+        <ImageGrid
+          :images="visibleResults"
+          :loading="store.loading"
+          loading-message="正在搜索相关图片..."
+          :show-debug-info="settings.devDebugMode"
+          :empty-message="emptyMessage"
+          :focused-id="focusedResultId"
+          @copied="handleSearchImageCopied"
+          @delete="handleDeleteFromGrid"
+          @open="openDetail"
+          @preview="openQuickPreview"
         />
         <p
-          class="search-view__shortcut-hint"
-          data-testid="search-shortcuts-hint"
+          v-if="showResultShortcutsHint"
+          class="search-view__result-shortcuts"
+          data-testid="result-shortcuts-hint"
         >
-          / 或 Ctrl+K 聚焦搜索
+          Enter 复制 · Space 预览 · Esc 关闭
         </p>
         <div
-          v-if="showSearchHistoryDropdown"
-          class="search-history-dropdown ui-floating-panel"
-          data-testid="search-history-dropdown"
+          v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
+          class="result-feedback"
         >
+          <p class="result-feedback__title">
+            {{ feedbackTitle }}
+          </p>
+          <p class="result-feedback__text">
+            {{ feedbackText }}
+          </p>
           <div
-            v-for="item in recentSearches"
-            :key="item.query"
-            class="search-history-dropdown__item"
+            v-if="showGuidanceList"
+            class="result-feedback__guidance"
           >
-            <button
-              type="button"
-              class="search-history-dropdown__query"
-              data-testid="search-history-dropdown-item"
-              @mousedown.prevent
-              @click="applyExampleQuery(item.query)"
+            <span
+              v-for="item in guidanceItems"
+              :key="item"
+              class="result-feedback__guidance-item"
+              data-testid="search-guidance-item"
             >
-              {{ item.query }}
-            </button>
-            <button
-              type="button"
-              class="search-history-dropdown__delete"
-              data-testid="search-history-delete"
-              aria-label="删除最近搜索"
-              @mousedown.prevent
-              @click="removeRecentSearch(item.query)"
-            >
-              删除
-            </button>
+              {{ item }}
+            </span>
           </div>
+          <button
+            v-if="showRecentUsedShortcut"
+            class="result-feedback__action"
+            data-action="show-recent-used"
+            @click="goBackToHome"
+          >
+            看看最近用过
+          </button>
+          <button
+            v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
+            class="result-feedback__action"
+            data-action="go-gallery-management"
+            @click="goToGalleryManagement(showLowConfidenceHint || showSearchErrorHint ? 'issues' : 'recent')"
+          >
+            去图库管理
+          </button>
+          <button
+            v-if="canShowSecondaryResults"
+            class="result-feedback__action"
+            :data-action="showSecondaryResults ? 'show-less' : 'show-more-secondary'"
+            @click="toggleSecondaryResults"
+          >
+            {{ showSecondaryResults ? "收起低相关结果" : `仍然查看其余 ${secondaryResultsCount} 张结果` }}
+          </button>
         </div>
-      </div>
-    </section>
-    <div
-      v-if="isHomeMode"
-      class="home-landing"
-    >
-      <p class="home-landing__intro">
-        按图片里的字、角色名、动作、场景来找表情
-      </p>
-      <div class="home-landing__examples search-view__examples">
-        <button
-          v-for="example in exampleQueries"
-          :key="example"
-          class="home-landing__example ui-chip-button"
-          @click="applyExampleQuery(example)"
+        <div
+          v-if="shouldAutoLoadMore"
+          ref="loadMoreTrigger"
+          class="load-more-trigger"
+          data-testid="load-more-trigger"
         >
-          {{ example }}
-        </button>
-      </div>
-
-      <div
-        v-if="showColdStart"
-        class="home-empty"
-      >
-        <p class="home-empty__title">
-          先把表情包放进来
-        </p>
-        <p class="home-empty__text">
-          导入后就可以按图片里的字、角色名、动作或场景直接找图
-        </p>
-        <button
-          type="button"
-          class="home-empty__action"
-        >
-          导入图片
-        </button>
-      </div>
-
-      <template v-else>
-        <section
-          v-if="recentSearches.length > 0"
-          class="home-section"
-        >
-          <div class="home-section__header">
-            <h2 class="home-section__title">
-              最近搜索
-            </h2>
-          </div>
-          <div class="home-searches">
-            <button
-              v-for="item in recentSearches"
-              :key="item.query"
-              type="button"
-              class="home-searches__item"
-              data-testid="recent-search-item"
-              @click="applyExampleQuery(item.query)"
-            >
-              {{ item.query }}
-            </button>
-          </div>
-        </section>
-
-        <section
-          v-if="recentUsedImages.length > 0"
-          class="home-section"
-        >
-          <div class="home-section__header">
-            <h2 class="home-section__title">
-              最近用过
-            </h2>
-          </div>
-          <ImageGrid
-            :images="recentUsedImages"
-            :loading="homeLoading"
-            :show-debug-info="false"
-            @copied="handleHomeImageCopied"
-            @delete="handleDeleteFromGrid"
-            @open="openDetail"
-            @preview="openQuickPreview"
-          />
-        </section>
-
-        <section
-          v-if="homeImages.length > 0"
-          class="home-section"
-        >
-          <div class="home-section__header">
-            <h2 class="home-section__title">
-              常用表情
-            </h2>
-          </div>
-          <ImageGrid
-            :images="homeImages"
-            :loading="homeLoading"
-            :show-debug-info="false"
-            @copied="handleHomeImageCopied"
-            @delete="handleDeleteFromGrid"
-            @open="openDetail"
-            @preview="openQuickPreview"
-          />
-        </section>
+          <p class="load-more-trigger__text">
+            {{ loadMoreHint }}
+          </p>
+        </div>
       </template>
-    </div>
-    <div
-      v-else-if="settings.devDebugMode && store.results.length"
-      class="debug-formula"
-    >
-      开发调试模式：显示当前排序主路、贡献项与最终得分，用于辅助排查结果排序
-    </div>
-    <ImageGrid
-      v-if="!isHomeMode"
-      :images="visibleResults"
-      :loading="store.loading"
-      loading-message="正在搜索相关图片..."
-      :show-debug-info="settings.devDebugMode"
-      :empty-message="emptyMessage"
-      :focused-id="focusedResultId"
-      @copied="handleSearchImageCopied"
-      @delete="handleDeleteFromGrid"
-      @open="openDetail"
-      @preview="openQuickPreview"
-    />
-    <p
-      v-if="showResultShortcutsHint"
-      class="search-view__result-shortcuts"
-      data-testid="result-shortcuts-hint"
-    >
-      Enter 复制 · Space 预览 · Esc 关闭
-    </p>
-    <div
-      v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
-      class="result-feedback"
-    >
-      <p class="result-feedback__title">
-        {{ feedbackTitle }}
-      </p>
-      <p class="result-feedback__text">
-        {{ feedbackText }}
-      </p>
-      <div
-        v-if="showGuidanceList"
-        class="result-feedback__guidance"
-      >
-        <span
-          v-for="item in guidanceItems"
-          :key="item"
-          class="result-feedback__guidance-item"
-          data-testid="search-guidance-item"
-        >
-          {{ item }}
-        </span>
-      </div>
-      <button
-        v-if="showRecentUsedShortcut"
-        class="result-feedback__action"
-        data-action="show-recent-used"
-        @click="goBackToHome"
-      >
-        看看最近用过
-      </button>
-      <button
-        v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
-        class="result-feedback__action"
-        data-action="go-gallery-management"
-        @click="goToGalleryManagement(showLowConfidenceHint || showSearchErrorHint ? 'issues' : 'recent')"
-      >
-        去图库管理
-      </button>
-      <button
-        v-if="canShowSecondaryResults"
-        class="result-feedback__action"
-        :data-action="showSecondaryResults ? 'show-less' : 'show-more-secondary'"
-        @click="toggleSecondaryResults"
-      >
-        {{ showSecondaryResults ? "收起低相关结果" : `仍然查看其余 ${secondaryResultsCount} 张结果` }}
-      </button>
-    </div>
-    <div
-      v-if="shouldAutoLoadMore"
-      ref="loadMoreTrigger"
-      class="load-more-trigger"
-      data-testid="load-more-trigger"
-    >
-      <p class="load-more-trigger__text">
-        {{ loadMoreHint }}
-      </p>
-    </div>
+    </section>
     <DetailModal
       v-if="detailId"
       :image-id="detailId"
@@ -254,6 +164,83 @@
       @prev="moveQuickPreview(-1)"
       @next="moveQuickPreview(1)"
     />
+    <section class="search-dock">
+      <div class="search-input-wrap search-view__search-wrap">
+        <div
+          v-if="showSearchAssistPanel"
+          class="search-assist-panel ui-floating-panel"
+          data-testid="search-history-dropdown"
+        >
+          <div
+            v-if="recentSearches.length > 0"
+            class="search-assist-panel__section"
+          >
+            <p class="search-assist-panel__label">
+              最近搜过
+            </p>
+            <div class="search-assist-panel__row">
+              <div
+                v-for="item in recentSearches"
+                :key="item.query"
+                class="search-assist-panel__item"
+              >
+                <button
+                  type="button"
+                  class="search-assist-panel__query"
+                  data-testid="search-history-dropdown-item"
+                  @mousedown.prevent
+                  @click="applyExampleQuery(item.query)"
+                >
+                  {{ item.query }}
+                </button>
+                <button
+                  type="button"
+                  class="search-assist-panel__delete"
+                  data-testid="search-history-delete"
+                  aria-label="删除最近搜索"
+                  @mousedown.prevent
+                  @click="removeRecentSearch(item.query)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="search-assist-panel__section">
+            <p class="search-assist-panel__label">
+              可以直接试
+            </p>
+            <div class="search-assist-panel__row">
+              <button
+                v-for="example in exampleQueries"
+                :key="example"
+                type="button"
+                class="search-assist-panel__chip"
+                @mousedown.prevent
+                @click="applyExampleQuery(example)"
+              >
+                {{ example }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <SearchBar
+          ref="searchBarRef"
+          v-model="store.query"
+          class="search-view__search search-view__search--dock"
+          :placeholder="searchPlaceholder"
+          @update:model-value="onQueryChange"
+          @focus="handleSearchFocus"
+          @blur="handleSearchBlur"
+        />
+      </div>
+      <p
+        class="search-view__shortcut-hint"
+        data-testid="search-shortcuts-hint"
+      >
+        / 或 Ctrl+K 聚焦搜索
+      </p>
+    </section>
   </div>
 </template>
 
@@ -280,6 +267,7 @@ const { copyImage } = useClipboard();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
 const router = inject<Router | undefined>(routerKey, undefined);
+const cancelDebouncedSearch = debouncedSearch as typeof debouncedSearch & { cancel?: () => void };
 
 interface HomeImage {
   id: string;
@@ -335,8 +323,8 @@ const showColdStart = computed(() =>
 );
 
 const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
-const showSearchHistoryDropdown = computed(() =>
-  searchFocused.value && !store.query.trim() && recentSearches.value.length > 0
+const showSearchAssistPanel = computed(() =>
+  searchFocused.value && isHomeMode.value && (recentSearches.value.length > 0 || exampleQueries.length > 0)
 );
 
 function toHomeSearchResults(images: HomeImage[]): SearchResult[] {
@@ -363,11 +351,7 @@ const homeImages = computed<SearchResult[]>(() =>
   toHomeSearchResults(homeState.value?.frequentUsed ?? [])
 );
 
-const detailImages = computed<SearchResult[]>(() => {
-  if (!isHomeMode.value) {
-    return store.results;
-  }
-
+const quickPickImages = computed<SearchResult[]>(() => {
   const merged = [...recentUsedImages.value, ...homeImages.value];
   const seen = new Set<string>();
   return merged.filter((image) => {
@@ -375,6 +359,14 @@ const detailImages = computed<SearchResult[]>(() => {
     seen.add(image.id);
     return true;
   });
+});
+
+const detailImages = computed<SearchResult[]>(() => {
+  if (!isHomeMode.value) {
+    return store.results;
+  }
+
+  return quickPickImages.value;
 });
 
 const highConfidenceCount = computed(() => {
@@ -584,7 +576,7 @@ function onQueryChange(val: string) {
   resetResultView();
   if (!val.trim()) {
     searchFocused.value = false;
-    debouncedSearch.cancel?.();
+    cancelDebouncedSearch.cancel?.();
     store.results = [];
     void fetchHomeState();
     return;
@@ -605,6 +597,7 @@ function goBackToHome() {
 }
 
 function goToGalleryManagement(targetView: "recent" | "issues") {
+  settings.windowMode = "expanded";
   if (router) {
     void router.push({ path: "/library", query: { view: targetView } });
     return;
@@ -745,7 +738,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
     }
   }
 
-  if (event.key === "Escape" && showSearchHistoryDropdown.value) {
+  if (event.key === "Escape" && showSearchAssistPanel.value) {
     event.preventDefault();
     searchFocused.value = false;
     return;
@@ -900,14 +893,42 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .search-view {
-  padding: 1rem;
-}
-
-.search-view__hero {
-  margin-bottom: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  min-height: 0;
+  height: 100%;
+  gap: 0.75rem;
+  padding-top: 0.2rem;
+}
+
+.search-view__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.search-view__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+
+.search-view__summary-text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--ui-text-secondary);
+}
+
+.search-view__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+  padding-bottom: 0.75rem;
+  scrollbar-gutter: stable;
 }
 
 .search-input-wrap {
@@ -922,92 +943,107 @@ onBeforeUnmount(() => {
   margin-bottom: 0;
 }
 
-.search-view__search--hero {
-  min-height: 64px;
-  padding-inline: 1rem;
+.search-view__search--dock {
+  margin: 0;
 }
 
 .search-view__shortcut-hint,
 .search-view__result-shortcuts {
-  margin: 0.5rem 0 0;
-  font-size: 0.82rem;
+  margin: 0;
+  font-size: 0.78rem;
   color: var(--ui-text-secondary);
 }
 
 .search-view__result-shortcuts {
-  margin-top: 0.85rem;
+  margin-top: -0.1rem;
 }
 
-.search-view__examples {
-  gap: 0.625rem;
-}
-
-.search-history-dropdown {
+.search-assist-panel {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  bottom: calc(100% + 0.55rem);
   left: 0;
   right: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.625rem;
+  gap: 0.55rem;
+  padding: 0.5rem;
+  max-height: min(230px, 38vh);
+  overflow-y: auto;
 }
-.search-history-dropdown__item {
+.search-assist-panel__section {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.45rem;
 }
-.search-history-dropdown__query,
-.search-history-dropdown__delete {
+
+.search-assist-panel__label {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ui-text-secondary);
+}
+
+.search-assist-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.search-assist-panel__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--ui-border-subtle);
+}
+
+.search-assist-panel__query,
+.search-assist-panel__chip,
+.search-assist-panel__delete {
   border: none;
   background: transparent;
   cursor: pointer;
 }
-.search-history-dropdown__query {
-  flex: 1;
-  padding: 0.5rem 0.625rem;
-  text-align: left;
-  border-radius: 8px;
+
+.search-assist-panel__query,
+.search-assist-panel__chip {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
   color: var(--ui-text-primary);
 }
-.search-history-dropdown__query:hover {
+
+.search-assist-panel__chip {
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
+  border: 1px solid var(--ui-border-subtle);
+}
+
+.search-assist-panel__query:hover,
+.search-assist-panel__chip:hover {
   background: var(--ui-bg-hover);
 }
-.search-history-dropdown__delete {
-  padding: 0.35rem 0.5rem;
-  border-radius: 6px;
+
+.search-assist-panel__delete {
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
   color: var(--ui-text-secondary);
 }
-.search-history-dropdown__delete:hover {
+
+.search-assist-panel__delete:hover {
   background: var(--ui-bg-hover);
   color: var(--ui-text-primary);
 }
 .home-landing {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.5rem;
+  gap: 1rem;
+  padding: 0.85rem 0.85rem 1rem;
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--ui-radius-lg);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(251, 248, 242, 0.9));
   box-shadow: var(--ui-shadow-soft);
-}
-.home-landing__intro {
-  margin: 0;
-  max-width: 42rem;
-  font-size: 1rem;
-  line-height: 1.65;
-  color: var(--ui-text-secondary);
-}
-.home-landing__examples {
-  display: flex;
-  flex-wrap: wrap;
-}
-.home-landing__example {
-  font-size: 0.85rem;
 }
 .home-empty {
   display: flex;
@@ -1027,7 +1063,7 @@ onBeforeUnmount(() => {
 }
 .home-empty__text {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   line-height: 1.5;
   color: var(--ui-text-secondary);
 }
@@ -1070,12 +1106,17 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
 }
 .home-section__title {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: var(--ui-text-primary);
+}
+.home-section__hint {
+  font-size: 0.74rem;
+  color: var(--ui-text-secondary);
 }
 .debug-formula {
   font-size: 0.78rem;
@@ -1087,8 +1128,7 @@ onBeforeUnmount(() => {
   border-radius: 0 4px 4px 0;
 }
 .result-feedback {
-  margin-top: 1rem;
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 0.85rem;
   border-radius: 8px;
   background: #fff7e8;
   border: 1px solid #f5d39a;
@@ -1135,7 +1175,43 @@ onBeforeUnmount(() => {
 }
 .load-more-trigger__text {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: #888;
+}
+
+.search-dock {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.2rem;
+  background:
+    linear-gradient(180deg, rgba(243, 241, 236, 0), rgba(243, 241, 236, 0.82) 18%, rgba(243, 241, 236, 0.98) 50%);
+}
+
+:deep(.search-view__search--dock .search-bar) {
+  margin-bottom: 0;
+}
+
+:deep(.search-view__search--dock .ui-input-shell) {
+  min-height: 60px;
+  border-radius: 20px;
+  border-color: color-mix(in srgb, var(--ui-accent) 28%, var(--ui-border-subtle));
+  box-shadow:
+    0 20px 40px rgba(48, 40, 25, 0.14),
+    0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+:deep(.search-view__search--dock .search-bar__input) {
+  min-height: 52px;
+  font-size: 0.98rem;
+}
+
+:deep(.search-view__search--dock .search-bar__icon) {
+  background: rgba(183, 121, 31, 0.18);
 }
 </style>

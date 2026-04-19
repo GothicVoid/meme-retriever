@@ -74,7 +74,10 @@
         class="reason-panel ui-result-card__info"
       >
         <div class="reason-header">
-          <span class="relevance-badge" :class="relevanceBadgeClass">{{ relevanceLabel }}</span>
+          <span
+            class="relevance-badge"
+            :class="relevanceBadgeClass"
+          >{{ relevanceLabel }}</span>
           <span class="reason-title">{{ primaryReasonLabel }}</span>
         </div>
         <div class="reason-evidence">
@@ -90,7 +93,9 @@
     </div>
     <div
       v-if="hoverPreviewVisible"
+      ref="hoverPreviewRef"
       class="hover-preview ui-floating-panel"
+      :style="hoverPreviewStyle"
       data-testid="hover-preview"
     >
       <img
@@ -174,6 +179,9 @@ const menuX = ref(0);
 const menuY = ref(0);
 const menuRef = ref<HTMLElement | null>(null);
 const cardRef = ref<HTMLElement | null>(null);
+const hoverPreviewRef = ref<HTMLElement | null>(null);
+const hoverPreviewX = ref(0);
+const hoverPreviewY = ref(0);
 let hoverPreviewTimer: number | null = null;
 const imgError = ref<"normal" | "missing" | "load-failed" | "gif-damaged">(
   props.image.fileStatus === "missing" ? "missing" : "normal",
@@ -256,6 +264,10 @@ const evidenceList = computed(() => {
 });
 
 const reasonSummary = computed(() => debugInfo.value ? `${relevanceLabel.value} ${primaryReasonLabel.value}` : "");
+const hoverPreviewStyle = computed(() => ({
+  left: `${hoverPreviewX.value}px`,
+  top: `${hoverPreviewY.value}px`,
+}));
 
 async function handleClick() {
   hoverPreviewVisible.value = false;
@@ -335,6 +347,7 @@ function handleMouseEnter() {
   clearHoverPreviewTimer();
   hoverPreviewTimer = window.setTimeout(() => {
     hoverPreviewVisible.value = true;
+    void nextTick(() => updateHoverPreviewPosition());
     hoverPreviewTimer = null;
   }, 160);
 }
@@ -355,6 +368,38 @@ function handleImageError() {
     return;
   }
   imgError.value = props.image.fileFormat?.toLowerCase() === "gif" ? "gif-damaged" : "load-failed";
+}
+
+function updateHoverPreviewPosition() {
+  const card = cardRef.value;
+  const preview = hoverPreviewRef.value;
+  if (!card || !preview) return;
+
+  const cardRect = card.getBoundingClientRect();
+  const previewRect = preview.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const gap = 10;
+
+  let left = cardRect.right - previewRect.width;
+  let top = cardRect.top - previewRect.height - gap;
+
+  if (left + previewRect.width > viewportWidth - gap) {
+    left = viewportWidth - previewRect.width - gap;
+  }
+  if (left < gap) {
+    left = gap;
+  }
+
+  if (top < gap) {
+    top = Math.min(cardRect.bottom + gap, viewportHeight - previewRect.height - gap);
+  }
+  if (top < gap) {
+    top = gap;
+  }
+
+  hoverPreviewX.value = left;
+  hoverPreviewY.value = top;
 }
 
 onMounted(() => document.addEventListener("click", closeMenu));
@@ -395,12 +440,10 @@ onUnmounted(() => {
 }
 
 .hover-preview {
-  position: absolute;
-  right: 0.5rem;
-  bottom: calc(100% + 0.5rem);
+  position: fixed;
   width: min(240px, calc(100vw - 2rem));
   padding: 0.625rem;
-  z-index: 90;
+  z-index: 400;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

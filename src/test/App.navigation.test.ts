@@ -21,14 +21,20 @@ function createTestRouter() {
   });
 }
 
-describe("App 一级导航", () => {
+describe("App 工作台壳层", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    localStorage.clear();
     mockInvoke.mockReset();
-    mockInvoke.mockResolvedValue([]);
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_pending_tasks") {
+        return [];
+      }
+      return undefined;
+    });
   });
 
-  it("顶层导航只显示首页搜索、图库管理和设置", async () => {
+  it("搜索首页默认渲染侧边栏极简头部和更多入口", async () => {
     const router = createTestRouter();
     await router.push("/");
     await router.isReady();
@@ -40,27 +46,12 @@ describe("App 一级导航", () => {
     });
     await flushPromises();
 
-    const links = wrapper.findAll(".nav a");
-    expect(links).toHaveLength(3);
-    expect(links.map((item) => item.text())).toEqual(["首页 / 搜索", "图库管理", "设置"]);
+    expect(wrapper.get(".app-shell__topbar").text()).toContain("快速找图");
+    expect(wrapper.get('[data-action="toggle-more-menu"]').text()).toBe("整理");
+    expect(wrapper.find(".app-shell__expanded-toolbar").exists()).toBe(false);
   });
 
-  it("顶层导航不再暴露私有角色库维护入口", async () => {
-    const router = createTestRouter();
-    await router.push("/");
-    await router.isReady();
-
-    const wrapper = mount(App, {
-      global: {
-        plugins: [router],
-      },
-    });
-    await flushPromises();
-
-    expect(wrapper.text()).not.toContain("私有角色库维护");
-  });
-
-  it("切换到图库管理页时保持对应导航高亮", async () => {
+  it("进入图库页时切换为展开工作台头部", async () => {
     const router = createTestRouter();
     await router.push("/library");
     await router.isReady();
@@ -72,11 +63,29 @@ describe("App 一级导航", () => {
     });
     await flushPromises();
 
-    const activeLink = wrapper.get(".nav a.router-link-active");
-    expect(activeLink.text()).toBe("图库管理");
+    expect(wrapper.get(".app-shell__expanded-toolbar").text()).toContain("图库整理");
+    expect(wrapper.find(".app-shell__topbar").exists()).toBe(false);
   });
 
-  it("应用外壳挂载统一主题入口和页面骨架类", async () => {
+  it("启动时按当前模式调用窗口布局命令", async () => {
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("apply_window_layout", {
+      mode: "sidebar",
+      dockSide: "right",
+    });
+  });
+
+  it("切换更多菜单中的停靠侧会重新应用窗口布局", async () => {
     const router = createTestRouter();
     await router.push("/");
     await router.isReady();
@@ -88,13 +97,17 @@ describe("App 一级导航", () => {
     });
     await flushPromises();
 
-    const shell = wrapper.get('[data-ui-theme="memedesk"]');
-    expect(shell.classes()).toContain("app-shell");
-    expect(wrapper.get("nav").classes()).toContain("app-nav");
-    expect(wrapper.get("main").classes()).toContain("app-shell__content");
+    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
+    await wrapper.get('[data-action="toggle-dock-side"]').trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("apply_window_layout", {
+      mode: "sidebar",
+      dockSide: "left",
+    });
   });
 
-  it("一级导航链接挂载统一基础导航类", async () => {
+  it("点击整理图库会进入展开管理态", async () => {
     const router = createTestRouter();
     await router.push("/");
     await router.isReady();
@@ -106,8 +119,12 @@ describe("App 一级导航", () => {
     });
     await flushPromises();
 
-    const links = wrapper.findAll(".app-nav__link");
-    expect(links).toHaveLength(3);
+    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
+    await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe("/library");
+    expect(wrapper.find(".app-shell__expanded-toolbar").exists()).toBe(true);
   });
 
   it("启动时存在未完成入库任务时显示恢复对话框", async () => {
@@ -115,7 +132,7 @@ describe("App 一级导航", () => {
       if (cmd === "get_pending_tasks") {
         return [{ id: 1, filePath: "/tmp/a.jpg" }, { id: 2, filePath: "/tmp/b.jpg" }];
       }
-      return [];
+      return undefined;
     });
 
     const router = createTestRouter();
@@ -132,63 +149,5 @@ describe("App 一级导航", () => {
     expect(wrapper.text()).toContain("上次有 2 张图片还没整理完");
     expect(wrapper.text()).toContain("继续处理");
     expect(wrapper.text()).toContain("放弃并清理");
-  });
-
-  it("点击继续处理会调用恢复任务命令", async () => {
-    mockInvoke.mockImplementation(async (cmd) => {
-      if (cmd === "get_pending_tasks") {
-        return [{ id: 1, filePath: "/tmp/a.jpg" }];
-      }
-      if (cmd === "resume_pending_tasks") {
-        return 1;
-      }
-      return [];
-    });
-
-    const router = createTestRouter();
-    await router.push("/");
-    await router.isReady();
-
-    const wrapper = mount(App, {
-      global: {
-        plugins: [router],
-      },
-    });
-    await flushPromises();
-
-    await wrapper.get("[data-action='resume-pending-tasks']").trigger("click");
-    await flushPromises();
-
-    expect(mockInvoke).toHaveBeenCalledWith("resume_pending_tasks");
-    expect(wrapper.text()).not.toContain("上次有 1 张图片还没整理完");
-  });
-
-  it("点击放弃并清理会调用清空任务队列命令", async () => {
-    mockInvoke.mockImplementation(async (cmd) => {
-      if (cmd === "get_pending_tasks") {
-        return [{ id: 1, filePath: "/tmp/a.jpg" }];
-      }
-      if (cmd === "clear_task_queue") {
-        return undefined;
-      }
-      return [];
-    });
-
-    const router = createTestRouter();
-    await router.push("/");
-    await router.isReady();
-
-    const wrapper = mount(App, {
-      global: {
-        plugins: [router],
-      },
-    });
-    await flushPromises();
-
-    await wrapper.get("[data-action='clear-pending-tasks']").trigger("click");
-    await flushPromises();
-
-    expect(mockInvoke).toHaveBeenCalledWith("clear_task_queue");
-    expect(wrapper.text()).not.toContain("上次有 1 张图片还没整理完");
   });
 });

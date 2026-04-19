@@ -16,6 +16,50 @@
           step="3"
         >
       </label>
+      <div class="window-preference">
+        <div class="window-preference__group">
+          <span class="window-preference__label">默认工作态</span>
+          <div class="window-preference__options">
+            <label class="window-option">
+              <input
+                v-model="settings.windowMode"
+                type="radio"
+                value="sidebar"
+              >
+              侧边栏找图
+            </label>
+            <label class="window-option">
+              <input
+                v-model="settings.windowMode"
+                type="radio"
+                value="expanded"
+              >
+              展开工作台
+            </label>
+          </div>
+        </div>
+        <div class="window-preference__group">
+          <span class="window-preference__label">侧边栏停靠侧</span>
+          <div class="window-preference__options">
+            <label class="window-option">
+              <input
+                v-model="settings.dockSide"
+                type="radio"
+                value="right"
+              >
+              右侧
+            </label>
+            <label class="window-option">
+              <input
+                v-model="settings.dockSide"
+                type="radio"
+                value="left"
+              >
+              左侧
+            </label>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="settings-section">
@@ -225,6 +269,37 @@ label { display: flex; flex-direction: column; gap: 0.25rem; }
 }
 .advanced-entry__copy h4 { font-size: 0.95rem; }
 .advanced-entry__copy p { font-size: 0.875rem; color: #666; line-height: 1.5; }
+.window-preference {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  background: #faf8f2;
+}
+.window-preference__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.window-preference__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.window-preference__options {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.window-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #ddd5c8;
+  border-radius: 999px;
+  background: #fff;
+}
 .btn-danger {
   background: #ff4d4f;
   color: #fff;

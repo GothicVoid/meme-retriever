@@ -72,6 +72,8 @@ pub fn run() {
             commands::get_pending_tasks,
             commands::resume_pending_tasks,
             commands::clear_task_queue,
+            commands::apply_window_layout,
+            commands::show_main_window,
             commands::kb_get_state,
             commands::kb_validate_entries,
             commands::kb_test_match_entries,

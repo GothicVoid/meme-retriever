@@ -76,48 +76,36 @@ button {
 
 .app-shell {
   min-height: 100vh;
-  padding: var(--ui-space-5);
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: var(--ui-space-5);
+  gap: 12px;
 }
 
 .app-shell__content {
-  width: min(1200px, 100%);
-  margin: 0 auto;
+  min-height: 0;
+  flex: 1;
 }
 
-.app-nav {
-  width: min(1200px, 100%);
-  margin: 0 auto;
-  padding: var(--ui-space-2);
+.app-shell--sidebar {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-shell--sidebar .app-shell__content {
   display: flex;
-  gap: var(--ui-space-2);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 88%, white);
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-lg);
-  box-shadow: var(--ui-shadow-soft);
+  flex-direction: column;
+  min-height: 0;
 }
 
-.app-nav__link {
-  padding: 10px 16px;
-  border-radius: 999px;
-  color: var(--ui-text-secondary);
-  text-decoration: none;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
+.app-shell--expanded {
+  padding: var(--ui-space-5);
+  gap: var(--ui-space-5);
 }
 
-.app-nav__link:hover {
-  background: var(--ui-bg-hover);
-  color: var(--ui-text-primary);
-}
-
-.app-nav__link.router-link-active {
-  background: rgba(183, 121, 31, 0.14);
-  color: var(--ui-accent);
-  font-weight: 600;
+.app-shell--expanded .app-shell__content {
+  width: min(1200px, 100%);
+  margin: 0 auto;
 }
 
 .ui-input-shell {

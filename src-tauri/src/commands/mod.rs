@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, Position, Size, State};
 use uuid::Uuid;
 
 use crate::db::{repo, DbPool};
@@ -157,11 +157,44 @@ pub struct KbTestMatchPayload {
     pub recommended_name: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowLayoutPayload {
+    pub mode: String,
+    pub dock_side: String,
+}
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+fn resolve_window_metrics(
+    mode: &str,
+    dock_side: &str,
+    work_area_width: f64,
+    work_area_height: f64,
+    work_area_x: f64,
+    work_area_y: f64,
+) -> ((f64, f64), (f64, f64), (f64, f64)) {
+    if mode == "sidebar" {
+        let width = (work_area_width * 0.25).clamp(380.0, 460.0);
+        let height = work_area_height.max(640.0);
+        let x = if dock_side == "left" {
+            work_area_x
+        } else {
+            work_area_x + work_area_width - width
+        };
+        return ((width, height), (360.0, 560.0), (x, work_area_y));
+    }
+
+    let width = (work_area_width * 0.72).clamp(960.0, 1320.0);
+    let height = (work_area_height * 0.86).clamp(720.0, 980.0);
+    let x = work_area_x + ((work_area_width - width) / 2.0);
+    let y = work_area_y + ((work_area_height - height) / 2.0);
+    ((width, height), (820.0, 620.0), (x, y))
 }
 
 fn resolve_kb_path() -> Result<PathBuf, String> {
@@ -1286,6 +1319,62 @@ pub async fn kb_save_entries(
 pub async fn kb_import_example_image(source_path: String, name: String) -> Result<String, String> {
     let kb_path = resolve_kb_path()?;
     import_example_image_impl(&source_path, &name, &kb_path)
+}
+
+#[tauri::command]
+pub async fn apply_window_layout(
+    mode: String,
+    dock_side: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不存在".to_string())?;
+
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or_else(|| "未找到可用显示器".to_string())?;
+
+    if mode == "sidebar" {
+        window.unmaximize().ok();
+        window.set_maximizable(false).map_err(|e| e.to_string())?;
+    } else {
+        window.set_maximizable(true).map_err(|e| e.to_string())?;
+    }
+
+    let work_area = monitor.work_area();
+    let ((width, height), (min_width, min_height), (x, y)) = resolve_window_metrics(
+        &mode,
+        &dock_side,
+        work_area.size.width as f64,
+        work_area.size.height as f64,
+        work_area.position.x as f64,
+        work_area.position.y as f64,
+    );
+
+    window
+        .set_min_size(Some(Size::Logical(LogicalSize::new(
+            min_width, min_height,
+        ))))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(Size::Logical(LogicalSize::new(width, height)))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_position(Position::Logical(LogicalPosition::new(x, y)))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不存在".to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
 }
 
 // ── 测试 ────────────────────────────────────────────────────────────────────
