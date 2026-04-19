@@ -78,7 +78,6 @@ describe("App 工作台壳层", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("apply_window_layout", {
       mode: "sidebar",
-      dockSide: "right",
     });
   });
 

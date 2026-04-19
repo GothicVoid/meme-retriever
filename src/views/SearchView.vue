@@ -268,14 +268,6 @@
             <button
               type="button"
               class="search-view__more-action"
-              data-action="toggle-dock-side"
-              @click="toggleDockSide"
-            >
-              {{ settings.dockSide === "right" ? "切到左侧" : "切到右侧" }}
-            </button>
-            <button
-              type="button"
-              class="search-view__more-action"
               data-action="enter-expanded-mode"
               @click="enterExpandedManagement"
             >
@@ -687,11 +679,6 @@ async function openSettingsPanel() {
 
 async function enterExpandedManagement() {
   await openGalleryManagement();
-}
-
-function toggleDockSide() {
-  settings.dockSide = settings.dockSide === "right" ? "left" : "right";
-  closeMoreMenu();
 }
 
 function handleSearchFocus() {

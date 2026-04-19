@@ -14,10 +14,9 @@ describe("useSettingsStore", () => {
     expect(s.devDebugMode).toBe(false);
   });
 
-  it("窗口模式默认是 sidebar，停靠侧默认在右侧", () => {
+  it("窗口模式默认是 sidebar", () => {
     const s = useSettingsStore();
     expect(s.windowMode).toBe("sidebar");
-    expect(s.dockSide).toBe("right");
   });
 
   it("devDebugMode 修改后持久化到 localStorage", async () => {
@@ -49,18 +48,15 @@ describe("useSettingsStore", () => {
   it("窗口偏好修改后持久化到 localStorage", async () => {
     const s = useSettingsStore();
     s.windowMode = "expanded";
-    s.dockSide = "left";
     await nextTick();
 
     const saved = JSON.parse(localStorage.getItem("settings")!);
     expect(saved.windowMode).toBe("expanded");
-    expect(saved.dockSide).toBe("left");
   });
 
   it("从 localStorage 加载窗口偏好", () => {
-    localStorage.setItem("settings", JSON.stringify({ windowMode: "expanded", dockSide: "left" }));
+    localStorage.setItem("settings", JSON.stringify({ windowMode: "expanded" }));
     const s = useSettingsStore();
     expect(s.windowMode).toBe("expanded");
-    expect(s.dockSide).toBe("left");
   });
 });

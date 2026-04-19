@@ -161,14 +161,23 @@ pub struct KbTestMatchPayload {
 #[serde(rename_all = "camelCase")]
 pub struct WindowLayoutPayload {
     pub mode: String,
-    pub dock_side: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowSnapshot {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowPreferences {
     pub mode: String,
-    pub dock_side: String,
+    pub sidebar_snapshot: Option<WindowSnapshot>,
+    pub expanded_snapshot: Option<WindowSnapshot>,
 }
 
 fn now_secs() -> i64 {
@@ -182,7 +191,8 @@ impl Default for WindowPreferences {
     fn default() -> Self {
         Self {
             mode: "sidebar".to_string(),
-            dock_side: "right".to_string(),
+            sidebar_snapshot: None,
+            expanded_snapshot: None,
         }
     }
 }
@@ -207,37 +217,113 @@ fn save_window_preferences_to_dir(
     std::fs::write(path, json).map_err(|e| e.to_string())
 }
 
+struct WorkAreaMetrics {
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+}
+
+fn clamp_snapshot_to_work_area(
+    snapshot: &WindowSnapshot,
+    min_width: f64,
+    min_height: f64,
+    max_width: f64,
+    max_height: f64,
+    work_area: &WorkAreaMetrics,
+) -> (f64, f64, f64, f64) {
+    let width = snapshot.width.clamp(min_width, max_width.min(work_area.width));
+    let height = snapshot.height.clamp(min_height, max_height.min(work_area.height));
+    let max_x = work_area.x + (work_area.width - width).max(0.0);
+    let max_y = work_area.y + (work_area.height - height).max(0.0);
+    let x = snapshot.x.clamp(work_area.x, max_x);
+    let y = snapshot.y.clamp(work_area.y, max_y);
+    (width, height, x, y)
+}
+
 fn resolve_window_metrics(
     mode: &str,
-    dock_side: &str,
+    prefs: &WindowPreferences,
     work_area_width: f64,
     work_area_height: f64,
     work_area_x: f64,
     work_area_y: f64,
 ) -> ((f64, f64), (f64, f64), (f64, f64)) {
+    let work_area = WorkAreaMetrics {
+        width: work_area_width,
+        height: work_area_height,
+        x: work_area_x,
+        y: work_area_y,
+    };
     if mode == "sidebar" {
-        let width = (work_area_width * 0.25).clamp(380.0, 460.0);
-        let height = (work_area_height * 0.88).clamp(640.0, 860.0);
-        let top_offset = ((work_area_height - height) / 2.0).clamp(16.0, 40.0);
-        let x = if dock_side == "left" {
-            work_area_x
-        } else {
-            work_area_x + work_area_width - width
-        };
-        return ((width, height), (360.0, 560.0), (x, work_area_y + top_offset));
+        let default_width = (work_area_width * 0.25).clamp(380.0, 460.0);
+        let default_height = (work_area_height * 0.88).clamp(640.0, 860.0);
+        let min_width = 360.0;
+        let min_height = 560.0;
+        if let Some(snapshot) = &prefs.sidebar_snapshot {
+            let (width, height, x, y) = clamp_snapshot_to_work_area(
+                snapshot,
+                min_width,
+                min_height,
+                460.0,
+                860.0,
+                &work_area,
+            );
+            return ((width, height), (min_width, min_height), (x, y));
+        }
+        let top_offset = ((work_area_height - default_height) / 2.0).clamp(16.0, 40.0);
+        let x = work_area_x + work_area_width - default_width;
+        return (
+            (default_width, default_height),
+            (min_width, min_height),
+            (x, work_area_y + top_offset),
+        );
     }
 
-    let width = (work_area_width * 0.72).clamp(960.0, 1320.0);
-    let height = (work_area_height * 0.86).clamp(720.0, 980.0);
-    let x = work_area_x + ((work_area_width - width) / 2.0);
-    let y = work_area_y + ((work_area_height - height) / 2.0);
-    ((width, height), (820.0, 620.0), (x, y))
+    let default_width = (work_area_width * 0.72).clamp(960.0, 1320.0);
+    let default_height = (work_area_height * 0.86).clamp(720.0, 980.0);
+    let min_width = 820.0;
+    let min_height = 620.0;
+    if let Some(snapshot) = &prefs.expanded_snapshot {
+        let (width, height, x, y) = clamp_snapshot_to_work_area(
+            snapshot,
+            min_width,
+            min_height,
+            1320.0,
+            980.0,
+            &work_area,
+        );
+        return ((width, height), (min_width, min_height), (x, y));
+    }
+    let x = work_area_x + ((work_area_width - default_width) / 2.0);
+    let y = work_area_y + ((work_area_height - default_height) / 2.0);
+    ((default_width, default_height), (min_width, min_height), (x, y))
+}
+
+pub fn update_window_snapshot_in_dir(
+    app_data_dir: &Path,
+    mode: &str,
+    snapshot: WindowSnapshot,
+) -> Result<(), String> {
+    let mut prefs = load_window_preferences_from_dir(app_data_dir);
+    if mode == "sidebar" {
+        prefs.sidebar_snapshot = Some(snapshot);
+    } else {
+        prefs.expanded_snapshot = Some(snapshot);
+    }
+    save_window_preferences_to_dir(app_data_dir, &prefs)
+}
+
+fn save_window_mode_to_dir(app_data_dir: &Path, mode: &str) -> Result<(), String> {
+    let mut prefs = load_window_preferences_from_dir(app_data_dir);
+    prefs.mode = mode.to_string();
+    save_window_preferences_to_dir(app_data_dir, &prefs)
 }
 
 pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
     mode: &str,
-    dock_side: &str,
+    prefs: &WindowPreferences,
 ) -> Result<(), String> {
     let monitor = window
         .current_monitor()
@@ -255,7 +341,7 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     let work_area = monitor.work_area();
     let ((width, height), (min_width, min_height), (x, y)) = resolve_window_metrics(
         mode,
-        dock_side,
+        prefs,
         work_area.size.width as f64,
         work_area.size.height as f64,
         work_area.position.x as f64,
@@ -1403,27 +1489,24 @@ pub async fn kb_import_example_image(source_path: String, name: String) -> Resul
 #[tauri::command]
 pub async fn apply_window_layout(
     mode: String,
-    dock_side: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "主窗口不存在".to_string())?;
-    apply_window_layout_to_window(&window, &mode, &dock_side)
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let prefs = load_window_preferences_from_dir(&app_data_dir);
+    apply_window_layout_to_window(&window, &mode, &prefs)
 }
 
 #[tauri::command]
 pub async fn save_window_preferences(
     mode: String,
-    dock_side: String,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
-    save_window_preferences_to_dir(
-        &app_data_dir,
-        &WindowPreferences { mode, dock_side },
-    )
+    save_window_mode_to_dir(&app_data_dir, &mode)
 }
 
 #[tauri::command]

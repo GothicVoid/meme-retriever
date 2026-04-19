@@ -38,27 +38,6 @@
             </label>
           </div>
         </div>
-        <div class="window-preference__group">
-          <span class="window-preference__label">侧边栏停靠侧</span>
-          <div class="window-preference__options">
-            <label class="window-option">
-              <input
-                v-model="settings.dockSide"
-                type="radio"
-                value="right"
-              >
-              右侧
-            </label>
-            <label class="window-option">
-              <input
-                v-model="settings.dockSide"
-                type="radio"
-                value="left"
-              >
-              左侧
-            </label>
-          </div>
-        </div>
       </div>
     </section>
 

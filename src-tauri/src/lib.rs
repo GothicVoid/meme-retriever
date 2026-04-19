@@ -9,7 +9,7 @@ pub mod ml;
 pub mod search;
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -50,7 +50,50 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 let prefs = commands::load_window_preferences_from_dir(&app_data);
-                commands::apply_window_layout_to_window(&window, &prefs.mode, &prefs.dock_side)?;
+                commands::apply_window_layout_to_window(&window, &prefs.mode, &prefs)?;
+
+                let app_data_for_events = app_data.clone();
+                let event_window = window.clone();
+                window.on_window_event(move |event| {
+                    let snapshot = match event {
+                        WindowEvent::Moved(position) => Some(commands::WindowSnapshot {
+                            x: position.x as f64,
+                            y: position.y as f64,
+                            width: 0.0,
+                            height: 0.0,
+                        }),
+                        WindowEvent::Resized(size) => Some(commands::WindowSnapshot {
+                            x: 0.0,
+                            y: 0.0,
+                            width: size.width as f64,
+                            height: size.height as f64,
+                        }),
+                        _ => None,
+                    };
+
+                    if snapshot.is_none() {
+                        return;
+                    }
+
+                    let prefs = commands::load_window_preferences_from_dir(&app_data_for_events);
+                    let Ok(position) = event_window.outer_position() else {
+                        return;
+                    };
+                    let Ok(size) = event_window.outer_size() else {
+                        return;
+                    };
+                    let snapshot = commands::WindowSnapshot {
+                        x: position.x as f64,
+                        y: position.y as f64,
+                        width: size.width as f64,
+                        height: size.height as f64,
+                    };
+                    let _ = commands::update_window_snapshot_in_dir(
+                        &app_data_for_events,
+                        &prefs.mode,
+                        snapshot,
+                    );
+                });
             }
             Ok(())
         })

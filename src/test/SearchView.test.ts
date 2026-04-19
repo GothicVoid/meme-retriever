@@ -85,6 +85,7 @@ const mockHomeState = {
 describe("SearchView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    localStorage.clear();
     mockInvoke.mockReset();
     mockConfirm.mockReset();
     copyImageMock.mockReset();
@@ -144,23 +145,24 @@ describe("SearchView", () => {
     expect(useSettingsStore().windowMode).toBe("expanded");
   });
 
-  it("点击底部更多菜单中的切换停靠侧会更新停靠偏好", async () => {
+  it("底部更多菜单不再暴露左右停靠切换", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
       return Promise.resolve([]);
     });
-    const wrapper = mount(SearchView);
+    const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
-
-    const settingsStore = useSettingsStore();
-    expect(settingsStore.dockSide).toBe("right");
 
     await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
-    await wrapper.get('[data-action="toggle-dock-side"]').trigger("click");
     await flushPromises();
 
-    expect(settingsStore.dockSide).toBe("left");
+    expect(wrapper.text()).toContain("图库管理");
+    expect(wrapper.text()).toContain("打开设置");
+    expect(wrapper.text()).toContain("展开整理模式");
+    expect(wrapper.find('[data-action="toggle-dock-side"]').exists()).toBe(false);
+
+    wrapper.unmount();
   });
 
   it("输入非空查询后切换到搜索结果态", async () => {

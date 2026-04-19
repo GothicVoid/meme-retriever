@@ -154,12 +154,12 @@ onMounted(async () => {
 });
 
 watch(
-  [effectiveWindowMode, () => settings.dockSide, () => route.fullPath],
-  async ([mode, dockSide]) => {
+  [effectiveWindowMode, () => route.fullPath],
+  async ([mode]) => {
     await nextTick();
     await Promise.all([
-      applyWindowLayout(mode, dockSide),
-      saveWindowPreferences(mode, dockSide),
+      applyWindowLayout(mode),
+      saveWindowPreferences(mode),
     ]);
   },
   { immediate: true }
