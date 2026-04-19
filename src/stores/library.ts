@@ -30,6 +30,7 @@ export const useLibraryStore = defineStore("library", () => {
   const clearTotal = ref(0);
   const clearCurrent = ref(0);
   const selectedIds = ref<Set<string>>(new Set());
+  let resumeIndexingUnlisten: null | (() => void) = null;
 
   async function fetchImages(page = 0, append = false) {
     loading.value = true;
@@ -117,6 +118,31 @@ export const useLibraryStore = defineStore("library", () => {
     await fetchImages();
   }
 
+  function stopResumeIndexing() {
+    if (resumeIndexingUnlisten) {
+      resumeIndexingUnlisten();
+      resumeIndexingUnlisten = null;
+    }
+    indexing.value = false;
+  }
+
+  async function resumeIndexing(totalCount: number) {
+    stopResumeIndexing();
+    if (totalCount <= 0) return;
+
+    indexing.value = true;
+    indexTotal.value = totalCount;
+    indexCurrent.value = 0;
+    resumeIndexingUnlisten = await listen("index-progress", () => {
+      indexCurrent.value += 1;
+      if (indexCurrent.value >= indexTotal.value) {
+        stopResumeIndexing();
+        void fetchImages();
+        void fetchImageCount();
+      }
+    });
+  }
+
   async function clearGallery() {
     if (images.value.length === 0) {
       return;
@@ -171,6 +197,8 @@ export const useLibraryStore = defineStore("library", () => {
     addImages,
     deleteImage,
     addFolder,
+    resumeIndexing,
+    stopResumeIndexing,
     clearGallery,
     toggleSelection,
     clearSelection,

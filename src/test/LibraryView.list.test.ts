@@ -68,6 +68,7 @@ describe("LibraryView 图片列表展示", () => {
   it("首屏显示总数且只加载 15 张图片", async () => {
     const images = makeImages(15);
     mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 20;
       if (cmd === "get_images" && pageOf(args) === 0) return images;
       return [];
@@ -85,6 +86,7 @@ describe("LibraryView 图片列表展示", () => {
 
   it("顶部显示按路径引用图片的使用提示", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 1;
       if (cmd === "get_images" && pageOf(args) === 0) return makeImages(1);
       return [];
@@ -105,6 +107,7 @@ describe("LibraryView 图片列表展示", () => {
     const page1 = makeImages(5).map((image, index) => ({ ...image, id: `img-next-${index}` }));
 
     mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 20;
       if (cmd === "get_images" && pageOf(args) === 0) return page0;
       if (cmd === "get_images" && pageOf(args) === 1) return page1;
@@ -128,6 +131,7 @@ describe("LibraryView 图片列表展示", () => {
 
   it("图库为空时显示空状态提示", async () => {
     mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 0;
       if (cmd === "get_images") return [];
       return [];
@@ -140,10 +144,19 @@ describe("LibraryView 图片列表展示", () => {
   });
 
   it("初始加载失败时显示重试按钮并可重新加载", async () => {
-    mockInvoke
-      .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(makeImages(2));
+    let firstLoad = true;
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") {
+        if (firstLoad) {
+          firstLoad = false;
+          throw new Error("boom");
+        }
+        return 2;
+      }
+      if (cmd === "get_images" && pageOf(args) === 0) return makeImages(2);
+      return [];
+    });
 
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
@@ -163,6 +176,7 @@ describe("LibraryView 图片列表展示", () => {
     HTMLElement.prototype.scrollTo = scrollToMock;
 
     mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 30;
       if (cmd === "get_images" && pageOf(args) === 0) return images;
       return [];

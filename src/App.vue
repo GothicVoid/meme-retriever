@@ -31,24 +31,27 @@
 
     <!-- 任务恢复对话框 -->
     <div
-      v-if="showResumeDialog"
+      v-if="recoveryStore.pendingCount > 0"
       class="resume-backdrop ui-dialog-backdrop"
-      @click.self="showResumeDialog = false"
     >
       <div class="resume-dialog ui-dialog">
-        <p>检测到 {{ pendingCount }} 个未完成的入库任务，是否继续？</p>
+        <p>上次有 {{ recoveryStore.pendingCount }} 张图片还没整理完。</p>
         <div class="resume-actions">
           <button
+            data-action="resume-pending-tasks"
             class="btn-primary ui-button ui-button--primary"
+            :disabled="recoveryStore.resuming || recoveryStore.clearing"
             @click="resumeTasks"
           >
-            继续入库
+            {{ recoveryStore.resuming ? "继续处理中..." : "继续处理" }}
           </button>
           <button
+            data-action="clear-pending-tasks"
             class="btn-secondary ui-button ui-button--secondary"
-            @click="dismissResume"
+            :disabled="recoveryStore.resuming || recoveryStore.clearing"
+            @click="clearPendingTasks"
           >
-            忽略
+            {{ recoveryStore.clearing ? "清理中..." : "放弃并清理" }}
           </button>
         </div>
       </div>
@@ -57,39 +60,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { onMounted } from "vue";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
+import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 
-const showResumeDialog = ref(false);
-const pendingCount = ref(0);
+const recoveryStore = useTaskRecoveryStore();
 
 onMounted(async () => {
   try {
-    const tasks = await invoke<{ id: number; filePath: string }[]>("get_pending_tasks");
-    if (tasks.length > 0) {
-      pendingCount.value = tasks.length;
-      showResumeDialog.value = true;
-    }
+    await recoveryStore.fetchPendingTasks();
   } catch {
     // 静默失败，不影响正常使用
-    console.warn('尝试获取未完成任务时失败')
+    console.warn("尝试获取未完成任务时失败");
   }
 });
 
 async function resumeTasks() {
-  showResumeDialog.value = false;
   try {
-    await invoke("resume_pending_tasks");
+    await recoveryStore.resumePendingTasks();
   } catch {
     // 静默失败
-    console.warn('尝试恢复未完成任务时失败')
+    console.warn("尝试恢复未完成任务时失败");
   }
 }
 
-function dismissResume() {
-  showResumeDialog.value = false;
+async function clearPendingTasks() {
+  try {
+    await recoveryStore.clearPendingTasks();
+  } catch {
+    console.warn("尝试清理未完成任务时失败");
+  }
 }
 </script>
 

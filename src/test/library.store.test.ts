@@ -240,6 +240,33 @@ describe("useLibraryStore", () => {
     expect(mockListen).not.toHaveBeenCalled();
     expect(store.images).toEqual([]);
   });
+
+  it("resumeIndexing 可接入后台恢复任务的进度事件", async () => {
+    let progressHandler!: (e: Event<unknown>) => void;
+    mockListen.mockImplementation((_event, handler) => {
+      progressHandler = handler as (e: Event<unknown>) => void;
+      return Promise.resolve(() => {});
+    });
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockInvoke.mockResolvedValueOnce(2);
+
+    const store = useLibraryStore();
+    await store.resumeIndexing(2);
+
+    expect(store.indexing).toBe(true);
+    expect(store.indexTotal).toBe(2);
+    expect(store.indexCurrent).toBe(0);
+
+    progressHandler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
+    expect(store.indexCurrent).toBe(1);
+
+    progressHandler({ payload: { id: "uuid-2", status: "completed" } } as Event<unknown>);
+    await flushPromises();
+
+    expect(store.indexing).toBe(false);
+    expect(mockInvoke).toHaveBeenCalledWith("get_images", { page: 0 });
+    expect(mockInvoke).toHaveBeenCalledWith("get_image_count");
+  });
 });
 
 describe("useLibraryStore 批量选择", () => {

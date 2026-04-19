@@ -34,10 +34,13 @@ describe("LibraryView 进度条", () => {
   });
 
   it("添加图片过程中显示进度条和计数", async () => {
-    mockInvoke.mockResolvedValueOnce(0); // get_image_count
-    mockInvoke.mockResolvedValueOnce([]); // get_images
-    // add_images 永不 resolve → indexing 持续为 true
-    mockInvoke.mockReturnValueOnce(new Promise(() => {}));
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_pending_tasks") return Promise.resolve([]);
+      if (cmd === "get_image_count") return Promise.resolve(0);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "add_images") return new Promise(() => {});
+      return Promise.resolve([]);
+    });
 
     mockOpen.mockResolvedValueOnce(["/tmp/a.jpg", "/tmp/b.jpg"]);
 
@@ -54,9 +57,13 @@ describe("LibraryView 进度条", () => {
   });
 
   it("添加文件夹过程中显示进度条和计数", async () => {
-    mockInvoke.mockResolvedValueOnce(0); // get_image_count
-    mockInvoke.mockResolvedValueOnce([]); // get_images
-    mockInvoke.mockResolvedValueOnce(3);  // add_folder → total=3，之后 listen 永不触发
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_pending_tasks") return Promise.resolve([]);
+      if (cmd === "get_image_count") return Promise.resolve(0);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "add_folder") return Promise.resolve(3);
+      return Promise.resolve([]);
+    });
 
     mockOpen.mockResolvedValueOnce("/tmp/memes");
 
@@ -73,8 +80,12 @@ describe("LibraryView 进度条", () => {
   });
 
   it("未入库时不显示进度条", async () => {
-    mockInvoke.mockResolvedValueOnce(0);
-    mockInvoke.mockResolvedValueOnce([]);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_pending_tasks") return Promise.resolve([]);
+      if (cmd === "get_image_count") return Promise.resolve(0);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 

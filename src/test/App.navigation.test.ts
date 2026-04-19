@@ -109,4 +109,86 @@ describe("App 一级导航", () => {
     const links = wrapper.findAll(".app-nav__link");
     expect(links).toHaveLength(3);
   });
+
+  it("启动时存在未完成入库任务时显示恢复对话框", async () => {
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_pending_tasks") {
+        return [{ id: 1, filePath: "/tmp/a.jpg" }, { id: 2, filePath: "/tmp/b.jpg" }];
+      }
+      return [];
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("上次有 2 张图片还没整理完");
+    expect(wrapper.text()).toContain("继续处理");
+    expect(wrapper.text()).toContain("放弃并清理");
+  });
+
+  it("点击继续处理会调用恢复任务命令", async () => {
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_pending_tasks") {
+        return [{ id: 1, filePath: "/tmp/a.jpg" }];
+      }
+      if (cmd === "resume_pending_tasks") {
+        return 1;
+      }
+      return [];
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    await wrapper.get("[data-action='resume-pending-tasks']").trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("resume_pending_tasks");
+    expect(wrapper.text()).not.toContain("上次有 1 张图片还没整理完");
+  });
+
+  it("点击放弃并清理会调用清空任务队列命令", async () => {
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_pending_tasks") {
+        return [{ id: 1, filePath: "/tmp/a.jpg" }];
+      }
+      if (cmd === "clear_task_queue") {
+        return undefined;
+      }
+      return [];
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    await wrapper.get("[data-action='clear-pending-tasks']").trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("clear_task_queue");
+    expect(wrapper.text()).not.toContain("上次有 1 张图片还没整理完");
+  });
 });

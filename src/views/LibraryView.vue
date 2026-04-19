@@ -75,6 +75,35 @@
       </div>
     </div>
     <div
+      v-if="recoveryStore.pendingCount > 0"
+      class="recovery-banner"
+    >
+      <div class="recovery-banner__copy">
+        <p class="recovery-banner__title">
+          上次有 {{ recoveryStore.pendingCount }} 张图片还没整理完
+        </p>
+        <p class="recovery-banner__text">
+          你可以继续处理这批图片，或放弃并清理未完成任务。
+        </p>
+      </div>
+      <div class="recovery-banner__actions">
+        <button
+          data-action="resume-pending-tasks"
+          :disabled="recoveryStore.resuming || recoveryStore.clearing"
+          @click="handleResumePendingTasks"
+        >
+          {{ recoveryStore.resuming ? "继续处理中..." : "继续处理" }}
+        </button>
+        <button
+          data-action="clear-pending-tasks"
+          :disabled="recoveryStore.resuming || recoveryStore.clearing"
+          @click="handleClearPendingTasks"
+        >
+          {{ recoveryStore.clearing ? "清理中..." : "放弃并清理" }}
+        </button>
+      </div>
+    </div>
+    <div
       v-if="store.indexing"
       class="index-status"
     >
@@ -171,9 +200,11 @@ import { routeLocationKey, type RouteLocationNormalizedLoaded } from "vue-router
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore } from "@/stores/library";
+import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
 
 const store = useLibraryStore();
+const recoveryStore = useTaskRecoveryStore();
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
 const detailId = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -242,7 +273,16 @@ watch(
 
 onMounted(() => {
   void reloadGallery();
+  void recoveryStore.fetchPendingTasks();
 });
+
+async function handleResumePendingTasks() {
+  await recoveryStore.resumePendingTasks();
+}
+
+async function handleClearPendingTasks() {
+  await recoveryStore.clearPendingTasks();
+}
 
 async function loadPage(page: number, append = false) {
   if (append) {
@@ -420,6 +460,22 @@ async function handleClearMissing() {
 }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.recovery-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 88%, #fff4d6);
+}
+.recovery-banner__copy { display: flex; flex-direction: column; gap: 0.25rem; }
+.recovery-banner__title,
+.recovery-banner__text { margin: 0; }
+.recovery-banner__title { font-weight: 600; }
+.recovery-banner__text { color: var(--ui-text-secondary); }
+.recovery-banner__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 .selection-count { font-size: 0.875rem; color: #666; }
 .gallery-total { font-size: 0.95rem; color: #444; font-weight: 600; }
 .index-status { margin-bottom: 0.75rem; font-size: 0.875rem; color: #666; display: flex; flex-direction: column; gap: 0.25rem; }
