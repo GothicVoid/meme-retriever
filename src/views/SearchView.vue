@@ -1,16 +1,11 @@
 <template>
   <div class="search-view">
-    <section class="search-view__summary">
-      <p class="search-view__eyebrow">
-        聊天旁边快速取图
-      </p>
-      <p
-        v-if="!isHomeMode"
-        class="search-view__summary-text"
-      >
-        {{ visibleResults.length > 0 ? `已准备 ${visibleResults.length} 张候选图` : "继续改几个词试试" }}
-      </p>
-    </section>
+    <p
+      v-if="!isHomeMode"
+      class="search-view__summary-text"
+    >
+      {{ visibleResults.length > 0 ? `已准备 ${visibleResults.length} 张候选图` : "继续改几个词试试" }}
+    </p>
     <section class="search-view__body">
       <div
         v-if="isHomeMode"
@@ -41,12 +36,9 @@
             v-if="quickPickImages.length > 0"
             class="home-section"
           >
-            <div class="home-section__header">
-              <h2 class="home-section__title">
-                直接挑一张
-              </h2>
-              <span class="home-section__hint">先发出去再说</span>
-            </div>
+            <h2 class="home-section__title">
+              最近常用
+            </h2>
             <ImageGrid
               :images="quickPickImages"
               :loading="homeLoading"
@@ -234,12 +226,64 @@
           @blur="handleSearchBlur"
         />
       </div>
-      <p
-        class="search-view__shortcut-hint"
-        data-testid="search-shortcuts-hint"
-      >
-        / 或 Ctrl+K 聚焦搜索
-      </p>
+      <div class="search-view__dock-meta">
+        <p
+          class="search-view__shortcut-hint"
+          data-testid="search-shortcuts-hint"
+        >
+          / 或 Ctrl+K 聚焦搜索
+        </p>
+        <div class="search-view__menu-wrap">
+          <button
+            ref="moreButtonRef"
+            type="button"
+            class="search-view__menu-button"
+            data-action="toggle-more-menu"
+            aria-label="打开更多操作"
+            @click="toggleMoreMenu"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+          <div
+            v-if="showMoreMenu"
+            ref="moreMenuRef"
+            class="search-view__more-menu ui-floating-panel"
+          >
+            <button
+              type="button"
+              class="search-view__more-action"
+              data-action="open-gallery-management"
+              @click="openGalleryManagement"
+            >
+              图库管理
+            </button>
+            <button
+              type="button"
+              class="search-view__more-action"
+              data-action="open-settings"
+              @click="openSettingsPanel"
+            >
+              打开设置
+            </button>
+            <button
+              type="button"
+              class="search-view__more-action"
+              data-action="toggle-dock-side"
+              @click="toggleDockSide"
+            >
+              {{ settings.dockSide === "right" ? "切到左侧" : "切到右侧" }}
+            </button>
+            <button
+              type="button"
+              class="search-view__more-action"
+              data-action="enter-expanded-mode"
+              @click="enterExpandedManagement"
+            >
+              展开整理模式
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -301,12 +345,15 @@ const visibleRelevantCount = ref(HIGH_CONFIDENCE_BATCH_SIZE);
 const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 const searchBarRef = ref<SearchBarExpose | null>(null);
+const moreMenuRef = ref<HTMLElement | null>(null);
+const moreButtonRef = ref<HTMLElement | null>(null);
 const focusedResultIndex = ref(-1);
 const previewImageId = ref<string | null>(null);
 const homeState = ref<HomeState | null>(null);
 const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
 const searchFocused = ref(false);
+const showMoreMenu = ref(false);
 let searchBlurTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
 const exampleQueries = ["撤回消息", "阿布 撇嘴", "猫猫 心虚", "领导 冷笑"];
@@ -608,6 +655,45 @@ function goToGalleryManagement(targetView: "recent" | "issues") {
   window.history.pushState({}, "", `/library?${search.toString()}`);
 }
 
+function closeMoreMenu() {
+  showMoreMenu.value = false;
+}
+
+function toggleMoreMenu() {
+  showMoreMenu.value = !showMoreMenu.value;
+}
+
+async function openGalleryManagement() {
+  settings.windowMode = "expanded";
+  closeMoreMenu();
+  if (router) {
+    await router.push("/library");
+    return;
+  }
+
+  window.history.pushState({}, "", "/library");
+}
+
+async function openSettingsPanel() {
+  settings.windowMode = "expanded";
+  closeMoreMenu();
+  if (router) {
+    await router.push("/settings");
+    return;
+  }
+
+  window.history.pushState({}, "", "/settings");
+}
+
+async function enterExpandedManagement() {
+  await openGalleryManagement();
+}
+
+function toggleDockSide() {
+  settings.dockSide = settings.dockSide === "right" ? "left" : "right";
+  closeMoreMenu();
+}
+
 function handleSearchFocus() {
   if (searchBlurTimer !== null) {
     window.clearTimeout(searchBlurTimer);
@@ -621,6 +707,18 @@ function handleSearchBlur() {
     searchFocused.value = false;
     searchBlurTimer = null;
   }, 120);
+}
+
+function handlePointerDown(event: MouseEvent) {
+  const target = event.target as Node | null;
+  if (
+    showMoreMenu.value
+    && target
+    && !moreMenuRef.value?.contains(target)
+    && !moreButtonRef.value?.contains(target)
+  ) {
+    closeMoreMenu();
+  }
 }
 
 function focusSearchInput() {
@@ -880,6 +978,7 @@ onMounted(async () => {
   await nextTick();
   attachLoadMoreObserver();
   document.addEventListener("keydown", handleGlobalKeydown);
+  document.addEventListener("mousedown", handlePointerDown);
 });
 
 onBeforeUnmount(() => {
@@ -888,6 +987,7 @@ onBeforeUnmount(() => {
   }
   loadMoreObserver?.disconnect();
   document.removeEventListener("keydown", handleGlobalKeydown);
+  document.removeEventListener("mousedown", handlePointerDown);
 });
 </script>
 
@@ -897,22 +997,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  gap: 0.75rem;
-  padding-top: 0.2rem;
-}
-
-.search-view__summary {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  flex-shrink: 0;
-}
-
-.search-view__eyebrow {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--ui-accent);
-  font-weight: 700;
+  gap: 0.6rem;
+  padding-top: 0.55rem;
 }
 
 .search-view__summary-text {
@@ -920,6 +1006,7 @@ onBeforeUnmount(() => {
   font-size: 0.82rem;
   line-height: 1.35;
   color: var(--ui-text-secondary);
+  flex-shrink: 0;
 }
 
 .search-view__body {
@@ -954,8 +1041,71 @@ onBeforeUnmount(() => {
   color: var(--ui-text-secondary);
 }
 
+.search-view__dock-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .search-view__result-shortcuts {
   margin-top: -0.1rem;
+}
+
+.search-view__menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.search-view__menu-button {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.search-view__menu-button:hover {
+  background: var(--ui-bg-hover);
+  border-color: var(--ui-border-strong);
+  color: var(--ui-text-primary);
+}
+
+.search-view__more-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.45rem);
+  width: 12rem;
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  z-index: 35;
+}
+
+.search-view__more-action {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border: none;
+  border-radius: 0.85rem;
+  background: transparent;
+  color: var(--ui-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-view__more-action:hover {
+  background: var(--ui-bg-hover);
 }
 
 .search-assist-panel {
@@ -1102,21 +1252,11 @@ onBeforeUnmount(() => {
 .home-searches__item:hover {
   background: var(--ui-bg-hover);
 }
-.home-section__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
 .home-section__title {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--ui-text-primary);
-}
-.home-section__hint {
-  font-size: 0.74rem;
-  color: var(--ui-text-secondary);
 }
 .debug-formula {
   font-size: 0.78rem;

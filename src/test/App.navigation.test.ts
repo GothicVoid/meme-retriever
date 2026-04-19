@@ -34,7 +34,7 @@ describe("App 工作台壳层", () => {
     });
   });
 
-  it("搜索首页默认渲染侧边栏极简头部和更多入口", async () => {
+  it("搜索首页默认不渲染展开工作台头部", async () => {
     const router = createTestRouter();
     await router.push("/");
     await router.isReady();
@@ -46,8 +46,6 @@ describe("App 工作台壳层", () => {
     });
     await flushPromises();
 
-    expect(wrapper.get(".app-shell__topbar").text()).toContain("快速找图");
-    expect(wrapper.get('[data-action="toggle-more-menu"]').text()).toBe("整理");
     expect(wrapper.find(".app-shell__expanded-toolbar").exists()).toBe(false);
   });
 
@@ -64,7 +62,6 @@ describe("App 工作台壳层", () => {
     await flushPromises();
 
     expect(wrapper.get(".app-shell__expanded-toolbar").text()).toContain("图库整理");
-    expect(wrapper.find(".app-shell__topbar").exists()).toBe(false);
   });
 
   it("启动时按当前模式调用窗口布局命令", async () => {
@@ -83,48 +80,6 @@ describe("App 工作台壳层", () => {
       mode: "sidebar",
       dockSide: "right",
     });
-  });
-
-  it("切换更多菜单中的停靠侧会重新应用窗口布局", async () => {
-    const router = createTestRouter();
-    await router.push("/");
-    await router.isReady();
-
-    const wrapper = mount(App, {
-      global: {
-        plugins: [router],
-      },
-    });
-    await flushPromises();
-
-    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
-    await wrapper.get('[data-action="toggle-dock-side"]').trigger("click");
-    await flushPromises();
-
-    expect(mockInvoke).toHaveBeenCalledWith("apply_window_layout", {
-      mode: "sidebar",
-      dockSide: "left",
-    });
-  });
-
-  it("点击整理图库会进入展开管理态", async () => {
-    const router = createTestRouter();
-    await router.push("/");
-    await router.isReady();
-
-    const wrapper = mount(App, {
-      global: {
-        plugins: [router],
-      },
-    });
-    await flushPromises();
-
-    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
-    await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
-    await flushPromises();
-
-    expect(router.currentRoute.value.path).toBe("/library");
-    expect(wrapper.find(".app-shell__expanded-toolbar").exists()).toBe(true);
   });
 
   it("启动时存在未完成入库任务时显示恢复对话框", async () => {

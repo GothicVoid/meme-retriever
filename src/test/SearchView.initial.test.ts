@@ -51,7 +51,7 @@ describe("SearchView 初始加载", () => {
     expect(mockInvoke).not.toHaveBeenCalledWith("search", expect.objectContaining({ query: "" }));
   });
 
-  it("空查询首页展示常用图片区", async () => {
+  it("空查询首页展示最近常用图片区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -60,9 +60,10 @@ describe("SearchView 初始加载", () => {
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("聊天旁边快速取图");
-    expect(wrapper.text()).toContain("直接挑一张");
-    expect(wrapper.text()).toContain("先发出去再说");
+    expect(wrapper.text()).toContain("最近常用");
+    expect(wrapper.text()).not.toContain("聊天旁边快速取图");
+    expect(wrapper.text()).not.toContain("直接挑一张");
+    expect(wrapper.text()).not.toContain("先发出去再说");
     expect(wrapper.text()).not.toContain("最近搜索");
     expect(wrapper.find(".search-dock").exists()).toBe(true);
     expect(wrapper.findAll(".image-card")).toHaveLength(4);
@@ -132,7 +133,8 @@ describe("SearchView 初始加载", () => {
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("聊天旁边快速取图");
+    expect(wrapper.text()).not.toContain("聊天旁边快速取图");
+    expect(wrapper.find(".search-dock").exists()).toBe(true);
     expect(wrapper.text()).not.toContain("先把表情包放进来");
     wrapper.unmount();
   });

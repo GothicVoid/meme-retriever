@@ -8,69 +8,7 @@
     <Toast />
 
     <header
-      v-if="isSidebarMode"
-      class="app-shell__topbar"
-    >
-      <div class="app-shell__brand">
-        <span class="app-shell__brand-mark">M</span>
-        <div class="app-shell__brand-copy">
-          <strong>快速找图</strong>
-        </div>
-      </div>
-      <div class="app-shell__menu-wrap">
-        <button
-          ref="moreButtonRef"
-          type="button"
-          class="app-shell__menu-button"
-          data-action="toggle-more-menu"
-          aria-label="打开整理和设置"
-          @click="toggleMoreMenu"
-        >
-          整理
-        </button>
-        <div
-          v-if="showMoreMenu"
-          ref="moreMenuRef"
-          class="app-shell__more-menu ui-floating-panel"
-        >
-          <button
-            type="button"
-            class="app-shell__more-action"
-            data-action="open-gallery-management"
-            @click="openGalleryManagement"
-          >
-            整理图库
-          </button>
-          <button
-            type="button"
-            class="app-shell__more-action"
-            data-action="open-settings"
-            @click="openSettingsPanel"
-          >
-            打开设置
-          </button>
-          <button
-            type="button"
-            class="app-shell__more-action"
-            data-action="toggle-dock-side"
-            @click="toggleDockSide"
-          >
-            {{ settings.dockSide === "right" ? "切到左侧" : "切到右侧" }}
-          </button>
-          <button
-            type="button"
-            class="app-shell__more-action"
-            data-action="enter-expanded-mode"
-            @click="enterExpandedManagement"
-          >
-            展开整理模式
-          </button>
-        </div>
-      </div>
-    </header>
-
-    <header
-      v-else
+      v-if="!isSidebarMode"
       class="app-shell__expanded-toolbar"
     >
       <div class="app-shell__expanded-title">
@@ -145,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, watch } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
@@ -157,10 +95,6 @@ const recoveryStore = useTaskRecoveryStore();
 const settings = useSettingsStore();
 const route = useRoute();
 const router = useRouter();
-
-const showMoreMenu = ref(false);
-const moreMenuRef = ref<HTMLElement | null>(null);
-const moreButtonRef = ref<HTMLElement | null>(null);
 
 const isSidebarMode = computed(() =>
   route.path === "/" && settings.windowMode === "sidebar"
@@ -190,17 +124,8 @@ const expandedSubtitle = computed(() => {
   return "需要更大工作区时，再离开聊天伴随态。";
 });
 
-function closeMoreMenu() {
-  showMoreMenu.value = false;
-}
-
-function toggleMoreMenu() {
-  showMoreMenu.value = !showMoreMenu.value;
-}
-
 async function goQuickSearch() {
   settings.windowMode = "sidebar";
-  closeMoreMenu();
   if (route.path !== "/") {
     await router.push("/");
   }
@@ -208,7 +133,6 @@ async function goQuickSearch() {
 
 async function openGalleryManagement() {
   settings.windowMode = "expanded";
-  closeMoreMenu();
   if (route.path !== "/library") {
     await router.push("/library");
   }
@@ -216,30 +140,8 @@ async function openGalleryManagement() {
 
 async function openSettingsPanel() {
   settings.windowMode = "expanded";
-  closeMoreMenu();
   if (route.path !== "/settings") {
     await router.push("/settings");
-  }
-}
-
-async function enterExpandedManagement() {
-  await openGalleryManagement();
-}
-
-function toggleDockSide() {
-  settings.dockSide = settings.dockSide === "right" ? "left" : "right";
-  closeMoreMenu();
-}
-
-function handlePointerDown(event: MouseEvent) {
-  const target = event.target as Node | null;
-  if (
-    showMoreMenu.value
-    && target
-    && !moreMenuRef.value?.contains(target)
-    && !moreButtonRef.value?.contains(target)
-  ) {
-    closeMoreMenu();
   }
 }
 
@@ -249,12 +151,6 @@ onMounted(async () => {
   } catch {
     console.warn("尝试获取未完成任务时失败");
   }
-
-  document.addEventListener("mousedown", handlePointerDown);
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", handlePointerDown);
 });
 
 watch(
@@ -268,10 +164,6 @@ watch(
   },
   { immediate: true }
 );
-
-watch(() => route.fullPath, () => {
-  closeMoreMenu();
-});
 
 async function resumeTasks() {
   try {
@@ -291,7 +183,6 @@ async function clearPendingTasks() {
 </script>
 
 <style scoped>
-.app-shell__topbar,
 .app-shell__expanded-toolbar {
   display: flex;
   align-items: center;
@@ -299,40 +190,6 @@ async function clearPendingTasks() {
   gap: 1rem;
 }
 
-.app-shell__brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.app-shell__brand-mark {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.85rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(183, 121, 31, 0.15);
-  color: var(--ui-accent);
-  font-weight: 800;
-}
-
-.app-shell__brand-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.app-shell__brand-copy strong {
-  font-size: 0.95rem;
-}
-
-.app-shell__menu-wrap {
-  position: relative;
-}
-
-.app-shell__menu-button,
 .app-shell__toolbar-action {
   border: 1px solid var(--ui-border-subtle);
   border-radius: 999px;
@@ -345,44 +202,9 @@ async function clearPendingTasks() {
     color 120ms ease;
 }
 
-.app-shell__menu-button {
-  min-height: 2.25rem;
-  padding: 0 1rem;
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.app-shell__menu-button:hover,
 .app-shell__toolbar-action:hover {
   background: var(--ui-bg-hover);
   border-color: var(--ui-border-strong);
-}
-
-.app-shell__more-menu {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  right: 0;
-  width: 12rem;
-  padding: 0.4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  z-index: 30;
-}
-
-.app-shell__more-action {
-  width: 100%;
-  padding: 0.65rem 0.8rem;
-  border: none;
-  border-radius: 0.85rem;
-  background: transparent;
-  color: var(--ui-text-primary);
-  text-align: left;
-  cursor: pointer;
-}
-
-.app-shell__more-action:hover {
-  background: var(--ui-bg-hover);
 }
 
 .app-shell__expanded-title {

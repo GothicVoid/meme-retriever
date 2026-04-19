@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import SearchView from "@/views/SearchView.vue";
 import Toast from "@/components/Toast.vue";
 import { useSearchStore } from "@/stores/search";
+import { useSettingsStore } from "@/stores/settings";
 import type { ImageMeta } from "@/stores/library";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -23,6 +25,17 @@ vi.mock("@/composables/useClipboard", () => ({
 
 const mockInvoke = vi.mocked(invoke);
 const mockConfirm = vi.mocked(confirm);
+
+function createTestRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/", component: SearchView },
+      { path: "/library", component: { template: "<div>library</div>" } },
+      { path: "/settings", component: { template: "<div>settings</div>" } },
+    ],
+  });
+}
 
 const mockImage: ImageMeta = {
   id: "uuid-1",
@@ -88,7 +101,7 @@ describe("SearchView", () => {
     expect(wrapper.find("input").attributes("placeholder")).toBe("搜台词、角色、动作、场景");
   });
 
-  it("首页首屏挂载极简摘要区和底部主搜索栏", async () => {
+  it("首页首屏挂载最近常用区和底部主搜索栏", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -97,11 +110,57 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
-    expect(wrapper.get(".search-view__summary").exists()).toBe(true);
+    expect(wrapper.find(".search-view__summary").exists()).toBe(false);
     expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search");
     expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search--dock");
     expect(wrapper.get(".search-dock").exists()).toBe(true);
-    expect(wrapper.text()).toContain("直接挑一张");
+    expect(wrapper.get(".search-view__dock-meta").exists()).toBe(true);
+    expect(wrapper.get('[data-action="toggle-more-menu"]').attributes("aria-label")).toBe("打开更多操作");
+    expect(wrapper.text()).toContain("最近常用");
+  });
+
+  it("点击底部更多菜单中的图库管理会进入展开态图库页", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(SearchView, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
+    await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe("/library");
+    expect(useSettingsStore().windowMode).toBe("expanded");
+  });
+
+  it("点击底部更多菜单中的切换停靠侧会更新停靠偏好", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView);
+    await flushPromises();
+
+    const settingsStore = useSettingsStore();
+    expect(settingsStore.dockSide).toBe("right");
+
+    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
+    await wrapper.get('[data-action="toggle-dock-side"]').trigger("click");
+    await flushPromises();
+
+    expect(settingsStore.dockSide).toBe("left");
   });
 
   it("输入非空查询后切换到搜索结果态", async () => {
@@ -179,8 +238,8 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    expect(wrapper.text()).toContain("直接挑一张");
-    expect(wrapper.text()).toContain("先发出去再说");
+    expect(wrapper.text()).toContain("最近常用");
+    expect(wrapper.text()).not.toContain("先发出去再说");
     expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
   });
 
@@ -203,7 +262,7 @@ describe("SearchView", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "撤回消息" }));
     expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("直接挑一张");
+    expect(wrapper.text()).not.toContain("最近常用");
 
     wrapper.unmount();
   });
@@ -967,7 +1026,7 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("直接挑一张");
+    expect(wrapper.text()).toContain("最近常用");
     expect(wrapper.text()).not.toContain("最近用过");
     expect(wrapper.text()).not.toContain("常用表情");
     expect(wrapper.findAll(".image-card")).toHaveLength(2);
@@ -1185,7 +1244,7 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "get_home_state")).toHaveLength(2);
-    expect(wrapper.text()).toContain("直接挑一张");
+    expect(wrapper.text()).toContain("最近常用");
     wrapper.unmount();
   });
 
@@ -1213,8 +1272,8 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(wrapper.find("input").element.value).toBe("");
-    expect(wrapper.text()).toContain("直接挑一张");
-    expect(wrapper.text()).toContain("先发出去再说");
+    expect(wrapper.text()).toContain("最近常用");
+    expect(wrapper.text()).not.toContain("先发出去再说");
 
     wrapper.unmount();
   });
