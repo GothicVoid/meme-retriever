@@ -703,6 +703,84 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("正式快速预览打开后收起结果区快捷键提示，只保留预览快捷键提示", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="result-shortcuts-hint"]').exists()).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="result-shortcuts-hint"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="quick-preview-shortcuts-hint"]').exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it("正式快速预览中定位缺失文件时显示错误提示", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") {
+        return Promise.resolve([{
+          id: "missing-1",
+          filePath: "/missing.jpg",
+          thumbnailPath: "/missing_t.jpg",
+          fileFormat: "jpg",
+          fileStatus: "missing",
+          score: 0.9,
+          tags: [],
+          debugInfo: null,
+        }]);
+      }
+      if (cmd === "reveal_in_finder") {
+        return Promise.reject(new Error("原文件已丢失"));
+      }
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount({
+      components: { SearchView, Toast },
+      template: "<div><SearchView /><Toast /></div>",
+    }, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("缺图");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+
+    await wrapper.get('[data-testid="quick-preview-reveal"]').trigger("click");
+    await flushPromises();
+
+    const toast = document.body.querySelector(".toast.error");
+    expect(toast?.textContent).toContain("原文件已丢失，无法定位");
+
+    wrapper.unmount();
+  });
+
   it("正式快速预览内按 Enter 复制当前图片", async () => {
     copyImageMock.mockResolvedValue(undefined);
     mockInvoke.mockImplementation((cmd: string) => {

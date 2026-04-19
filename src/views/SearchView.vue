@@ -502,7 +502,7 @@ const canShowSecondaryResults = computed(() =>
 );
 
 const showResultShortcutsHint = computed(() =>
-  !isHomeMode.value && visibleResults.value.length > 0
+  !isHomeMode.value && visibleResults.value.length > 0 && !previewImageId.value
 );
 
 const feedbackTitle = computed(() => {

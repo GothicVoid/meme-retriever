@@ -174,6 +174,28 @@ describe("ImageCard", () => {
     wrapper.unmount();
   });
 
+  it("轻预览显示时打开右键菜单会收起轻预览", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(true);
+
+    await wrapper.get(".image-card-shell").trigger("contextmenu", { clientX: 24, clientY: 24 });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(false);
+    expect(wrapper.find(".context-menu").exists()).toBe(true);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("打开第二个右键菜单时关闭前一个菜单", async () => {
     const first = mount(ImageCard, {
       props: { image: mockImage, showDebugInfo: false },

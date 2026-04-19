@@ -296,6 +296,8 @@ async function handleReveal() {
 function showMenu(e: MouseEvent) {
   e.stopPropagation();
   document.dispatchEvent(new CustomEvent(CLOSE_CONTEXT_MENU_EVENT));
+  clearHoverPreviewTimer();
+  hoverPreviewVisible.value = false;
   const card = cardRef.value;
   if (!card) return;
 
