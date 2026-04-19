@@ -244,9 +244,14 @@
     <QuickPreviewModal
       v-if="previewImage"
       :image="previewImage"
+      :can-prev="canPreviewPrev"
+      :can-next="canPreviewNext"
       @close="closeQuickPreview"
       @copy="handleQuickPreviewCopy"
       @detail="openDetail"
+      @reveal="handleQuickPreviewReveal"
+      @prev="moveQuickPreview(-1)"
+      @next="moveQuickPreview(1)"
     />
   </div>
 </template>
@@ -262,6 +267,7 @@ import DetailModal from "@/components/DetailModal.vue";
 import QuickPreviewModal from "@/components/QuickPreviewModal.vue";
 import { useSearch } from "@/composables/useSearch";
 import { useClipboard } from "@/composables/useClipboard";
+import { showToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
@@ -430,6 +436,16 @@ const previewSourceImages = computed<SearchResult[]>(() =>
 
 const previewImage = computed(() =>
   previewSourceImages.value.find((item) => item.id === previewImageId.value) ?? null
+);
+
+const previewIndex = computed(() =>
+  previewSourceImages.value.findIndex((item) => item.id === previewImageId.value)
+);
+
+const canPreviewPrev = computed(() => previewIndex.value > 0);
+
+const canPreviewNext = computed(() =>
+  previewIndex.value > -1 && previewIndex.value < previewSourceImages.value.length - 1
 );
 
 const hasMoreRelevantLoaded = computed(() =>
@@ -641,17 +657,43 @@ function moveFocusedResult(step: 1 | -1) {
   focusedResultIndex.value = Math.max(0, Math.min(visibleResults.value.length - 1, nextIndex));
 }
 
+function syncFocusedResultFromPreview(id: string) {
+  if (isHomeMode.value) return;
+  const nextIndex = visibleResults.value.findIndex((item) => item.id === id);
+  if (nextIndex !== -1) {
+    focusedResultIndex.value = nextIndex;
+  }
+}
+
 function openQuickPreview(id: string) {
   previewImageId.value = id;
+  syncFocusedResultFromPreview(id);
 }
 
 function closeQuickPreview() {
   previewImageId.value = null;
 }
 
+function moveQuickPreview(step: 1 | -1) {
+  if (previewIndex.value === -1) return;
+  const nextIndex = previewIndex.value + step;
+  if (nextIndex < 0 || nextIndex >= previewSourceImages.value.length) return;
+  const nextImage = previewSourceImages.value[nextIndex];
+  previewImageId.value = nextImage.id;
+  syncFocusedResultFromPreview(nextImage.id);
+}
+
 async function handleQuickPreviewCopy(id: string) {
   await copyImage(id);
   handleSearchImageCopied();
+}
+
+async function handleQuickPreviewReveal(id: string) {
+  await invoke("reveal_in_finder", { id }).catch((error) => {
+    if (String(error).includes("原文件已丢失")) {
+      showToast("原文件已丢失，无法定位", "error", 1500);
+    }
+  });
 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
@@ -663,13 +705,35 @@ function handleGlobalKeydown(event: KeyboardEvent) {
     return;
   }
 
+  if (previewImageId.value) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeQuickPreview();
+      return;
+    }
+
+    if (event.key === "Enter" && previewImage.value) {
+      event.preventDefault();
+      void handleQuickPreviewCopy(previewImage.value.id);
+      return;
+    }
+
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      moveQuickPreview(1);
+      return;
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveQuickPreview(-1);
+      return;
+    }
+  }
+
   if (isHomeMode.value) return;
 
   if (event.key === "Escape") {
-    if (previewImageId.value) {
-      event.preventDefault();
-      closeQuickPreview();
-    }
     return;
   }
 

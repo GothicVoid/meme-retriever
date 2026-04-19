@@ -633,6 +633,138 @@ describe("SearchView", () => {
     vi.useRealTimers();
   });
 
+  it("正式快速预览支持在搜索结果中切换，并在关闭后恢复当前图片焦点", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview__image").attributes("src")).toContain("/a.jpg");
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview__image").attributes("src")).toContain("/b.jpg");
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(false);
+    const focusedCards = wrapper.findAll(".image-card--focused");
+    expect(focusedCards).toHaveLength(1);
+    expect(focusedCards[0].attributes("alt") ?? focusedCards[0].text()).toBeDefined();
+
+    wrapper.unmount();
+  });
+
+  it("正式快速预览支持在文件夹中显示", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+
+    await wrapper.get('[data-testid="quick-preview-reveal"]').trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("reveal_in_finder", { id: "a" });
+
+    wrapper.unmount();
+  });
+
+  it("正式快速预览内按 Enter 复制当前图片", async () => {
+    copyImageMock.mockResolvedValue(undefined);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await flushPromises();
+
+    expect(copyImageMock).toHaveBeenCalledWith("b");
+
+    wrapper.unmount();
+  });
+
+  it("首页正式快速预览沿用首页来源列表顺序切换", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const firstCardShell = wrapper.find(".image-card-shell");
+    await firstCardShell.trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await flushPromises();
+    await wrapper.get('[data-testid="hover-preview-open"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview__image").attributes("src")).toContain("/recent.jpg");
+
+    await wrapper.get('[data-testid="quick-preview-next"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview__image").attributes("src")).toContain("/img.jpg");
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {

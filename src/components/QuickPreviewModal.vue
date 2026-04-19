@@ -11,11 +11,27 @@
         ×
       </button>
       <div class="quick-preview__media">
+        <button
+          class="quick-preview__nav quick-preview__nav--prev"
+          :disabled="!canPrev"
+          data-testid="quick-preview-prev"
+          @click="$emit('prev')"
+        >
+          ←
+        </button>
         <img
           :src="convertFileSrc(image.filePath)"
           :alt="image.id"
           class="quick-preview__image"
         >
+        <button
+          class="quick-preview__nav quick-preview__nav--next"
+          :disabled="!canNext"
+          data-testid="quick-preview-next"
+          @click="$emit('next')"
+        >
+          →
+        </button>
       </div>
       <div class="quick-preview__actions">
         <button
@@ -29,6 +45,13 @@
           @click="$emit('detail', image.id)"
         >
           查看详情
+        </button>
+        <button
+          class="quick-preview__action"
+          data-testid="quick-preview-reveal"
+          @click="$emit('reveal', image.id)"
+        >
+          在文件夹中显示
         </button>
         <button
           class="quick-preview__action"
@@ -53,12 +76,17 @@ import type { SearchResult } from "@/stores/search";
 
 defineProps<{
   image: SearchResult;
+  canPrev: boolean;
+  canNext: boolean;
 }>();
 
 defineEmits<{
   close: [];
   copy: [id: string];
   detail: [id: string];
+  reveal: [id: string];
+  prev: [];
+  next: [];
 }>();
 </script>
 
@@ -101,6 +129,7 @@ defineEmits<{
 }
 
 .quick-preview__media {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -114,6 +143,32 @@ defineEmits<{
   max-width: 100%;
   max-height: 60vh;
   object-fit: contain;
+}
+
+.quick-preview__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(31, 35, 41, 0.68);
+  color: #fff;
+  cursor: pointer;
+}
+
+.quick-preview__nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quick-preview__nav--prev {
+  left: 12px;
+}
+
+.quick-preview__nav--next {
+  right: 12px;
 }
 
 .quick-preview__actions {
