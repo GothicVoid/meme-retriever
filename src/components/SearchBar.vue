@@ -40,6 +40,11 @@ const emit = defineEmits<{
 const inputRef = ref<HTMLInputElement>();
 const isComposing = ref(false);
 
+function focusAndSelect() {
+  inputRef.value?.focus();
+  inputRef.value?.select();
+}
+
 function handleInput(event: Event) {
   if (isComposing.value) return;
   emit("update:modelValue", (event.target as HTMLInputElement).value);
@@ -63,6 +68,10 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
 onMounted(() => window.addEventListener("keydown", handleGlobalKeydown));
 onUnmounted(() => window.removeEventListener("keydown", handleGlobalKeydown));
+
+defineExpose({
+  focusAndSelect,
+});
 </script>
 
 <style scoped>

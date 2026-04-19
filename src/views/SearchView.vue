@@ -3,6 +3,7 @@
     <section class="search-view__hero">
       <div class="search-input-wrap search-view__search-wrap">
         <SearchBar
+          ref="searchBarRef"
           v-model="store.query"
           class="search-view__search search-view__search--hero"
           :placeholder="searchPlaceholder"
@@ -10,6 +11,12 @@
           @focus="handleSearchFocus"
           @blur="handleSearchBlur"
         />
+        <p
+          class="search-view__shortcut-hint"
+          data-testid="search-shortcuts-hint"
+        >
+          / 或 Ctrl+K 聚焦搜索
+        </p>
         <div
           v-if="showSearchHistoryDropdown"
           class="search-history-dropdown ui-floating-panel"
@@ -159,6 +166,13 @@
       @delete="handleDeleteFromGrid"
       @open="openDetail"
     />
+    <p
+      v-if="showResultShortcutsHint"
+      class="search-view__result-shortcuts"
+      data-testid="result-shortcuts-hint"
+    >
+      Enter 复制 · Space 预览 · Esc 关闭
+    </p>
     <div
       v-if="showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
       class="result-feedback"
@@ -279,11 +293,16 @@ interface HomeState {
   frequentUsed: HomeImage[];
 }
 
+interface SearchBarExpose {
+  focusAndSelect: () => void;
+}
+
 const HIGH_CONFIDENCE_BATCH_SIZE = 12;
 const RESULT_FETCH_STEP = 30;
 const visibleRelevantCount = ref(HIGH_CONFIDENCE_BATCH_SIZE);
 const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
+const searchBarRef = ref<SearchBarExpose | null>(null);
 const focusedResultIndex = ref(-1);
 const previewImageId = ref<string | null>(null);
 const homeState = ref<HomeState | null>(null);
@@ -459,6 +478,10 @@ const canShowSecondaryResults = computed(() =>
   || (showLowConfidenceHint.value && store.results.length > 0)
 );
 
+const showResultShortcutsHint = computed(() =>
+  !isHomeMode.value && visibleResults.value.length > 0
+);
+
 const feedbackTitle = computed(() => {
   if (showZeroResultHint.value) {
     return "没找到这类图片";
@@ -570,6 +593,19 @@ function handleSearchBlur() {
   }, 120);
 }
 
+function focusSearchInput() {
+  searchBarRef.value?.focusAndSelect();
+  searchFocused.value = true;
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable
+    || target.tagName === "INPUT"
+    || target.tagName === "TEXTAREA"
+    || target.tagName === "SELECT";
+}
+
 async function removeRecentSearch(query: string) {
   await invoke("delete_search_history", { query });
   await fetchHomeState();
@@ -612,6 +648,14 @@ async function handleQuickPreviewCopy(id: string) {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
+  const shouldFocusSearch = event.key === "/" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k");
+  if (shouldFocusSearch) {
+    if (event.key === "/" && isEditableTarget(event.target)) return;
+    event.preventDefault();
+    focusSearchInput();
+    return;
+  }
+
   if (isHomeMode.value) return;
 
   if (event.key === "Escape") {
@@ -790,6 +834,17 @@ onBeforeUnmount(() => {
 .search-view__search--hero {
   min-height: 64px;
   padding-inline: 1rem;
+}
+
+.search-view__shortcut-hint,
+.search-view__result-shortcuts {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ui-text-secondary);
+}
+
+.search-view__result-shortcuts {
+  margin-top: 0.85rem;
 }
 
 .search-view__examples {

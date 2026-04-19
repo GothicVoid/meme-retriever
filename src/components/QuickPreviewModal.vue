@@ -37,6 +37,12 @@
           关闭
         </button>
       </div>
+      <p
+        class="quick-preview__shortcuts"
+        data-testid="quick-preview-shortcuts-hint"
+      >
+        Enter 复制 · Esc 关闭
+      </p>
     </div>
   </div>
 </template>
@@ -129,5 +135,12 @@ defineEmits<{
   border-color: transparent;
   background: var(--ui-accent);
   color: #fff;
+}
+
+.quick-preview__shortcuts {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ui-text-secondary);
+  text-align: right;
 }
 </style>

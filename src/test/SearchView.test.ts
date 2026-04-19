@@ -450,6 +450,119 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("按 / 可聚焦搜索框并选中当前输入", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布 撇嘴");
+    await flushPromises();
+    await input.trigger("blur");
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "/" }));
+    await flushPromises();
+
+    const element = input.element as HTMLInputElement;
+    expect(document.activeElement).toBe(element);
+    expect(element.selectionStart).toBe(0);
+    expect(element.selectionEnd).toBe("阿布 撇嘴".length);
+
+    wrapper.unmount();
+  });
+
+  it("按 Ctrl+K 可聚焦搜索框并选中当前输入", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("撤回消息");
+    await flushPromises();
+    await input.trigger("blur");
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
+    await flushPromises();
+
+    const element = input.element as HTMLInputElement;
+    expect(document.activeElement).toBe(element);
+    expect(element.selectionStart).toBe(0);
+    expect(element.selectionEnd).toBe("撤回消息".length);
+
+    wrapper.unmount();
+  });
+
+  it("搜索结果存在时显示结果区快捷键提示", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const hint = wrapper.find('[data-testid="result-shortcuts-hint"]');
+    expect(hint.exists()).toBe(true);
+    expect(hint.text()).toContain("Enter");
+    expect(hint.text()).toContain("复制");
+    expect(hint.text()).toContain("Space");
+    expect(hint.text()).toContain("预览");
+
+    wrapper.unmount();
+  });
+
+  it("正式快速预览打开后显示预览快捷键提示", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await flushPromises();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    await flushPromises();
+
+    const hint = wrapper.find('[data-testid="quick-preview-shortcuts-hint"]');
+    expect(hint.exists()).toBe(true);
+    expect(hint.text()).toContain("Enter");
+    expect(hint.text()).toContain("复制");
+    expect(hint.text()).toContain("Esc");
+    expect(hint.text()).toContain("关闭");
+
+    wrapper.unmount();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {
