@@ -153,6 +153,7 @@ describe("ImageCard", () => {
     await wrapper.get(".image-card").trigger("click");
 
     expect(copyImageMock).toHaveBeenCalledWith("uuid-1");
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(false);
 
     wrapper.unmount();
     vi.useRealTimers();

@@ -258,6 +258,8 @@ const evidenceList = computed(() => {
 const reasonSummary = computed(() => debugInfo.value ? `${relevanceLabel.value} ${primaryReasonLabel.value}` : "");
 
 async function handleClick() {
+  hoverPreviewVisible.value = false;
+  clearHoverPreviewTimer();
   try {
     await copyImage(props.image.id);
     showToast("已复制", "info", 1500);
