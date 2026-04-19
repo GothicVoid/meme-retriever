@@ -161,6 +161,7 @@
       v-if="!isHomeMode"
       :images="visibleResults"
       :loading="store.loading"
+      loading-message="正在搜索相关图片..."
       :show-debug-info="settings.devDebugMode"
       :empty-message="emptyMessage"
       :focused-id="focusedResultId"
@@ -177,7 +178,7 @@
       Enter 复制 · Space 预览 · Esc 关闭
     </p>
     <div
-      v-if="showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
+      v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
       class="result-feedback"
     >
       <p class="result-feedback__title">
@@ -208,10 +209,10 @@
         看看最近用过
       </button>
       <button
-        v-if="showZeroResultHint || showLowConfidenceHint"
+        v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
         class="result-feedback__action"
         data-action="go-gallery-management"
-        @click="goToGalleryManagement(showLowConfidenceHint ? 'issues' : 'recent')"
+        @click="goToGalleryManagement(showLowConfidenceHint || showSearchErrorHint ? 'issues' : 'recent')"
       >
         去图库管理
       </button>
@@ -469,17 +470,22 @@ const shouldAutoLoadMore = computed(() =>
 );
 
 const showLowConfidenceHint = computed(() =>
-  !!store.query.trim() && store.results.length > 0 && mediumConfidenceCount.value === 0
+  !!store.query.trim() && !store.error && store.results.length > 0 && mediumConfidenceCount.value === 0
 );
 
 const showZeroResultHint = computed(() =>
-  !!store.query.trim() && !store.loading && store.results.length === 0
+  !!store.query.trim() && !store.loading && !store.error && store.results.length === 0
 );
 
 const showLowRelevanceStopNotice = computed(() =>
   !!store.query.trim()
+  && !store.error
   && mediumConfidenceCount.value > 0
   && secondaryResultsCount.value > 0
+);
+
+const showSearchErrorHint = computed(() =>
+  !!store.query.trim() && !store.loading && !!store.error
 );
 
 const guidanceItems = [
@@ -506,6 +512,9 @@ const showResultShortcutsHint = computed(() =>
 );
 
 const feedbackTitle = computed(() => {
+  if (showSearchErrorHint.value) {
+    return "这次搜索没成功";
+  }
   if (showZeroResultHint.value) {
     return "没找到这类图片";
   }
@@ -519,6 +528,9 @@ const feedbackTitle = computed(() => {
 });
 
 const feedbackText = computed(() => {
+  if (showSearchErrorHint.value) {
+    return "可以重试，或先去图库管理检查图片状态。";
+  }
   if (showZeroResultHint.value) {
     return "换个说法试试。可以从图片里的原文、角色名、动作或场景词开始搜。";
   }
@@ -539,7 +551,9 @@ const loadMoreHint = computed(() =>
 );
 
 const emptyMessage = computed(() =>
-  showLowConfidenceHint.value
+  showSearchErrorHint.value
+    ? "搜索暂时失败，请稍后重试"
+    : showLowConfidenceHint.value
     ? "没找到足够相关的结果，试试更具体的描述"
     : libraryStore.images.length === 0
       ? "还没有图片哦，点击添加开始使用吧"
@@ -729,6 +743,12 @@ function handleGlobalKeydown(event: KeyboardEvent) {
       moveQuickPreview(-1);
       return;
     }
+  }
+
+  if (event.key === "Escape" && showSearchHistoryDropdown.value) {
+    event.preventDefault();
+    searchFocused.value = false;
+    return;
   }
 
   if (isHomeMode.value) return;

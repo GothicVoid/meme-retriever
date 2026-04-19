@@ -1,6 +1,6 @@
 <template>
   <div class="image-grid">
-    <p v-if="loading" class="hint">加载中...</p>
+    <p v-if="loading" class="hint">{{ loadingMessage ?? "加载中..." }}</p>
     <p v-else-if="!images.length" class="hint">{{ emptyMessage ?? '没找到相关图片，试试其他描述？' }}</p>
     <ImageCard
       v-for="img in images"
@@ -26,6 +26,7 @@ defineProps<{
   images: SearchResult[];
   loading: boolean;
   showDebugInfo: boolean;
+  loadingMessage?: string;
   emptyMessage?: string;
   selectable?: boolean;
   selectedIds?: Set<string>;

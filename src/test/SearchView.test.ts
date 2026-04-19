@@ -269,6 +269,46 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("按 Esc 会收起最近搜索下拉并保留当前查询", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          recentSearches: [
+            { query: "阿布 撇嘴", updatedAt: 2 },
+            { query: "猫猫 心虚", updatedAt: 1 },
+          ],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.trigger("focus");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(true);
+
+    await input.setValue("阿布");
+    await flushPromises();
+    await input.setValue("");
+    await flushPromises();
+    await input.trigger("focus");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
+    expect(wrapper.find("input").element.value).toBe("");
+
+    wrapper.unmount();
+  });
+
   it("删除单条最近搜索后刷新首页和下拉", async () => {
     let currentHomeState = {
       ...mockHomeState,
@@ -527,6 +567,66 @@ describe("SearchView", () => {
     expect(hint.text()).toContain("复制");
     expect(hint.text()).toContain("Space");
     expect(hint.text()).toContain("预览");
+
+    wrapper.unmount();
+  });
+
+  it("搜索过程中显示明确的搜索中提示", async () => {
+    let resolveSearch: ((value: ReturnType<typeof mockResults>) => void) | null = null;
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") {
+        return new Promise((resolve) => {
+          resolveSearch = resolve as typeof resolveSearch;
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在搜索相关图片");
+
+    resolveSearch?.(mockResults());
+    await flushPromises();
+
+    wrapper.unmount();
+  });
+
+  it("搜索失败时展示明确反馈，并保留去图库管理入口", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.reject(new Error("boom"));
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("这次搜索没成功");
+    expect(wrapper.text()).toContain("可以重试，或先去图库管理检查图片状态");
+
+    const galleryAction = wrapper.find('[data-action="go-gallery-management"]');
+    expect(galleryAction.exists()).toBe(true);
+
+    await galleryAction.trigger("click");
+    expect(window.location.pathname).toBe("/library");
+    expect(window.location.search).toContain("view=issues");
 
     wrapper.unmount();
   });
