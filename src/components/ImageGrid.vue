@@ -14,6 +14,7 @@
       @copied="$emit('copied', $event)"
       @select="$emit('select', $event)"
       @open="$emit('open', $event)"
+      @preview="$emit('preview', $event)"
     />
   </div>
 </template>
@@ -30,7 +31,7 @@ defineProps<{
   selectedIds?: Set<string>;
   focusedId?: string | null;
 }>();
-defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string] }>();
+defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string]; preview: [id: string] }>();
 </script>
 
 <style scoped>

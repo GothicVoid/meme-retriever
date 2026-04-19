@@ -2,6 +2,8 @@
   <div
     ref="cardRef"
     class="image-card-shell"
+    @mouseenter="handleMouseEnter"
+    @mouseleave="handleMouseLeave"
     @contextmenu.prevent="showMenu"
   >
     <div
@@ -86,6 +88,31 @@
         </div>
       </div>
     </div>
+    <div
+      v-if="hoverPreviewVisible"
+      class="hover-preview ui-floating-panel"
+      data-testid="hover-preview"
+    >
+      <img
+        v-if="placeholderState === 'normal'"
+        :src="convertFileSrc(image.filePath)"
+        :alt="image.id"
+        class="hover-preview__image"
+      >
+      <div
+        v-else
+        class="hover-preview__missing"
+      >
+        {{ placeholderText }}
+      </div>
+      <button
+        class="hover-preview__action"
+        data-testid="hover-preview-open"
+        @click.stop="handlePreview"
+      >
+        放大查看
+      </button>
+    </div>
     <ul
       v-if="menuVisible"
       ref="menuRef"
@@ -136,15 +163,18 @@ const emit = defineEmits<{
   delete: [id: string];
   select: [id: string];
   open: [id: string];
+  preview: [id: string];
   copied: [id: string];
 }>();
 const { copyImage } = useClipboard();
 
 const menuVisible = ref(false);
+const hoverPreviewVisible = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
 const menuRef = ref<HTMLElement | null>(null);
 const cardRef = ref<HTMLElement | null>(null);
+let hoverPreviewTimer: number | null = null;
 const imgError = ref<"normal" | "missing" | "load-failed" | "gif-damaged">(
   props.image.fileStatus === "missing" ? "missing" : "normal",
 );
@@ -247,6 +277,11 @@ function handleOpen() {
   emit("open", props.image.id);
 }
 
+function handlePreview() {
+  hoverPreviewVisible.value = false;
+  emit("preview", props.image.id);
+}
+
 async function handleReveal() {
   menuVisible.value = false;
   await invoke("reveal_in_finder", { id: props.image.id }).catch((error) => {
@@ -285,6 +320,26 @@ function closeMenu() {
   menuVisible.value = false;
 }
 
+function clearHoverPreviewTimer() {
+  if (hoverPreviewTimer !== null) {
+    window.clearTimeout(hoverPreviewTimer);
+    hoverPreviewTimer = null;
+  }
+}
+
+function handleMouseEnter() {
+  clearHoverPreviewTimer();
+  hoverPreviewTimer = window.setTimeout(() => {
+    hoverPreviewVisible.value = true;
+    hoverPreviewTimer = null;
+  }, 160);
+}
+
+function handleMouseLeave() {
+  clearHoverPreviewTimer();
+  hoverPreviewVisible.value = false;
+}
+
 function handleDelete() {
   menuVisible.value = false;
   emit("delete", props.image.id);
@@ -300,8 +355,11 @@ function handleImageError() {
 
 onMounted(() => document.addEventListener("click", closeMenu));
 onMounted(() => document.addEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu));
-onUnmounted(() => document.removeEventListener("click", closeMenu));
-onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu));
+onUnmounted(() => {
+  clearHoverPreviewTimer();
+  document.removeEventListener("click", closeMenu);
+  document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu);
+});
 </script>
 
 <style scoped>
@@ -330,6 +388,51 @@ onUnmounted(() => document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMe
   display: block;
 }
 .image-card:hover {
+}
+
+.hover-preview {
+  position: absolute;
+  right: 0.5rem;
+  bottom: calc(100% + 0.5rem);
+  width: min(240px, calc(100vw - 2rem));
+  padding: 0.625rem;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hover-preview__image,
+.hover-preview__missing {
+  width: 100%;
+  height: 180px;
+  border-radius: 10px;
+}
+
+.hover-preview__image {
+  object-fit: contain;
+  background: linear-gradient(180deg, #ece7dd, #e5ded0);
+}
+
+.hover-preview__missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  color: #888;
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 0.75rem;
+}
+
+.hover-preview__action {
+  min-height: 36px;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
+  color: var(--ui-text-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .img-missing {

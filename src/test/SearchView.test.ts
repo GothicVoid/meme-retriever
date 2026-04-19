@@ -563,6 +563,76 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("搜索结果悬浮轻预览后可通过放大查看进入正式预览，点击卡片仍复制", async () => {
+    vi.useFakeTimers();
+    copyImageMock.mockResolvedValue(undefined);
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(350);
+    await flushPromises();
+
+    const firstCardShell = wrapper.find(".image-card-shell");
+    await firstCardShell.trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="hover-preview-open"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(true);
+
+    await wrapper.get(".quick-preview__close").trigger("click");
+    await flushPromises();
+
+    await wrapper.find(".image-card").trigger("click");
+    await flushPromises();
+
+    expect(copyImageMock).toHaveBeenCalledWith("a");
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("首页卡片悬浮轻预览后可通过放大查看进入正式预览", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const firstCardShell = wrapper.find(".image-card-shell");
+    await firstCardShell.trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="hover-preview-open"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(true);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("最近搜索为空时不显示最近搜索区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {

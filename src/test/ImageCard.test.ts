@@ -32,6 +32,64 @@ describe("ImageCard", () => {
     copyImageMock.mockReset();
   });
 
+  it("鼠标悬浮停留后显示轻预览入口", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+
+    const hoverPreview = wrapper.find('[data-testid="hover-preview"]');
+    expect(hoverPreview.exists()).toBe(true);
+    expect(hoverPreview.text()).toContain("放大查看");
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("鼠标快速扫过卡片时不显示轻预览", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(80);
+    await wrapper.get(".image-card-shell").trigger("mouseleave");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(false);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("点击轻预览里的放大查看按钮触发 preview 事件", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('[data-testid="hover-preview-open"]').trigger("click");
+
+    expect(wrapper.emitted("preview")).toBeTruthy();
+    expect(wrapper.emitted("preview")![0]).toEqual(["uuid-1"]);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("渲染缩略图", () => {
     const wrapper = mount(ImageCard, { props: { image: mockImage, showDebugInfo: false } });
     const img = wrapper.find("img");
@@ -77,6 +135,27 @@ describe("ImageCard", () => {
     expect(wrapper.emitted("delete")![0]).toEqual(["uuid-1"]);
     expect(wrapper.find(".context-menu").exists()).toBe(false);
     wrapper.unmount();
+  });
+
+  it("显示轻预览时点击卡片主体仍然执行复制", async () => {
+    vi.useFakeTimers();
+    copyImageMock.mockResolvedValue(undefined);
+    const wrapper = mount({
+      components: { ImageCard, Toast },
+      template: '<div><ImageCard :image="image" :show-debug-info="false" /><Toast /></div>',
+      data: () => ({ image: mockImage }),
+    }, { attachTo: document.body });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get(".image-card").trigger("click");
+
+    expect(copyImageMock).toHaveBeenCalledWith("uuid-1");
+
+    wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it("点击其他区域关闭上下文菜单", async () => {

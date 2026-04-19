@@ -126,6 +126,7 @@
             @copied="handleHomeImageCopied"
             @delete="handleDeleteFromGrid"
             @open="openDetail"
+            @preview="openQuickPreview"
           />
         </section>
 
@@ -145,6 +146,7 @@
             @copied="handleHomeImageCopied"
             @delete="handleDeleteFromGrid"
             @open="openDetail"
+            @preview="openQuickPreview"
           />
         </section>
       </template>
@@ -165,6 +167,7 @@
       @copied="handleSearchImageCopied"
       @delete="handleDeleteFromGrid"
       @open="openDetail"
+      @preview="openQuickPreview"
     />
     <p
       v-if="showResultShortcutsHint"
@@ -421,8 +424,12 @@ const visibleResults = computed(() => {
 
 const focusedResultId = computed(() => visibleResults.value[focusedResultIndex.value]?.id ?? null);
 
+const previewSourceImages = computed<SearchResult[]>(() =>
+  isHomeMode.value ? detailImages.value : visibleResults.value
+);
+
 const previewImage = computed(() =>
-  visibleResults.value.find((item) => item.id === previewImageId.value) ?? null
+  previewSourceImages.value.find((item) => item.id === previewImageId.value) ?? null
 );
 
 const hasMoreRelevantLoaded = computed(() =>
