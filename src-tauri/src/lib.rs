@@ -101,6 +101,7 @@ pub fn run() {
             commands::search,
             commands::get_home_state,
             commands::delete_search_history,
+            commands::import_entries,
             commands::add_images,
             commands::add_folder,
             commands::delete_image,

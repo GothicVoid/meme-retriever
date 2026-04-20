@@ -79,6 +79,13 @@ pub struct HomeStatePayload {
     pub frequent_used: Vec<ImageMeta>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportEntry {
+    pub kind: String,
+    pub path: String,
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TagDto {
@@ -760,6 +767,32 @@ fn spawn_index_task(
     });
 }
 
+fn resolve_import_paths(entries: Vec<ImportEntry>) -> Result<Vec<String>, String> {
+    use crate::indexer::pipeline::scan_images_in_dir;
+
+    let mut deduped = std::collections::BTreeSet::new();
+
+    for entry in entries {
+        match entry.kind.as_str() {
+            "file" => {
+                if !entry.path.is_empty() {
+                    deduped.insert(entry.path);
+                }
+            }
+            "directory" => {
+                let paths =
+                    scan_images_in_dir(std::path::Path::new(&entry.path)).map_err(|e| e.to_string())?;
+                deduped.extend(paths);
+            }
+            other => {
+                return Err(format!("unsupported import entry kind: {other}"));
+            }
+        }
+    }
+
+    Ok(deduped.into_iter().collect())
+}
+
 #[tauri::command]
 pub async fn search(
     query: String,
@@ -809,8 +842,49 @@ pub async fn add_images(
     engine: State<'_, EngineState>,
 ) -> Result<(), String> {
     tracing::info!("add_images: {} files", paths.len());
-    if paths.is_empty() {
-        return Ok(());
+    let entries = paths
+        .into_iter()
+        .map(|path| ImportEntry {
+            kind: "file".to_string(),
+            path,
+        })
+        .collect::<Vec<_>>();
+    let _ = import_entries(entries, app, db, engine).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_folder(
+    path: String,
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<usize, String> {
+    let entries = vec![ImportEntry {
+        kind: "directory".to_string(),
+        path: path.clone(),
+    }];
+    let total = import_entries(entries, app, db, engine).await?;
+    tracing::info!("add_folder: {path} → {total} images");
+    Ok(total)
+}
+
+#[tauri::command]
+pub async fn import_entries(
+    entries: Vec<ImportEntry>,
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<usize, String> {
+    tracing::info!("import_entries: {} entries", entries.len());
+    if entries.is_empty() {
+        return Ok(0);
+    }
+
+    let paths = resolve_import_paths(entries)?;
+    let total = paths.len();
+    if total == 0 {
+        return Ok(0);
     }
 
     let library_dir = app
@@ -826,34 +900,7 @@ pub async fn add_images(
         Arc::clone(engine.inner()),
         app,
     );
-    Ok(())
-}
 
-#[tauri::command]
-pub async fn add_folder(
-    path: String,
-    app: tauri::AppHandle,
-    db: State<'_, DbPool>,
-    engine: State<'_, EngineState>,
-) -> Result<usize, String> {
-    use crate::indexer::pipeline::scan_images_in_dir;
-    let paths = scan_images_in_dir(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
-    let total = paths.len();
-    tracing::info!("add_folder: {path} → {total} images");
-    if total > 0 {
-        let library_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("library");
-        spawn_index_task(
-            paths,
-            library_dir,
-            db.inner().clone(),
-            Arc::clone(engine.inner()),
-            app,
-        );
-    }
     Ok(total)
 }
 
@@ -1636,6 +1683,59 @@ mod tests {
             "should have popularityBoost"
         );
         assert!(json.get("sem_score").is_none(), "should NOT have sem_score");
+    }
+
+    #[test]
+    fn test_import_entry_serializes_camel_case() {
+        let entry = ImportEntry {
+            kind: "file".into(),
+            path: "/tmp/sample.jpg".into(),
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json.get("kind").and_then(|v| v.as_str()), Some("file"));
+        assert_eq!(
+            json.get("path").and_then(|v| v.as_str()),
+            Some("/tmp/sample.jpg")
+        );
+    }
+
+    #[test]
+    fn test_resolve_import_paths_merges_files_and_directories_and_dedupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let direct_file = write_test_image(&dir, "direct.png");
+        let nested_dir = dir.path().join("nested");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        let nested_file = nested_dir.join("nested.png");
+        image::ImageBuffer::from_pixel(2, 2, image::Rgba([1u8, 2u8, 3u8, 255u8]))
+            .save(&nested_file)
+            .unwrap();
+
+        let resolved = resolve_import_paths(vec![
+            ImportEntry {
+                kind: "file".into(),
+                path: direct_file.clone(),
+            },
+            ImportEntry {
+                kind: "directory".into(),
+                path: dir.path().to_string_lossy().to_string(),
+            },
+        ])
+        .unwrap();
+
+        assert_eq!(resolved.len(), 2);
+        assert!(resolved.contains(&direct_file));
+        assert!(resolved.contains(&nested_file.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn test_resolve_import_paths_rejects_unknown_kind() {
+        let error = resolve_import_paths(vec![ImportEntry {
+            kind: "unknown".into(),
+            path: "/tmp/whatever".into(),
+        }])
+        .unwrap_err();
+
+        assert!(error.contains("unsupported import entry kind"));
     }
 
     #[test]

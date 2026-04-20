@@ -38,7 +38,7 @@ describe("LibraryView 进度条", () => {
       if (cmd === "get_pending_tasks") return Promise.resolve([]);
       if (cmd === "get_image_count") return Promise.resolve(0);
       if (cmd === "get_images") return Promise.resolve([]);
-      if (cmd === "add_images") return new Promise(() => {});
+      if (cmd === "import_entries") return Promise.resolve(2);
       return Promise.resolve([]);
     });
 
@@ -61,7 +61,7 @@ describe("LibraryView 进度条", () => {
       if (cmd === "get_pending_tasks") return Promise.resolve([]);
       if (cmd === "get_image_count") return Promise.resolve(0);
       if (cmd === "get_images") return Promise.resolve([]);
-      if (cmd === "add_folder") return Promise.resolve(3);
+      if (cmd === "import_entries") return Promise.resolve(3);
       return Promise.resolve([]);
     });
 

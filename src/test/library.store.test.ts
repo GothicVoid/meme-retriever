@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
 import type { Event } from "@tauri-apps/api/event";
 import { flushPromises } from "@vue/test-utils";
-import { useLibraryStore, type ImageMeta } from "@/stores/library";
+import { useLibraryStore, type ImageMeta, type ImportEntry } from "@/stores/library";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
@@ -99,7 +99,7 @@ describe("useLibraryStore", () => {
     expect(store.loading).toBe(false);
   });
 
-  it("addImages 完成后图库列表包含新增图片，thumbnailPath 正确", async () => {
+  it("importEntries 完成后图库列表包含新增图片，thumbnailPath 正确", async () => {
     vi.useFakeTimers();
 
     // listen 立即触发回调，模拟两张图片入库完成
@@ -109,12 +109,16 @@ describe("useLibraryStore", () => {
       return Promise.resolve(() => {});
     });
 
-    // add_images 立即 resolve，get_images 返回 mockImages
-    mockInvoke.mockResolvedValueOnce(undefined);
+    const entries: ImportEntry[] = [
+      { kind: "file", path: "/tmp/sample.jpg" },
+      { kind: "file", path: "/tmp/sample_blank.jpg" },
+    ];
+    mockInvoke.mockResolvedValueOnce(2);
     mockInvoke.mockResolvedValueOnce(mockImages);
+    mockInvoke.mockResolvedValueOnce(mockImages.length);
 
     const store = useLibraryStore();
-    const p = store.addImages(["/tmp/sample.jpg", "/tmp/sample_blank.jpg"]);
+    const p = store.importEntries(entries);
 
     // 推进 polling interval
     await vi.runAllTimersAsync();
@@ -125,6 +129,7 @@ describe("useLibraryStore", () => {
     expect(store.images).toEqual(mockImages);
     expect(store.images[0].thumbnailPath).toBe("/library/thumbs/uuid-1.jpg");
     expect(store.images[1].thumbnailPath).toBe("/library/thumbs/uuid-2.jpg");
+    expect(store.importState).toBe("completed");
   });
 
   it("deleteImage 从列表中移除对应图片", async () => {
@@ -139,7 +144,7 @@ describe("useLibraryStore", () => {
     expect(store.images[0].id).toBe("uuid-2");
   });
 
-  it("addFolder 调用 add_folder 并等待返回数量的进度事件后刷新", async () => {
+  it("addFolder 调用 import_entries 并等待返回数量的进度事件后刷新", async () => {
     vi.useFakeTimers();
 
     mockListen.mockImplementation((_event, handler) => {
@@ -148,8 +153,9 @@ describe("useLibraryStore", () => {
       return Promise.resolve(() => {});
     });
 
-    mockInvoke.mockResolvedValueOnce(2);          // add_folder → 2
-    mockInvoke.mockResolvedValueOnce(mockImages); // get_images → mockImages
+    mockInvoke.mockResolvedValueOnce(2);
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockInvoke.mockResolvedValueOnce(mockImages.length);
 
     const store = useLibraryStore();
     const p = store.addFolder("/tmp/memes");
@@ -158,7 +164,9 @@ describe("useLibraryStore", () => {
     await p;
     vi.useRealTimers();
 
-    expect(mockInvoke).toHaveBeenCalledWith("add_folder", { path: "/tmp/memes" });
+    expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
+      entries: [{ kind: "directory", path: "/tmp/memes" }],
+    });
     expect(store.images).toEqual(mockImages);
   });
 
@@ -171,19 +179,24 @@ describe("useLibraryStore", () => {
       return Promise.resolve(() => {});
     });
 
-    // add_images 先挂起，让我们在中途检查状态
+    // import_entries 先挂起，让我们在中途检查状态
     let resolveInvoke!: (v: unknown) => void;
     mockInvoke.mockReturnValueOnce(new Promise((r) => { resolveInvoke = r; }));
-    mockInvoke.mockResolvedValueOnce(mockImages); // get_images
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockInvoke.mockResolvedValueOnce(mockImages.length);
 
     const store = useLibraryStore();
     const p = store.addImages(["/tmp/a.jpg", "/tmp/b.jpg"]);
 
     await flushPromises();
 
+    expect(store.importState).toBe("preparing");
+    resolveInvoke(2);
+    await flushPromises();
     expect(store.indexing).toBe(true);
     expect(store.indexTotal).toBe(2);
     expect(store.indexCurrent).toBe(0);
+    expect(store.importState).toBe("importing");
 
     progressHandler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
     expect(store.indexCurrent).toBe(1);
@@ -191,12 +204,12 @@ describe("useLibraryStore", () => {
     progressHandler({ payload: { id: "uuid-2", status: "completed" } } as Event<unknown>);
     expect(store.indexCurrent).toBe(2);
 
-    resolveInvoke(undefined);
     await vi.runAllTimersAsync();
     await p;
     vi.useRealTimers();
 
     expect(store.indexing).toBe(false);
+    expect(store.importState).toBe("completed");
   });
 
   it("addFolder 过程中 indexing 为 true 且 indexCurrent 随进度递增", async () => {
@@ -208,8 +221,9 @@ describe("useLibraryStore", () => {
       return Promise.resolve(() => {});
     });
 
-    mockInvoke.mockResolvedValueOnce(2);          // add_folder → total=2
-    mockInvoke.mockResolvedValueOnce(mockImages); // get_images
+    mockInvoke.mockResolvedValueOnce(2);
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockInvoke.mockResolvedValueOnce(mockImages.length);
 
     const store = useLibraryStore();
     const p = store.addFolder("/tmp/memes");
@@ -219,6 +233,7 @@ describe("useLibraryStore", () => {
     expect(store.indexing).toBe(true);
     expect(store.indexTotal).toBe(2);
     expect(store.indexCurrent).toBe(0);
+    expect(store.importState).toBe("importing");
 
     progressHandler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
     expect(store.indexCurrent).toBe(1);
@@ -231,14 +246,24 @@ describe("useLibraryStore", () => {
     vi.useRealTimers();
 
     expect(store.indexing).toBe(false);
+    expect(store.importState).toBe("completed");
   });
 
   it("addFolder 目录为空时（total=0）不监听进度事件", async () => {
-    mockInvoke.mockResolvedValueOnce(0); // add_folder → 0 images
+    mockInvoke.mockResolvedValueOnce(0);
     const store = useLibraryStore();
     await store.addFolder("/tmp/empty");
     expect(mockListen).not.toHaveBeenCalled();
     expect(store.images).toEqual([]);
+    expect(store.importState).toBe("idle");
+  });
+
+  it("importEntries 失败时进入 failed 状态", async () => {
+    mockInvoke.mockRejectedValueOnce(new Error("boom"));
+    const store = useLibraryStore();
+
+    await expect(store.importEntries([{ kind: "file", path: "/tmp/a.jpg" }])).rejects.toThrow("boom");
+    expect(store.importState).toBe("failed");
   });
 
   it("resumeIndexing 可接入后台恢复任务的进度事件", async () => {
