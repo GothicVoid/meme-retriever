@@ -52,6 +52,12 @@ describe("LibraryView 进度条", () => {
 
     expect(wrapper.find(".index-status .progress-bar").exists()).toBe(true);
     expect(wrapper.find(".index-status").text()).toContain("0/2");
+    expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
+      entries: [
+        { kind: "file", path: "/tmp/a.jpg" },
+        { kind: "file", path: "/tmp/b.jpg" },
+      ],
+    });
 
     wrapper.unmount();
   });
@@ -75,6 +81,9 @@ describe("LibraryView 进度条", () => {
 
     expect(wrapper.find(".index-status .progress-bar").exists()).toBe(true);
     expect(wrapper.find(".index-status").text()).toContain("0/3");
+    expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
+      entries: [{ kind: "directory", path: "/tmp/memes" }],
+    });
 
     wrapper.unmount();
   });

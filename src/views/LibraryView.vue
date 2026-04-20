@@ -199,7 +199,7 @@ import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { routeLocationKey, type RouteLocationNormalizedLoaded } from "vue-router";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
-import { useLibraryStore } from "@/stores/library";
+import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
 
@@ -359,7 +359,11 @@ async function handleAdd() {
   const selected = await open({ multiple: true, filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "gif", "webp"] }] });
   if (!selected) return;
   const paths = Array.isArray(selected) ? selected : [selected];
-  await store.addImages(paths);
+  const entries: ImportEntry[] = paths.map((path) => ({
+    kind: "file",
+    path,
+  }));
+  await store.importEntries(entries);
   await reloadGallery();
 }
 
@@ -367,7 +371,12 @@ async function handleAddFolder() {
   const selected = await open({ directory: true });
   if (!selected) return;
   const path = Array.isArray(selected) ? selected[0] : selected;
-  await store.addFolder(path);
+  await store.importEntries([
+    {
+      kind: "directory",
+      path,
+    },
+  ]);
   await reloadGallery();
 }
 
