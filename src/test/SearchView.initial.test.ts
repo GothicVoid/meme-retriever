@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import SearchView from "@/views/SearchView.vue";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -17,7 +18,13 @@ vi.mock("@/composables/useClipboard", () => ({
   useClipboard: () => ({ copyImage: vi.fn() }),
 }));
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+  confirm: vi.fn(),
+}));
+
 const mockInvoke = vi.mocked(invoke);
+const mockOpen = vi.mocked(open);
 
 const mockHomeState = {
   imageCount: 3,
@@ -36,6 +43,7 @@ describe("SearchView 初始加载", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockOpen.mockReset();
   });
 
   it("挂载时优先获取首页启动态数据", async () => {
@@ -120,7 +128,7 @@ describe("SearchView 初始加载", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("先导入表情包");
-    expect(wrapper.text()).toContain("导入表情包");
+    expect(wrapper.text()).toContain("导入图片");
     expect(wrapper.text()).toContain("笑死");
     expect(wrapper.text()).toContain("猫猫无语");
     expect(wrapper.text()).toContain("华强买瓜");
@@ -151,7 +159,46 @@ describe("SearchView 初始加载", () => {
 
     expect(mockInvoke).not.toHaveBeenCalledWith("search", expect.anything());
     expect(wrapper.get('[data-testid="cold-start-hint"]').text()).toContain("先导入表情包");
-    expect(document.activeElement).toBe(wrapper.get('[data-action="open-gallery-management"]').element);
+    expect(document.activeElement).toBe(wrapper.get('[data-action="open-import-menu"]').element);
+
+    wrapper.unmount();
+  });
+
+  it("冷启动时点击导入图片会先打开轻弹层，再选择图片导入", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "import_entries") return Promise.resolve(2);
+      if (cmd === "get_image_count") return Promise.resolve(2);
+      return Promise.resolve([]);
+    });
+    mockOpen.mockResolvedValueOnce(["/tmp/a.jpg", "/tmp/b.jpg"]);
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get('[data-action="open-import-menu"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="cold-start-import-menu"]').exists()).toBe(true);
+
+    await wrapper.get('[data-action="import-images"]').trigger("click");
+    await flushPromises();
+
+    expect(mockOpen).toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
+      entries: [
+        { kind: "file", path: "/tmp/a.jpg" },
+        { kind: "file", path: "/tmp/b.jpg" },
+      ],
+    });
 
     wrapper.unmount();
   });

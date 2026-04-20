@@ -24,11 +24,34 @@
               ref="importButtonRef"
               type="button"
               class="search-state-banner__action search-state-banner__action--primary"
-              data-action="open-gallery-management"
-              @click="goToGalleryManagement('recent')"
+              data-action="open-import-menu"
+              @click="toggleImportMenu"
             >
-              导入表情包
+              导入图片
             </button>
+            <div
+              v-if="showImportMenu"
+              ref="importMenuRef"
+              class="search-state-banner__import-menu ui-floating-panel"
+              data-testid="cold-start-import-menu"
+            >
+              <button
+                type="button"
+                class="search-state-banner__import-action"
+                data-action="import-images"
+                @click="handleImportImages"
+              >
+                选择图片
+              </button>
+              <button
+                type="button"
+                class="search-state-banner__import-action"
+                data-action="import-folder"
+                @click="handleImportFolder"
+              >
+                选择文件夹
+              </button>
+            </div>
           </div>
           <div class="search-state-banner__examples">
             <p class="search-state-banner__label">
@@ -445,7 +468,7 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, computed, ref, watch, nextTick, inject } from "vue";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { routerKey, type Router } from "vue-router";
 import SearchBar from "@/components/SearchBar.vue";
@@ -456,7 +479,7 @@ import { useSearch } from "@/composables/useSearch";
 import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settings";
-import { useLibraryStore } from "@/stores/library";
+import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
 import coldStartPreview1 from "@/assets/cold-start-previews/preview-1.jpg";
@@ -514,6 +537,7 @@ const searchBarRef = ref<SearchBarExpose | null>(null);
 const moreMenuRef = ref<HTMLElement | null>(null);
 const moreButtonRef = ref<HTMLElement | null>(null);
 const importButtonRef = ref<HTMLButtonElement | null>(null);
+const importMenuRef = ref<HTMLElement | null>(null);
 const focusedResultIndex = ref(-1);
 const previewImageId = ref<string | null>(null);
 const homeState = ref<HomeState | null>(null);
@@ -521,6 +545,7 @@ const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
 const searchFocused = ref(false);
 const showMoreMenu = ref(false);
+const showImportMenu = ref(false);
 const coldStartHint = ref("");
 const showPostImportPrompt = ref(false);
 let searchBlurTimer: number | null = null;
@@ -900,6 +925,7 @@ function goToGalleryManagement(targetView: "recent" | "issues") {
   if (showColdStart.value && targetView === "recent") {
     setPendingPostImportFlag();
   }
+  showImportMenu.value = false;
   settings.windowMode = "expanded";
   if (router) {
     void router.push({ path: "/library", query: { view: targetView } });
@@ -915,8 +941,53 @@ function closeMoreMenu() {
   showMoreMenu.value = false;
 }
 
+function closeImportMenu() {
+  showImportMenu.value = false;
+}
+
 function toggleMoreMenu() {
   showMoreMenu.value = !showMoreMenu.value;
+}
+
+function toggleImportMenu() {
+  showImportMenu.value = !showImportMenu.value;
+}
+
+async function importFromEntries(entries: ImportEntry[]) {
+  if (entries.length === 0) return;
+  setPendingPostImportFlag();
+  coldStartHint.value = "";
+  closeImportMenu();
+  await libraryStore.importEntries(entries);
+  await fetchHomeState();
+}
+
+async function handleImportImages() {
+  const selected = await open({
+    multiple: true,
+    filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "gif", "webp"] }],
+  });
+  if (!selected) {
+    closeImportMenu();
+    return;
+  }
+  const paths = Array.isArray(selected) ? selected : [selected];
+  await importFromEntries(
+    paths.map((path) => ({
+      kind: "file",
+      path,
+    }))
+  );
+}
+
+async function handleImportFolder() {
+  const selected = await open({ directory: true });
+  if (!selected) {
+    closeImportMenu();
+    return;
+  }
+  const path = Array.isArray(selected) ? selected[0] : selected;
+  await importFromEntries([{ kind: "directory", path }]);
 }
 
 async function openGalleryManagement() {
@@ -969,6 +1040,14 @@ function handlePointerDown(event: MouseEvent) {
     && !moreButtonRef.value?.contains(target)
   ) {
     closeMoreMenu();
+  }
+  if (
+    showImportMenu.value
+    && target
+    && !importMenuRef.value?.contains(target)
+    && !importButtonRef.value?.contains(target)
+  ) {
+    closeImportMenu();
   }
 }
 
@@ -1189,6 +1268,7 @@ watch(() => store.query, () => {
 watch(showColdStart, (nextColdStart) => {
   if (!nextColdStart) {
     coldStartHint.value = "";
+    closeImportMenu();
   }
 });
 
@@ -1616,6 +1696,9 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 0.45rem;
 }
+.search-state-banner__actions {
+  position: relative;
+}
 .search-state-banner__examples {
   flex: 1 1 100%;
 }
@@ -1641,6 +1724,29 @@ onBeforeUnmount(() => {
 }
 .search-state-banner__action--primary:hover {
   background: var(--ui-accent-hover);
+}
+.search-state-banner__import-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 10rem;
+  padding: 0.4rem;
+}
+.search-state-banner__import-action {
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-primary);
+  text-align: left;
+  border-radius: 0.8rem;
+  padding: 0.65rem 0.8rem;
+  cursor: pointer;
+}
+.search-state-banner__import-action:hover {
+  background: var(--ui-bg-hover);
 }
 .search-state-banner__chip {
   border: 1px solid var(--ui-border-subtle);
