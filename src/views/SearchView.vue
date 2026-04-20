@@ -926,7 +926,7 @@ function goToGalleryManagement(targetView: "recent" | "issues") {
     setPendingPostImportFlag();
   }
   showImportMenu.value = false;
-  settings.windowMode = "expanded";
+  settings.currentWindowMode = "expanded";
   if (router) {
     void router.push({ path: "/library", query: { view: targetView } });
     return;
@@ -991,7 +991,7 @@ async function handleImportFolder() {
 }
 
 async function openGalleryManagement() {
-  settings.windowMode = "expanded";
+  settings.currentWindowMode = "expanded";
   closeMoreMenu();
   if (router) {
     await router.push("/library");
@@ -1002,7 +1002,7 @@ async function openGalleryManagement() {
 }
 
 async function openSettingsPanel() {
-  settings.windowMode = "expanded";
+  settings.currentWindowMode = "expanded";
   closeMoreMenu();
   if (router) {
     await router.push("/settings");

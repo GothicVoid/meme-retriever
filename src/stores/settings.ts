@@ -6,7 +6,8 @@ export type WindowMode = "sidebar" | "expanded";
 export const useSettingsStore = defineStore("settings", () => {
   const defaultLimit = ref(9);
   const devDebugMode = ref(false);
-  const windowMode = ref<WindowMode>("sidebar");
+  const startupWindowMode = ref<WindowMode>("sidebar");
+  const currentWindowMode = ref<WindowMode>("sidebar");
 
   function load() {
     const raw = localStorage.getItem("settings");
@@ -14,20 +15,22 @@ export const useSettingsStore = defineStore("settings", () => {
     const parsed = JSON.parse(raw);
     defaultLimit.value = parsed.defaultLimit ?? 9;
     devDebugMode.value = parsed.devDebugMode ?? parsed.showDebugInfo ?? false;
-    windowMode.value = parsed.windowMode === "expanded" ? "expanded" : "sidebar";
+    const savedWindowMode = parsed.startupWindowMode ?? parsed.windowMode;
+    startupWindowMode.value = savedWindowMode === "expanded" ? "expanded" : "sidebar";
+    currentWindowMode.value = startupWindowMode.value;
   }
 
-  watch([defaultLimit, devDebugMode, windowMode], () => {
+  watch([defaultLimit, devDebugMode, startupWindowMode], () => {
     localStorage.setItem(
       "settings",
       JSON.stringify({
         defaultLimit: defaultLimit.value,
         devDebugMode: devDebugMode.value,
-        windowMode: windowMode.value,
+        startupWindowMode: startupWindowMode.value,
       })
     );
   });
 
   load();
-  return { defaultLimit, devDebugMode, windowMode };
+  return { defaultLimit, devDebugMode, startupWindowMode, currentWindowMode };
 });

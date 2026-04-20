@@ -97,7 +97,7 @@ const route = useRoute();
 const router = useRouter();
 
 const isSidebarMode = computed(() =>
-  route.path === "/" && settings.windowMode === "sidebar"
+  route.path === "/" && settings.currentWindowMode === "sidebar"
 );
 
 const effectiveWindowMode = computed<WindowMode>(() =>
@@ -125,21 +125,21 @@ const expandedSubtitle = computed(() => {
 });
 
 async function goQuickSearch() {
-  settings.windowMode = "sidebar";
+  settings.currentWindowMode = "sidebar";
   if (route.path !== "/") {
     await router.push("/");
   }
 }
 
 async function openGalleryManagement() {
-  settings.windowMode = "expanded";
+  settings.currentWindowMode = "expanded";
   if (route.path !== "/library") {
     await router.push("/library");
   }
 }
 
 async function openSettingsPanel() {
-  settings.windowMode = "expanded";
+  settings.currentWindowMode = "expanded";
   if (route.path !== "/settings") {
     await router.push("/settings");
   }

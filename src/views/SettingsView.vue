@@ -18,11 +18,11 @@
       </label>
       <div class="window-preference">
         <div class="window-preference__group">
-          <span class="window-preference__label">默认工作态</span>
+          <span class="window-preference__label">启动工作态</span>
           <div class="window-preference__options">
             <label class="window-option">
               <input
-                v-model="settings.windowMode"
+                v-model="settings.startupWindowMode"
                 type="radio"
                 value="sidebar"
               >
@@ -30,7 +30,7 @@
             </label>
             <label class="window-option">
               <input
-                v-model="settings.windowMode"
+                v-model="settings.startupWindowMode"
                 type="radio"
                 value="expanded"
               >

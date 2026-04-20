@@ -143,7 +143,7 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
-    expect(useSettingsStore().windowMode).toBe("expanded");
+    expect(useSettingsStore().currentWindowMode).toBe("expanded");
   });
 
   it("底部更多菜单不再暴露左右停靠切换", async () => {
