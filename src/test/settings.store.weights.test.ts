@@ -32,10 +32,11 @@ describe("useSettingsStore — 搜索权重已移除", () => {
   it("从 localStorage 加载历史权重字段时忽略它们", () => {
     localStorage.setItem(
       "settings",
-      JSON.stringify({ defaultLimit: 9, showDebugInfo: true, w1: 0.6, w2: 0.2, w3: 0.2 })
+      JSON.stringify({ showDebugInfo: true, w1: 0.6, w2: 0.2, w3: 0.2, defaultLimit: 9 })
     );
     const s = useSettingsStore() as unknown as Record<string, unknown>;
     expect(s.devDebugMode).toBe(true);
+    expect("defaultLimit" in s).toBe(false);
     expect("w1" in s).toBe(false);
     expect("w2" in s).toBe(false);
     expect("w3" in s).toBe(false);

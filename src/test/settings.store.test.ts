@@ -41,7 +41,7 @@ describe("useSettingsStore", () => {
   });
 
   it("devDebugMode 缺失时默认为 false", () => {
-    localStorage.setItem("settings", JSON.stringify({ defaultLimit: 9 }));
+    localStorage.setItem("settings", JSON.stringify({ legacyField: true }));
     const s = useSettingsStore();
     expect(s.devDebugMode).toBe(false);
   });

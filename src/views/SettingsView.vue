@@ -6,16 +6,6 @@
         <h3>基础设置</h3>
         <p>保留少量默认行为配置，不要求用户理解底层搜索原理。</p>
       </div>
-      <label>
-        默认展示数量
-        <input
-          v-model.number="settings.defaultLimit"
-          type="number"
-          min="9"
-          max="21"
-          step="3"
-        >
-      </label>
       <div class="window-preference">
         <div class="window-preference__group">
           <span class="window-preference__label">启动工作态</span>

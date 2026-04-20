@@ -18,6 +18,7 @@ describe("SettingsView 基础设置", () => {
 
   it("不再显示搜索权重调节区", () => {
     const wrapper = mount(SettingsView);
+    expect(wrapper.text()).not.toContain("默认展示数量");
     expect(wrapper.text()).not.toContain("搜索权重调节");
     expect(wrapper.text()).not.toContain("关键词 (w1)");
     expect(wrapper.text()).not.toContain("OCR (w2)");
