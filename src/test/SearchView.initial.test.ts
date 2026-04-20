@@ -203,6 +203,70 @@ describe("SearchView 初始加载", () => {
     wrapper.unmount();
   });
 
+  it("冷启动时可通过轻弹层选择文件夹导入", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "import_entries") return Promise.resolve(3);
+      if (cmd === "get_image_count") return Promise.resolve(3);
+      return Promise.resolve([]);
+    });
+    mockOpen.mockResolvedValueOnce("/tmp/memes");
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get('[data-action="open-import-menu"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-action="import-folder"]').trigger("click");
+    await flushPromises();
+
+    expect(mockOpen).toHaveBeenCalledWith({ directory: true });
+    expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
+      entries: [{ kind: "directory", path: "/tmp/memes" }],
+    });
+
+    wrapper.unmount();
+  });
+
+  it("冷启动时取消导入选择会关闭轻弹层且不触发导入", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    mockOpen.mockResolvedValueOnce(null);
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get('[data-action="open-import-menu"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="cold-start-import-menu"]').exists()).toBe(true);
+
+    await wrapper.get('[data-action="import-images"]').trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("import_entries", expect.anything());
+    expect(wrapper.find('[data-testid="cold-start-import-menu"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
   it("首页数据加载失败时仍保留搜索启动区", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.reject(new Error("home failed"));
