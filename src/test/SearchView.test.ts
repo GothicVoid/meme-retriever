@@ -86,6 +86,7 @@ describe("SearchView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     localStorage.clear();
+    sessionStorage.clear();
     mockInvoke.mockReset();
     mockConfirm.mockReset();
     copyImageMock.mockReset();
@@ -262,9 +263,74 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "撤回消息" }));
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "笑死" }));
     expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("最近常用");
+
+    wrapper.unmount();
+  });
+
+  it("搜索辅助面板使用新的示例词配置", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.find("input").trigger("focus");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("笑死");
+    expect(wrapper.text()).toContain("猫猫无语");
+    expect(wrapper.text()).toContain("华强买瓜");
+
+    wrapper.unmount();
+  });
+
+  it("首次导入完成后显示一次性承接提示，并可用示例词直接搜索", async () => {
+    sessionStorage.setItem("search-view-post-import-pending", "1");
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 1,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [{
+            id: "home-1",
+            filePath: "/img.jpg",
+            fileName: "img.jpg",
+            thumbnailPath: "/thumb.jpg",
+            fileFormat: "jpg",
+            fileStatus: "normal",
+            width: 100,
+            height: 100,
+            fileSize: 100,
+            addedAt: 0,
+            useCount: 0,
+            tags: [],
+          }],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="post-import-prompt"]').text()).toContain("现在可以按台词、角色、动作开始找图了");
+
+    await wrapper.get('[data-testid="post-import-example"]').trigger("click");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "笑死" }));
+    expect(wrapper.find('[data-testid="post-import-prompt"]').exists()).toBe(false);
+    expect(sessionStorage.getItem("search-view-post-import-pending")).toBeNull();
 
     wrapper.unmount();
   });

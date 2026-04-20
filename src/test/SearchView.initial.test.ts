@@ -119,8 +119,40 @@ describe("SearchView 初始加载", () => {
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("先把表情包放进来");
-    expect(wrapper.text()).toContain("导入图片");
+    expect(wrapper.text()).toContain("先导入表情包");
+    expect(wrapper.text()).toContain("导入表情包");
+    expect(wrapper.text()).toContain("笑死");
+    expect(wrapper.text()).toContain("猫猫无语");
+    expect(wrapper.text()).toContain("华强买瓜");
+    expect(wrapper.text()).toContain("下面只是演示，不会加入你的图库");
+    expect(wrapper.text()).toContain("导入后这里会显示结果");
+    wrapper.unmount();
+  });
+
+  it("冷启动时点击示例词不会直接发起搜索，而是提示先导入", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get('[data-testid="cold-start-example"]').trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("search", expect.anything());
+    expect(wrapper.get('[data-testid="cold-start-hint"]').text()).toContain("先导入表情包");
+    expect(document.activeElement).toBe(wrapper.get('[data-action="open-gallery-management"]').element);
+
     wrapper.unmount();
   });
 

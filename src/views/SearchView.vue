@@ -1,34 +1,171 @@
 <template>
   <div class="search-view">
-    <p
-      v-if="!isHomeMode"
-      class="search-view__summary-text"
-    >
-      {{ visibleResults.length > 0 ? `已准备 ${visibleResults.length} 张候选图` : "继续改几个词试试" }}
-    </p>
     <section class="search-view__body">
-      <div
-        v-if="isHomeMode"
-        class="home-landing"
+      <section
+        v-if="showColdStart || showPostImportPrompt || !isHomeMode"
+        class="search-view__top-banner"
+        :class="{ 'search-view__top-banner--cold': showColdStart }"
       >
         <div
           v-if="showColdStart"
-          class="home-empty"
+          class="search-state-banner search-state-banner--cold"
+          data-testid="cold-start-panel"
         >
-          <p class="home-empty__title">
-            先把表情包放进来
+          <div class="search-state-banner__copy">
+            <p class="search-state-banner__title">
+              先导入表情包
+            </p>
+            <p class="search-state-banner__text">
+              导入后就能按台词、角色、动作、场景搜表情。
+            </p>
+          </div>
+          <div class="search-state-banner__actions">
+            <button
+              ref="importButtonRef"
+              type="button"
+              class="search-state-banner__action search-state-banner__action--primary"
+              data-action="open-gallery-management"
+              @click="goToGalleryManagement('recent')"
+            >
+              导入表情包
+            </button>
+          </div>
+          <div class="search-state-banner__examples">
+            <p class="search-state-banner__label">
+              试试这些词
+            </p>
+            <div class="search-state-banner__chips">
+              <button
+                v-for="example in exampleQueries"
+                :key="example"
+                type="button"
+                class="search-state-banner__chip"
+                data-testid="cold-start-example"
+                @click="applyExampleQuery(example)"
+              >
+                {{ example }}
+              </button>
+            </div>
+          </div>
+          <p
+            v-if="coldStartHint"
+            class="search-state-banner__hint"
+            data-testid="cold-start-hint"
+          >
+            {{ coldStartHint }}
           </p>
-          <p class="home-empty__text">
-            导入后就可以按图片里的字、角色名、动作或场景直接找图
+          <p class="search-state-banner__footnote">
+            下面只是演示，不会加入你的图库。
           </p>
+        </div>
+
+        <section
+          v-else-if="showPostImportPrompt"
+          class="search-state-banner search-state-banner--post-import"
+          data-testid="post-import-prompt"
+        >
+          <div class="search-state-banner__copy">
+            <p class="search-state-banner__title">
+              现在可以按台词、角色、动作开始找图了
+            </p>
+            <p class="search-state-banner__text">
+              不知道怎么搜的话，先试试下面这些词。
+            </p>
+          </div>
           <button
             type="button"
-            class="home-empty__action"
-            data-action="open-gallery-management"
-            @click="goToGalleryManagement('recent')"
+            class="search-state-banner__close"
+            aria-label="关闭导入后提示"
+            @click="dismissPostImportPrompt"
           >
-            导入图片
+            ×
           </button>
+          <div class="search-state-banner__chips">
+            <button
+              v-for="example in exampleQueries"
+              :key="`post-${example}`"
+              type="button"
+              class="search-state-banner__chip"
+              data-testid="post-import-example"
+              @click="applyExampleQuery(example)"
+            >
+              {{ example }}
+            </button>
+          </div>
+        </section>
+
+        <div
+          v-else
+          class="search-state-banner search-state-banner--summary"
+        >
+          <p class="search-state-banner__title">
+            {{ searchSummaryTitle }}
+          </p>
+          <p
+            v-if="searchSummaryMeta"
+            class="search-state-banner__text"
+          >
+            {{ searchSummaryMeta }}
+          </p>
+          <p
+            v-if="showResultShortcutsHint"
+            class="search-state-banner__meta"
+            data-testid="result-shortcuts-hint"
+          >
+            Enter 复制 · Space 预览 · Esc 关闭
+          </p>
+        </div>
+      </section>
+
+      <div
+        v-if="isHomeMode"
+        class="home-landing"
+        :class="{ 'home-landing--cold': showColdStart }"
+      >
+        <div
+          v-if="showColdStart"
+          class="home-cold-start"
+        >
+          <div class="home-preview-wrap">
+            <div class="home-preview-wrap__banner">
+              导入后这里会显示结果
+            </div>
+            <div
+              class="home-preview-cloud"
+              aria-hidden="true"
+            >
+              <div
+                v-for="card in coldStartPreviewCards"
+                :key="card.id"
+                class="home-preview-cloud__card"
+                :style="{
+                  '--preview-height': `${card.height}px`,
+                  '--preview-tag-width': card.tagWidth,
+                  '--preview-primary-width': card.primaryWidth,
+                  '--preview-secondary-width': card.secondaryWidth,
+                }"
+              >
+                <div class="home-preview-cloud__frame">
+                  <div class="home-preview-cloud__media">
+                    <img
+                      :src="card.src"
+                      alt=""
+                      class="home-preview-cloud__image"
+                    >
+                  </div>
+                  <div class="home-preview-cloud__info">
+                    <div class="home-preview-cloud__header">
+                      <span class="home-preview-cloud__tag" />
+                    </div>
+                    <div class="home-preview-cloud__pills">
+                      <span class="home-preview-cloud__pill home-preview-cloud__pill--wide" />
+                      <span class="home-preview-cloud__pill" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <template v-else>
@@ -70,21 +207,20 @@
           @open="openDetail"
           @preview="openQuickPreview"
         />
-        <p
-          v-if="showResultShortcutsHint"
-          class="search-view__result-shortcuts"
-          data-testid="result-shortcuts-hint"
-        >
-          Enter 复制 · Space 预览 · Esc 关闭
-        </p>
         <div
-          v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint || showLowRelevanceStopNotice"
+          v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
           class="result-feedback"
+          :class="{
+            'result-feedback--warning': showSearchErrorHint || showZeroResultHint || showLowConfidenceHint,
+          }"
         >
           <p class="result-feedback__title">
             {{ feedbackTitle }}
           </p>
-          <p class="result-feedback__text">
+          <p
+            v-if="feedbackText"
+            class="result-feedback__text"
+          >
             {{ feedbackText }}
           </p>
           <div
@@ -100,29 +236,52 @@
               {{ item }}
             </span>
           </div>
-          <button
-            v-if="showRecentUsedShortcut"
-            class="result-feedback__action"
-            data-action="show-recent-used"
-            @click="goBackToHome"
-          >
-            看看最近用过
-          </button>
-          <button
-            v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
-            class="result-feedback__action"
-            data-action="go-gallery-management"
-            @click="goToGalleryManagement(showLowConfidenceHint || showSearchErrorHint ? 'issues' : 'recent')"
-          >
-            去图库管理
-          </button>
+          <div class="result-feedback__actions">
+            <button
+              v-if="showRecentUsedShortcut"
+              class="result-feedback__action"
+              data-action="show-recent-used"
+              @click="goBackToHome"
+            >
+              看看最近用过
+            </button>
+            <button
+              v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
+              class="result-feedback__action"
+              data-action="go-gallery-management"
+              @click="goToGalleryManagement(showLowConfidenceHint || showSearchErrorHint ? 'issues' : 'recent')"
+            >
+              去图库管理
+            </button>
+            <button
+              v-if="canShowSecondaryResults"
+              class="result-feedback__action"
+              :data-action="showSecondaryResults ? 'show-less' : 'show-more-secondary'"
+              @click="toggleSecondaryResults"
+            >
+              {{ showSecondaryResults ? "收起补充结果" : `查看其余 ${secondaryResultsCount} 张` }}
+            </button>
+          </div>
+        </div>
+        <div
+          v-if="showLowRelevanceStopNotice"
+          class="result-more-strip"
+        >
+          <div class="result-more-strip__copy">
+            <p class="result-more-strip__title">
+              其余结果先收起来了
+            </p>
+            <p class="result-more-strip__text">
+              最像的 {{ mediumConfidenceCount }} 张已经排在前面。
+            </p>
+          </div>
           <button
             v-if="canShowSecondaryResults"
-            class="result-feedback__action"
+            class="result-more-strip__action"
             :data-action="showSecondaryResults ? 'show-less' : 'show-more-secondary'"
             @click="toggleSecondaryResults"
           >
-            {{ showSecondaryResults ? "收起低相关结果" : `仍然查看其余 ${secondaryResultsCount} 张结果` }}
+            {{ showSecondaryResults ? "收起补充结果" : `查看更多 ${secondaryResultsCount} 张` }}
           </button>
         </div>
         <div
@@ -228,12 +387,16 @@
       </div>
       <div class="search-view__dock-meta">
         <p
+          v-if="!showColdStart"
           class="search-view__shortcut-hint"
           data-testid="search-shortcuts-hint"
         >
           / 或 Ctrl+K 聚焦搜索
         </p>
-        <div class="search-view__menu-wrap">
+        <div
+          class="search-view__menu-wrap"
+          :class="{ 'search-view__menu-wrap--solo': showColdStart }"
+        >
           <button
             ref="moreButtonRef"
             type="button"
@@ -295,8 +458,11 @@ import { showToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
-import { getUserFacingRelevanceLabel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
+import coldStartPreview1 from "@/assets/cold-start-previews/preview-1.jpg";
+import coldStartPreview2 from "@/assets/cold-start-previews/preview-2.jpg";
+import coldStartPreview3 from "@/assets/cold-start-previews/preview-3.jpg";
+import coldStartPreview4 from "@/assets/cold-start-previews/preview-4.jpg";
 
 const { store, debouncedSearch } = useSearch();
 const { copyImage } = useClipboard();
@@ -333,12 +499,21 @@ interface SearchBarExpose {
 
 const HIGH_CONFIDENCE_BATCH_SIZE = 12;
 const RESULT_FETCH_STEP = 30;
+const POST_IMPORT_PENDING_KEY = "search-view-post-import-pending";
+const exampleQueries = ["笑死", "猫猫无语", "华强买瓜"];
+const coldStartPreviewCards = [
+  { id: "preview-1", height: 188, src: coldStartPreview1, tagWidth: "1.1rem", primaryWidth: "4.6rem", secondaryWidth: "1.7rem" },
+  { id: "preview-2", height: 188, src: coldStartPreview2, tagWidth: "0.92rem", primaryWidth: "4.2rem", secondaryWidth: "2rem" },
+  { id: "preview-3", height: 188, src: coldStartPreview3, tagWidth: "1.24rem", primaryWidth: "4.9rem", secondaryWidth: "1.4rem" },
+  { id: "preview-4", height: 188, src: coldStartPreview4, tagWidth: "1rem", primaryWidth: "4.35rem", secondaryWidth: "1.85rem" },
+];
 const visibleRelevantCount = ref(HIGH_CONFIDENCE_BATCH_SIZE);
 const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 const searchBarRef = ref<SearchBarExpose | null>(null);
 const moreMenuRef = ref<HTMLElement | null>(null);
 const moreButtonRef = ref<HTMLElement | null>(null);
+const importButtonRef = ref<HTMLButtonElement | null>(null);
 const focusedResultIndex = ref(-1);
 const previewImageId = ref<string | null>(null);
 const homeState = ref<HomeState | null>(null);
@@ -346,9 +521,10 @@ const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
 const searchFocused = ref(false);
 const showMoreMenu = ref(false);
+const coldStartHint = ref("");
+const showPostImportPrompt = ref(false);
 let searchBlurTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
-const exampleQueries = ["撤回消息", "阿布 撇嘴", "猫猫 心虚", "领导 冷笑"];
 
 const isHomeMode = computed(() => !store.query.trim());
 
@@ -365,6 +541,39 @@ const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
 const showSearchAssistPanel = computed(() =>
   searchFocused.value && isHomeMode.value && (recentSearches.value.length > 0 || exampleQueries.length > 0)
 );
+
+function getPendingPostImportFlag() {
+  try {
+    return sessionStorage.getItem(POST_IMPORT_PENDING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setPendingPostImportFlag() {
+  try {
+    sessionStorage.setItem(POST_IMPORT_PENDING_KEY, "1");
+  } catch {
+    // ignore session storage failures
+  }
+}
+
+function clearPendingPostImportFlag() {
+  try {
+    sessionStorage.removeItem(POST_IMPORT_PENDING_KEY);
+  } catch {
+    // ignore session storage failures
+  }
+}
+
+function syncPostImportPrompt(nextImageCount: number) {
+  if (nextImageCount > 0 && getPendingPostImportFlag()) {
+    showPostImportPrompt.value = true;
+    return;
+  }
+
+  showPostImportPrompt.value = false;
+}
 
 function toHomeSearchResults(images: HomeImage[]): SearchResult[] {
   return images.map((image) => ({
@@ -542,20 +751,58 @@ const showResultShortcutsHint = computed(() =>
   !isHomeMode.value && visibleResults.value.length > 0 && !previewImageId.value
 );
 
+const searchSummaryTitle = computed(() => {
+  const query = store.query.trim();
+  if (!query) return "";
+
+  if (store.loading) {
+    return `正在找“${query}”相关的图`;
+  }
+  if (showSearchErrorHint.value) {
+    return "这次没搜出来，换个词再试试";
+  }
+  if (showZeroResultHint.value) {
+    return `没找到“${query}”相关的图`;
+  }
+  if (showLowConfidenceHint.value) {
+    return `没找到和“${query}”更接近的图`;
+  }
+  if (visibleResults.value.length <= 2) {
+    return `找到 ${visibleResults.value.length} 张更接近“${query}”的图`;
+  }
+  return `找到 ${visibleResults.value.length} 张和“${query}”相关的图`;
+});
+
+const searchSummaryMeta = computed(() => {
+  if (showSearchErrorHint.value) {
+    return "可以重试，或去图库管理检查图片状态。";
+  }
+  if (showZeroResultHint.value) {
+    return "换个说法试试，先从图里的原文、角色名、动作或场景词开始搜。";
+  }
+  if (showLowConfidenceHint.value) {
+    return "先试试图里的原文、角色名或更短一点的关键词。";
+  }
+  if (showLowRelevanceStopNotice.value) {
+    return "";
+  }
+  return "";
+});
+
 const feedbackTitle = computed(() => {
   if (showSearchErrorHint.value) {
     return "这次搜索没成功";
   }
   if (showZeroResultHint.value) {
-    return "没找到这类图片";
+    return "换个说法再试试";
   }
   if (showLowConfidenceHint.value) {
-    return "没找到足够相关的结果";
+    return "先别急着翻不太像的结果";
   }
   if (mediumConfidenceCount.value > highConfidenceCount.value) {
-    return `已展示${getUserFacingRelevanceLabel(1)}和${getUserFacingRelevanceLabel(0.6)}的结果，共 ${mediumConfidenceCount.value} 张`;
+    return `${mediumConfidenceCount.value} 张更接近的图已排在前面`;
   }
-  return `已展示全部${getUserFacingRelevanceLabel(1)}结果，共 ${highConfidenceCount.value} 张`;
+  return `${highConfidenceCount.value} 张更接近的图已全部显示`;
 });
 
 const feedbackText = computed(() => {
@@ -563,18 +810,20 @@ const feedbackText = computed(() => {
     return "可以重试，或先去图库管理检查图片状态。";
   }
   if (showZeroResultHint.value) {
-    return "换个说法试试。可以从图片里的原文、角色名、动作或场景词开始搜。";
+    return "可以从图片里的原文、角色名、动作或场景词开始搜。";
   }
   if (showLowConfidenceHint.value) {
-    return "试试补充图片里的文字、角色名、动作或场景词，例如“阿布 撇嘴”“撤回消息 猫猫”“领导 冷笑”。";
+    return "如果你愿意，也可以展开看看其余候选，再决定要不要换词。";
   }
   if (showSecondaryResults.value) {
-    return `后续 ${secondaryResultsCount.value} 张结果相关性较低，当前仅因你主动展开才显示。`;
+    return secondaryResultsCount.value > 0
+      ? `后面的 ${secondaryResultsCount.value} 张属于补充结果，相关性会弱一些。`
+      : "";
   }
   if (mediumConfidenceCount.value > highConfidenceCount.value) {
-    return `其中${getUserFacingRelevanceLabel(1)} ${highConfidenceCount.value} 张、${getUserFacingRelevanceLabel(0.6)} ${mediumConfidenceCount.value - highConfidenceCount.value} 张；后续 ${secondaryResultsCount.value} 张结果相关性明显下降，已默认隐藏。`;
+    return `最像的 ${highConfidenceCount.value} 张已经排在最前面。`;
   }
-  return `后续 ${secondaryResultsCount.value} 张结果相关性明显下降，已默认隐藏，避免把不相关图片混进来。`;
+  return "";
 });
 
 const loadMoreHint = computed(() =>
@@ -601,11 +850,14 @@ function resetResultView() {
 async function fetchHomeState() {
   homeLoading.value = true;
   try {
-    homeState.value = await invoke<HomeState>("get_home_state");
+    const nextHomeState = await invoke<HomeState>("get_home_state");
+    homeState.value = nextHomeState;
     homeLoadFailed.value = false;
+    syncPostImportPrompt(nextHomeState.imageCount);
   } catch {
     homeState.value = null;
     homeLoadFailed.value = true;
+    showPostImportPrompt.value = false;
   } finally {
     homeLoading.value = false;
   }
@@ -620,10 +872,19 @@ function onQueryChange(val: string) {
     void fetchHomeState();
     return;
   }
+  coldStartHint.value = "";
+  showPostImportPrompt.value = false;
+  clearPendingPostImportFlag();
   debouncedSearch(val);
 }
 
 function applyExampleQuery(query: string) {
+  if (showColdStart.value) {
+    coldStartHint.value = `先导入表情包，导入后就能搜“${query}”这类词`;
+    importButtonRef.value?.focus();
+    return;
+  }
+
   searchFocused.value = false;
   store.query = query;
   onQueryChange(query);
@@ -636,6 +897,9 @@ function goBackToHome() {
 }
 
 function goToGalleryManagement(targetView: "recent" | "issues") {
+  if (showColdStart.value && targetView === "recent") {
+    setPendingPostImportFlag();
+  }
   settings.windowMode = "expanded";
   if (router) {
     void router.push({ path: "/library", query: { view: targetView } });
@@ -711,6 +975,11 @@ function handlePointerDown(event: MouseEvent) {
 function focusSearchInput() {
   searchBarRef.value?.focusAndSelect();
   searchFocused.value = true;
+}
+
+function dismissPostImportPrompt() {
+  showPostImportPrompt.value = false;
+  clearPendingPostImportFlag();
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -917,6 +1186,12 @@ watch(() => store.query, () => {
   resetResultView();
 });
 
+watch(showColdStart, (nextColdStart) => {
+  if (!nextColdStart) {
+    coldStartHint.value = "";
+  }
+});
+
 watch(() => store.results.length, (nextLen, prevLen) => {
   if (nextLen < prevLen) {
     visibleRelevantCount.value = HIGH_CONFIDENCE_BATCH_SIZE;
@@ -988,21 +1263,27 @@ onBeforeUnmount(() => {
   padding-top: 0.55rem;
 }
 
-.search-view__summary-text {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.35;
-  color: var(--ui-text-secondary);
-  flex-shrink: 0;
-}
-
 .search-view__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
   padding-right: 0.15rem;
   padding-bottom: 0.75rem;
   scrollbar-gutter: stable;
+}
+
+.search-view__top-banner {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.search-view__top-banner--cold {
+  gap: 0.55rem;
 }
 
 .search-input-wrap {
@@ -1042,6 +1323,11 @@ onBeforeUnmount(() => {
 .search-view__menu-wrap {
   position: relative;
   flex-shrink: 0;
+  margin-left: auto;
+}
+
+.search-view__menu-wrap--solo {
+  margin-left: auto;
 }
 
 .search-view__menu-button {
@@ -1174,48 +1460,218 @@ onBeforeUnmount(() => {
 .home-landing {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 0.85rem 0.85rem 1rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-lg);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(251, 248, 242, 0.9));
-  box-shadow: var(--ui-shadow-soft);
+  gap: 0.8rem;
+  padding: 0.1rem 0.05rem 0.4rem;
 }
-.home-empty {
+.home-landing--cold {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.home-cold-start {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1.25rem 1.125rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 95%, white);
+  gap: 0.55rem;
+  min-height: 0;
 }
-.home-empty__title {
+.home-preview-wrap {
+  position: relative;
+  padding-top: 0.7rem;
+}
+.home-preview-wrap__banner {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 11.5rem;
+  padding: 0.34rem 0.78rem;
+  border: 1px solid rgba(219, 205, 180, 0.84);
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.88);
+  box-shadow: 0 8px 20px rgba(95, 77, 48, 0.08);
+  font-size: 0.74rem;
+  color: var(--ui-text-secondary);
+  text-align: center;
+}
+.home-preview-cloud {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  padding: 0.3rem 0 0;
+  opacity: 0.74;
+}
+.home-preview-cloud__frame {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--preview-height);
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(215, 203, 182, 0.88);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 24px rgba(95, 77, 48, 0.08);
+}
+.home-preview-cloud__media {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+  padding: 0.18rem;
+  background: rgba(248, 244, 236, 0.78);
+}
+.home-preview-cloud__image {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0.72rem;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.92);
+}
+.home-preview-cloud__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.34rem;
+  padding: 0.48rem 0.52rem 0.56rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+.home-preview-cloud__header {
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+}
+.home-preview-cloud__tag {
+  width: var(--preview-tag-width);
+  height: 0.46rem;
+  border-radius: 999px;
+  background: rgba(173, 218, 180, 0.72);
+}
+.home-preview-cloud__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.24rem;
+}
+.home-preview-cloud__pill {
+  display: block;
+  height: 0.44rem;
+  width: var(--preview-secondary-width);
+  border-radius: 0.28rem;
+  background: rgba(123, 112, 96, 0.1);
+}
+.home-preview-cloud__pill--wide {
+  width: var(--preview-primary-width);
+}
+.search-state-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.45rem 0.7rem;
+  padding: 0.68rem 0.78rem;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 18%, var(--ui-border-subtle));
+  border-radius: 0.95rem;
+  background: rgba(255, 251, 245, 0.76);
+}
+.search-state-banner--summary {
+  gap: 0.22rem;
+  padding: 0.05rem 0 0.1rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.search-state-banner__copy {
+  flex: 1 1 200px;
+}
+.search-state-banner__title,
+.search-state-banner__text,
+.search-state-banner__meta,
+.search-state-banner__label,
+.search-state-banner__footnote {
   margin: 0;
-  font-size: 1.05rem;
+}
+.search-state-banner__title {
+  font-size: 0.84rem;
   font-weight: 700;
   color: var(--ui-text-primary);
 }
-.home-empty__text {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.5;
+.search-state-banner__text {
+  margin-top: 0.18rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
   color: var(--ui-text-secondary);
 }
-.home-empty__action {
-  margin-top: 0.25rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid transparent;
+.search-state-banner__meta {
+  font-size: 0.72rem;
+  color: var(--ui-text-secondary);
+}
+.search-state-banner__actions,
+.search-state-banner__examples {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.search-state-banner__examples {
+  flex: 1 1 100%;
+}
+.search-state-banner__label {
+  font-size: 0.74rem;
+  color: var(--ui-text-secondary);
+}
+.search-state-banner__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.search-state-banner__action {
+  padding: 0.44rem 0.92rem;
   border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.search-state-banner__action--primary {
   background: var(--ui-accent);
   color: #fff;
-  cursor: pointer;
-  font-size: 0.88rem;
 }
-.home-empty__action:hover {
+.search-state-banner__action--primary:hover {
   background: var(--ui-accent-hover);
+}
+.search-state-banner__chip {
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ui-text-primary);
+  padding: 0.38rem 0.72rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.search-state-banner__chip:hover {
+  background: var(--ui-bg-hover);
+}
+.search-state-banner__hint {
+  margin-top: -0.05rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--ui-accent) 78%, #533500);
+}
+.search-state-banner__footnote {
+  flex: 1 1 100%;
+  font-size: 0.72rem;
+  color: var(--ui-text-secondary);
+}
+.search-state-banner__close {
+  border: none;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
 }
 .home-section {
   display: flex;
@@ -1241,7 +1697,7 @@ onBeforeUnmount(() => {
 }
 .home-section__title {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 700;
   color: var(--ui-text-primary);
 }
@@ -1255,47 +1711,106 @@ onBeforeUnmount(() => {
   border-radius: 0 4px 4px 0;
 }
 .result-feedback {
-  padding: 0.7rem 0.85rem;
-  border-radius: 8px;
-  background: #fff7e8;
-  border: 1px solid #f5d39a;
-  color: #8a5a00;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+  padding: 0.72rem 0.82rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(219, 205, 180, 0.9);
+  background: rgba(255, 250, 242, 0.85);
+  color: var(--ui-text-primary);
   text-align: left;
 }
+.result-feedback--secondary {
+  background: rgba(250, 247, 240, 0.82);
+}
+.result-feedback--warning {
+  border-color: color-mix(in srgb, var(--ui-accent) 22%, var(--ui-border-subtle));
+}
 .result-feedback__title {
-  margin: 0 0 0.25rem;
-  font-size: 0.95rem;
+  margin: 0;
+  font-size: 0.84rem;
   font-weight: 600;
+  color: var(--ui-text-primary);
 }
 .result-feedback__text {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.78rem;
   line-height: 1.5;
+  color: var(--ui-text-secondary);
 }
 .result-feedback__guidance {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  gap: 0.45rem;
 }
 .result-feedback__guidance-item {
-  padding: 0.35rem 0.625rem;
+  padding: 0.34rem 0.62rem;
   border-radius: 999px;
-  background: rgba(254, 243, 199, 0.9);
-  color: #92400e;
-  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(219, 205, 180, 0.86);
+  color: var(--ui-text-secondary);
+  font-size: 0.8rem;
+}
+.result-feedback__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 .result-feedback__action {
-  margin-top: 0.75rem;
-  padding: 0.4rem 0.9rem;
-  border: 1px solid #d6a23f;
-  border-radius: 6px;
-  background: none;
-  color: #8a5a00;
+  padding: 0.38rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 28%, var(--ui-border-subtle));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ui-text-primary);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
-.result-feedback__action:hover { background: rgba(245, 211, 154, 0.25); }
+.result-feedback__action:hover {
+  background: var(--ui-bg-hover);
+}
+.result-more-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.72rem 0.82rem;
+  border: 1px solid rgba(219, 205, 180, 0.82);
+  border-radius: 1rem;
+  background: rgba(255, 251, 245, 0.7);
+}
+.result-more-strip__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  min-width: 0;
+}
+.result-more-strip__title,
+.result-more-strip__text {
+  margin: 0;
+}
+.result-more-strip__title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ui-text-primary);
+}
+.result-more-strip__text {
+  font-size: 0.76rem;
+  color: var(--ui-text-secondary);
+}
+.result-more-strip__action {
+  flex-shrink: 0;
+  padding: 0.38rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 28%, var(--ui-border-subtle));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ui-text-primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.result-more-strip__action:hover {
+  background: var(--ui-bg-hover);
+}
 .load-more-trigger {
   padding: 1rem 0 0.5rem;
   text-align: center;

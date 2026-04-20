@@ -143,9 +143,10 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.findAll(".image-card").length).toBe(9);
-    expect(wrapper.text()).toContain("已展示最像你要找的和可能也对的结果，共 9 张");
-    expect(wrapper.text()).toContain("其中最像你要找的 7 张、可能也对 2 张");
-    expect(wrapper.text()).toContain("后续 1 张结果相关性明显下降");
+    expect(wrapper.text()).toContain("找到 9 张和“黄金船”相关的图");
+    expect(wrapper.text()).toContain("其余结果先收起来了");
+    expect(wrapper.text()).toContain("最像的 9 张已经排在前面");
+    expect(wrapper.text()).toContain("查看更多 1 张");
     expect(wrapper.find("[data-action='show-more-secondary']").exists()).toBe(true);
   });
 
@@ -158,8 +159,9 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.findAll(".image-card").length).toBe(4);
-    expect(wrapper.text()).toContain("其中最像你要找的 2 张、可能也对 2 张");
-    expect(wrapper.text()).toContain("后续 1 张结果相关性明显下降");
+    expect(wrapper.text()).toContain("其余结果先收起来了");
+    expect(wrapper.text()).toContain("最像的 4 张已经排在前面");
+    expect(wrapper.text()).toContain("查看更多 1 张");
   });
 
   it("用户主动展开后才显示低相关结果，并可收起", async () => {
@@ -189,7 +191,7 @@ describe("SearchView — 结果展示体验", () => {
 
     expect(wrapper.findAll(".image-card").length).toBe(0);
     expect(wrapper.text()).toContain("没找到足够相关的结果");
-    expect(wrapper.text()).toContain("角色名、动作或场景词");
+    expect(wrapper.text()).toContain("先试试图里的原文");
     expect(wrapper.findAll('[data-testid="search-guidance-item"]').length).toBeGreaterThanOrEqual(3);
   });
 
@@ -217,7 +219,7 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".result-feedback").exists()).toBe(true);
-    expect(wrapper.text()).toContain("没找到这类图片");
+    expect(wrapper.text()).toContain("换个说法再试试");
     expect(wrapper.findAll('[data-testid="search-guidance-item"]').length).toBeGreaterThanOrEqual(3);
     expect(wrapper.text()).toContain("试试图片里的原文");
     expect(wrapper.text()).toContain("试试角色名 + 动作");
