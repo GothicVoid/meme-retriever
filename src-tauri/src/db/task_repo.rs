@@ -95,7 +95,9 @@ pub async fn update_task_status_with_result(
 pub async fn get_pending_tasks(pool: &DbPool) -> anyhow::Result<Vec<TaskRecord>> {
     let rows = sqlx::query(
         "SELECT id,file_path,status,error_message,created_at,updated_at
-         FROM task_queue WHERE status='pending' ORDER BY created_at ASC",
+         FROM task_queue
+         WHERE status IN ('pending', 'processing')
+         ORDER BY created_at ASC",
     )
     .fetch_all(pool)
     .await?;
@@ -283,6 +285,24 @@ mod tests {
         let pending = get_pending_tasks(&pool).await.unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].status, "pending");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_get_pending_tasks_includes_processing(pool: SqlitePool) {
+        insert_task(&pool, "t1", "/tmp/a.jpg").await.unwrap();
+        insert_task(&pool, "t2", "/tmp/b.jpg").await.unwrap();
+        update_task_status(&pool, "t2", "processing", None)
+            .await
+            .unwrap();
+        update_task_status(&pool, "t1", "completed", None)
+            .await
+            .unwrap();
+        insert_task(&pool, "t3", "/tmp/c.jpg").await.unwrap();
+
+        let pending = get_pending_tasks(&pool).await.unwrap();
+        assert_eq!(pending.len(), 2);
+        assert!(pending.iter().any(|task| task.id == "t2" && task.status == "processing"));
+        assert!(pending.iter().any(|task| task.id == "t3" && task.status == "pending"));
     }
 
     #[sqlx::test(migrations = "./migrations")]

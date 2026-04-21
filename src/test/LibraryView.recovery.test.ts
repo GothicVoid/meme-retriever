@@ -54,6 +54,25 @@ describe("LibraryView 入库恢复提示", () => {
     wrapper.unmount();
   });
 
+  it("只有 processing 任务时也展示恢复提示条", async () => {
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_pending_tasks") {
+        return [{ id: 1, filePath: "/tmp/a.jpg", status: "processing" }];
+      }
+      if (cmd === "get_image_count") return 0;
+      if (cmd === "get_images") return [];
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("上次有 1 张图片还没整理完");
+    expect(wrapper.find("[data-action='resume-pending-tasks']").exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
   it("点击继续处理后隐藏恢复提示，并接入入库进度状态", async () => {
     let progressHandler: ((event: { payload: { id: string; status: string } }) => void) | null = null;
     mockListen.mockImplementation(async (_event, handler) => {
