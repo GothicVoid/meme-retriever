@@ -227,4 +227,39 @@ describe("LibraryView 管理视图", () => {
 
     wrapper.unmount();
   });
+
+  it("存在未完成任务时，优先显示恢复横幅而不是最近一次导入结果", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") {
+        return [{ id: "task-1", filePath: "/tmp/a.jpg" }];
+      }
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-c",
+          totalCount: 3,
+          importedCount: 1,
+          duplicatedCount: 1,
+          failedCount: 1,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-c2",
+          filePath: "/tmp/imports/c2.jpg",
+          errorMessage: "图片已损坏",
+        }];
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("上次有 1 张图片还没整理完");
+    expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
 });

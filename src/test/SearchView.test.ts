@@ -145,6 +145,38 @@ describe("SearchView", () => {
     expect(useSettingsStore().currentWindowMode).toBe("expanded");
   });
 
+  it("存在未完成任务时，点击底部图库按钮会直接进入待处理视图", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          pendingTaskCount: 2,
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(SearchView, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe("/library");
+    expect(router.currentRoute.value.query.view).toBe("recent");
+    expect(useSettingsStore().currentWindowMode).toBe("expanded");
+
+    wrapper.unmount();
+  });
+
   it("底部操作区直接提供图库按钮", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
