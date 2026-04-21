@@ -29,6 +29,11 @@ describe("useSettingsStore — 搜索权重已移除", () => {
     expect(saved.w3).toBeUndefined();
   });
 
+  it("窗口模式历史字段不再进入 store 对外接口", () => {
+    const s = useSettingsStore() as unknown as Record<string, unknown>;
+    expect("startupWindowMode" in s).toBe(false);
+  });
+
   it("从 localStorage 加载历史权重字段时忽略它们", () => {
     localStorage.setItem(
       "settings",

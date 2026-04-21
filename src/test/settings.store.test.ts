@@ -16,7 +16,6 @@ describe("useSettingsStore", () => {
 
   it("启动工作态和当前工作态默认都是 sidebar", () => {
     const s = useSettingsStore();
-    expect(s.startupWindowMode).toBe("sidebar");
     expect(s.currentWindowMode).toBe("sidebar");
   });
 
@@ -46,26 +45,23 @@ describe("useSettingsStore", () => {
     expect(s.devDebugMode).toBe(false);
   });
 
-  it("窗口偏好修改后持久化到 localStorage", async () => {
+  it("currentWindowMode 为运行时状态，不持久化到 localStorage", async () => {
     const s = useSettingsStore();
-    s.startupWindowMode = "expanded";
+    s.currentWindowMode = "expanded";
     await nextTick();
 
-    const saved = JSON.parse(localStorage.getItem("settings")!);
-    expect(saved.startupWindowMode).toBe("expanded");
+    expect(localStorage.getItem("settings")).toBeNull();
   });
 
-  it("从 localStorage 加载启动工作态，并同步初始化当前工作态", () => {
+  it("忽略历史 startupWindowMode 字段，始终以 sidebar 初始化当前工作态", () => {
     localStorage.setItem("settings", JSON.stringify({ startupWindowMode: "expanded" }));
     const s = useSettingsStore();
-    expect(s.startupWindowMode).toBe("expanded");
-    expect(s.currentWindowMode).toBe("expanded");
+    expect(s.currentWindowMode).toBe("sidebar");
   });
 
-  it("兼容读取历史 windowMode 字段", () => {
+  it("忽略历史 windowMode 字段", () => {
     localStorage.setItem("settings", JSON.stringify({ windowMode: "expanded" }));
     const s = useSettingsStore();
-    expect(s.startupWindowMode).toBe("expanded");
-    expect(s.currentWindowMode).toBe("expanded");
+    expect(s.currentWindowMode).toBe("sidebar");
   });
 });
