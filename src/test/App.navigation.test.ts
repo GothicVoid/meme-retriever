@@ -15,7 +15,6 @@ function createTestRouter() {
     routes: [
       { path: "/", component: { template: "<div>search</div>" } },
       { path: "/library", component: { template: "<div>library</div>" } },
-      { path: "/settings", component: { template: "<div>settings</div>" } },
       { path: "/private-role-maintenance", component: { template: "<div>private-role</div>" } },
     ],
   });
@@ -62,6 +61,7 @@ describe("App 工作台壳层", () => {
     await flushPromises();
 
     expect(wrapper.get(".app-shell__expanded-toolbar").text()).toContain("图库整理");
+    expect(wrapper.text()).not.toContain("设置");
   });
 
   it("启动时按当前模式调用窗口布局命令", async () => {

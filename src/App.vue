@@ -34,15 +34,6 @@
         >
           整理图库
         </button>
-        <button
-          type="button"
-          class="app-shell__toolbar-action"
-          :class="{ 'app-shell__toolbar-action--active': route.path === '/settings' }"
-          data-action="go-settings"
-          @click="openSettingsPanel"
-        >
-          设置
-        </button>
       </div>
     </header>
 
@@ -105,9 +96,6 @@ const effectiveWindowMode = computed<WindowMode>(() =>
 );
 
 const expandedTitle = computed(() => {
-  if (route.path === "/settings") {
-    return "设置与维护";
-  }
   if (route.path === "/library") {
     return "图库整理";
   }
@@ -115,9 +103,6 @@ const expandedTitle = computed(() => {
 });
 
 const expandedSubtitle = computed(() => {
-  if (route.path === "/settings") {
-    return "窗口偏好、调试能力和索引维护都放在这里。";
-  }
   if (route.path === "/library") {
     return "导入、排查、批量整理等低频重任务在这里处理。";
   }
@@ -135,13 +120,6 @@ async function openGalleryManagement() {
   settings.currentWindowMode = "expanded";
   if (route.path !== "/library") {
     await router.push("/library");
-  }
-}
-
-async function openSettingsPanel() {
-  settings.currentWindowMode = "expanded";
-  if (route.path !== "/settings") {
-    await router.push("/settings");
   }
 }
 

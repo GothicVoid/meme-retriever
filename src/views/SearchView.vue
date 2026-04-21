@@ -443,22 +443,6 @@
             >
               图库管理
             </button>
-            <button
-              type="button"
-              class="search-view__more-action"
-              data-action="open-settings"
-              @click="openSettingsPanel"
-            >
-              打开设置
-            </button>
-            <button
-              type="button"
-              class="search-view__more-action"
-              data-action="enter-expanded-mode"
-              @click="enterExpandedManagement"
-            >
-              展开整理模式
-            </button>
           </div>
         </div>
       </div>
@@ -999,21 +983,6 @@ async function openGalleryManagement() {
   }
 
   window.history.pushState({}, "", "/library");
-}
-
-async function openSettingsPanel() {
-  settings.currentWindowMode = "expanded";
-  closeMoreMenu();
-  if (router) {
-    await router.push("/settings");
-    return;
-  }
-
-  window.history.pushState({}, "", "/settings");
-}
-
-async function enterExpandedManagement() {
-  await openGalleryManagement();
 }
 
 function handleSearchFocus() {

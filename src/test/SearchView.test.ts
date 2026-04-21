@@ -32,7 +32,6 @@ function createTestRouter() {
     routes: [
       { path: "/", component: SearchView },
       { path: "/library", component: { template: "<div>library</div>" } },
-      { path: "/settings", component: { template: "<div>settings</div>" } },
     ],
   });
 }
@@ -159,8 +158,8 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("图库管理");
-    expect(wrapper.text()).toContain("打开设置");
-    expect(wrapper.text()).toContain("展开整理模式");
+    expect(wrapper.text()).not.toContain("打开设置");
+    expect(wrapper.text()).not.toContain("展开整理模式");
     expect(wrapper.find('[data-action="toggle-dock-side"]').exists()).toBe(false);
 
     wrapper.unmount();
