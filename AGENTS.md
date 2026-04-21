@@ -22,4 +22,31 @@
 前端测试基于 Vitest + jsdom，公共测试初始化位于 `src/test/setup.ts`。新增测试统一放在 `src/test/`，命名采用 `*.test.ts`，并尽量体现功能范围，例如 `SearchView.pagination.test.ts`。后端测试位于 `src-tauri/tests/`，优先覆盖入库、搜索、删除、数据库迁移等完整流程。提交前至少运行与改动相关的前端或后端测试。
 
 ## 提交与 Pull Request 规范
-Git 历史采用 Conventional Commits 风格，如 `feat: ...`、`fix(search): ...`。请保持单次提交聚焦，前缀优先使用 `feat`、`fix`、`docs`、`refactor`、`test`。提交信息使用中文写。对于进行了 spec 改动的提交，提交信息里要带上影响的 spec 范围，比如： `feat(5.3.1): 实现了xxx功能`。提交 PR 时应说明改动目的、影响范围、已执行的验证命令；若涉及界面修改，附截图或录屏；若对应需求文档或问题单，请一并链接。
+Git 历史采用 Conventional Commits 风格，如 `feat: ...`、`fix(search): ...`。请保持单次提交聚焦，前缀优先使用 `feat`、`fix`、`docs`、`refactor`、`test`。提交信息使用中文写。涉及行为变更的提交，提交信息里要带上影响的 `Spec ID`，例如：`feat(spec:SPEC-SEARCH): 实现首页继续使用区`、`fix(spec:SPEC-LIBRARY): 修复冷启动导入后列表未刷新`。提交 PR 时应说明改动目的、影响范围、已执行的验证命令；若涉及界面修改，附截图或录屏；若对应需求文档或问题单，请一并链接。
+
+## Spec 驱动开发约定
+默认采用“先确定 spec，再进行开发”的流程。
+
+### 什么时候先改 spec
+- 任何会影响用户可见行为的改动，都先改对应 spec，再开始开发
+- 包括页面结构、入口、按钮、状态切换、交互流程、能力边界、验收口径变化
+- 纯实现重构、性能优化、内部清理，且不改变外部行为时，可以不先改 spec
+
+### 开发前怎么确定依据
+- 先在 `specs/README.md` 找到当前主文档
+- 再进入对应 `Spec ID` 的主 spec 确认当前口径
+- 若改动找不到对应 spec，先补或收口 spec，再写代码
+
+### 提交信息要求
+- 涉及行为变更的提交，提交信息必须带上对应 `Spec ID`
+- 推荐格式：`feat(spec:SPEC-SEARCH): 实现首页继续使用区`
+- 也可用：`fix(spec:SPEC-LIBRARY): 修复冷启动导入后列表未刷新`
+- 若一个提交同时影响多个 spec，优先拆分提交；确实无法拆时，提交信息里列出主要 spec
+
+### 当前主 Spec ID
+- `SPEC-SEARCH`：搜索、首页、结果展示与高频反馈
+- `SPEC-LIBRARY`：导入、图库治理、删除与详情
+- `SPEC-TAGGING`：标记增强与详情
+- `SPEC-ROLELIB`：私有角色库维护
+- `SPEC-IA-WINDOW`：信息架构与窗口
+- `SPEC-SETTINGS`：设置模块优化与高级能力收口
