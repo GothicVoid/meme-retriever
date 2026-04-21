@@ -116,11 +116,11 @@ describe("SearchView", () => {
     expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search--dock");
     expect(wrapper.get(".search-dock").exists()).toBe(true);
     expect(wrapper.get(".search-view__dock-meta").exists()).toBe(true);
-    expect(wrapper.get('[data-action="toggle-more-menu"]').attributes("aria-label")).toBe("打开更多操作");
+    expect(wrapper.get('[data-action="open-gallery-management"]').attributes("aria-label")).toBe("打开图库管理");
     expect(wrapper.text()).toContain("最近常用");
   });
 
-  it("点击底部更多菜单中的图库管理会进入展开态图库页", async () => {
+  it("点击底部图库按钮会进入展开态图库页", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -137,7 +137,6 @@ describe("SearchView", () => {
     });
     await flushPromises();
 
-    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
     await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
     await flushPromises();
 
@@ -145,7 +144,7 @@ describe("SearchView", () => {
     expect(useSettingsStore().currentWindowMode).toBe("expanded");
   });
 
-  it("底部更多菜单不再暴露左右停靠切换", async () => {
+  it("底部操作区直接提供图库按钮", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -154,13 +153,8 @@ describe("SearchView", () => {
     const wrapper = mount(SearchView, { attachTo: document.body });
     await flushPromises();
 
-    await wrapper.get('[data-action="toggle-more-menu"]').trigger("click");
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("图库管理");
-    expect(wrapper.text()).not.toContain("打开设置");
-    expect(wrapper.text()).not.toContain("展开整理模式");
-    expect(wrapper.find('[data-action="toggle-dock-side"]').exists()).toBe(false);
+    expect(wrapper.get('[data-action="open-gallery-management"]').text()).toContain("图库");
+    expect(wrapper.find('[data-action="toggle-more-menu"]').exists()).toBe(false);
 
     wrapper.unmount();
   });

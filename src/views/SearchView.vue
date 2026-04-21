@@ -410,32 +410,133 @@
         >
           / 或 Ctrl+K 聚焦搜索
         </p>
-        <div
-          class="search-view__menu-wrap"
-          :class="{ 'search-view__menu-wrap--solo': showColdStart }"
-        >
-          <button
-            ref="moreButtonRef"
-            type="button"
-            class="search-view__menu-button"
-            data-action="toggle-more-menu"
-            aria-label="打开更多操作"
-            @click="toggleMoreMenu"
-          >
-            <span aria-hidden="true">☰</span>
-          </button>
+        <div class="search-view__dock-actions">
           <div
-            v-if="showMoreMenu"
-            ref="moreMenuRef"
-            class="search-view__more-menu ui-floating-panel"
+            v-if="isDevMode"
+            class="search-view__menu-wrap"
           >
             <button
+              ref="devToolsButtonRef"
               type="button"
-              class="search-view__more-action"
+              class="search-view__menu-button"
+              data-action="toggle-dev-tools"
+              aria-label="打开开发工具"
+              @click="toggleDevToolsPopover"
+            >
+              <span aria-hidden="true">🔧</span>
+            </button>
+            <div
+              v-if="showDevToolsPopover"
+              ref="devToolsPopoverRef"
+              class="search-view__dev-tools-popover ui-floating-panel"
+            >
+              <div class="search-view__dev-tools-header">
+                <p class="search-view__dev-tools-title">
+                  开发工具
+                </p>
+                <p class="search-view__dev-tools-copy">
+                  仅用于开发调试和本地维护。
+                </p>
+              </div>
+              <label class="search-view__dev-tools-toggle">
+                <span class="search-view__dev-tools-section-title">开发调试模式</span>
+                <span class="search-view__dev-tools-copy">显示结果排序构成与调试叠层。</span>
+                <span class="search-view__dev-tools-switch">
+                  <input
+                    v-model="settings.devDebugMode"
+                    data-action="toggle-debug-mode"
+                    type="checkbox"
+                  >
+                  <span>{{ settings.devDebugMode ? "已开启" : "已关闭" }}</span>
+                </span>
+              </label>
+              <div class="search-view__dev-tools-section">
+                <div class="search-view__dev-tools-row">
+                  <div>
+                    <p class="search-view__dev-tools-section-title">
+                      重新生成图像索引
+                    </p>
+                    <p class="search-view__dev-tools-copy">
+                      模型或索引结构变更后，重建全部图片的索引信息。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="search-view__dev-tools-action"
+                    data-action="reindex-all"
+                    :disabled="reindexing"
+                    @click="startReindex"
+                  >
+                    {{ reindexing ? "索引中..." : "开始重建" }}
+                  </button>
+                </div>
+                <div
+                  v-if="reindexing"
+                  class="search-view__dev-tools-progress"
+                >
+                  <div class="search-view__dev-tools-progress-bar">
+                    <div
+                      class="search-view__dev-tools-progress-fill"
+                      :style="{ width: reindexProgressPercent + '%' }"
+                    />
+                  </div>
+                  <span class="search-view__dev-tools-progress-text">
+                    {{ `处理中 ${reindexCurrent}/${reindexTotal || "?"}` }}
+                  </span>
+                </div>
+                <p
+                  v-else-if="reindexDone"
+                  class="search-view__dev-tools-progress-text"
+                >
+                  索引重建完成
+                </p>
+              </div>
+              <div class="search-view__dev-tools-section search-view__dev-tools-section--danger">
+                <div class="search-view__dev-tools-row">
+                  <div>
+                    <p class="search-view__dev-tools-section-title">
+                      清空图库
+                    </p>
+                    <p class="search-view__dev-tools-copy">
+                      仅用于开发时重置本地图库、索引和选择状态。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="search-view__dev-tools-action search-view__dev-tools-action--danger"
+                    data-action="clear-gallery"
+                    :disabled="!canClearGallery"
+                    @click="handleClearGallery"
+                  >
+                    {{ libraryStore.clearing ? "清空中..." : "清空图库" }}
+                  </button>
+                </div>
+                <div
+                  v-if="libraryStore.clearing"
+                  class="search-view__dev-tools-progress"
+                >
+                  <div class="search-view__dev-tools-progress-bar">
+                    <div
+                      class="search-view__dev-tools-progress-fill search-view__dev-tools-progress-fill--danger"
+                      :style="{ width: clearGalleryProgressPercent + '%' }"
+                    />
+                  </div>
+                  <span class="search-view__dev-tools-progress-text">
+                    {{ `处理中 ${libraryStore.clearCurrent}/${libraryStore.clearTotal || "?"}` }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="search-view__menu-wrap">
+            <button
+              type="button"
+              class="search-view__menu-button search-view__menu-button--gallery"
               data-action="open-gallery-management"
+              aria-label="打开图库管理"
               @click="openGalleryManagement"
             >
-              图库管理
+              图库
             </button>
           </div>
         </div>
@@ -446,6 +547,7 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, computed, ref, watch, nextTick, inject } from "vue";
+import { listen } from "@tauri-apps/api/event";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { routerKey, type Router } from "vue-router";
@@ -460,6 +562,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { getRelevanceLevel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
+import { isDevelopmentMode } from "@/utils/runtime";
 import coldStartPreview1 from "@/assets/cold-start-previews/preview-1.jpg";
 import coldStartPreview2 from "@/assets/cold-start-previews/preview-2.jpg";
 import coldStartPreview3 from "@/assets/cold-start-previews/preview-3.jpg";
@@ -512,8 +615,8 @@ const visibleRelevantCount = ref(HIGH_CONFIDENCE_BATCH_SIZE);
 const showSecondaryResults = ref(false);
 const loadMoreTrigger = ref<HTMLElement | null>(null);
 const searchBarRef = ref<SearchBarExpose | null>(null);
-const moreMenuRef = ref<HTMLElement | null>(null);
-const moreButtonRef = ref<HTMLElement | null>(null);
+const devToolsPopoverRef = ref<HTMLElement | null>(null);
+const devToolsButtonRef = ref<HTMLElement | null>(null);
 const importButtonRef = ref<HTMLButtonElement | null>(null);
 const importMenuRef = ref<HTMLElement | null>(null);
 const focusedResultIndex = ref(-1);
@@ -522,12 +625,18 @@ const homeState = ref<HomeState | null>(null);
 const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
 const searchFocused = ref(false);
-const showMoreMenu = ref(false);
+const showDevToolsPopover = ref(false);
 const showImportMenu = ref(false);
 const coldStartHint = ref("");
 const showPostImportPrompt = ref(false);
+const reindexing = ref(false);
+const reindexCurrent = ref(0);
+const reindexTotal = ref(0);
+const reindexDone = ref(false);
+const isDevMode = isDevelopmentMode();
 let searchBlurTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
+let unlistenReindexProgress: (() => void) | null = null;
 
 const isHomeMode = computed(() => !store.query.trim());
 
@@ -753,6 +862,15 @@ const canShowSecondaryResults = computed(() =>
 const showResultShortcutsHint = computed(() =>
   !isHomeMode.value && visibleResults.value.length > 0 && !previewImageId.value
 );
+const reindexProgressPercent = computed(() =>
+  reindexTotal.value > 0 ? (reindexCurrent.value / reindexTotal.value) * 100 : 0
+);
+const clearGalleryProgressPercent = computed(() =>
+  libraryStore.clearTotal > 0 ? (libraryStore.clearCurrent / libraryStore.clearTotal) * 100 : 0
+);
+const canClearGallery = computed(() =>
+  libraryStore.images.length > 0 && !libraryStore.clearing && !libraryStore.indexing
+);
 
 const searchSummaryTitle = computed(() => {
   const query = store.query.trim();
@@ -915,16 +1033,16 @@ function goToGalleryManagement(targetView: "recent" | "issues") {
   window.history.pushState({}, "", `/library?${search.toString()}`);
 }
 
-function closeMoreMenu() {
-  showMoreMenu.value = false;
+function closeDevToolsPopover() {
+  showDevToolsPopover.value = false;
 }
 
 function closeImportMenu() {
   showImportMenu.value = false;
 }
 
-function toggleMoreMenu() {
-  showMoreMenu.value = !showMoreMenu.value;
+function toggleDevToolsPopover() {
+  showDevToolsPopover.value = !showDevToolsPopover.value;
 }
 
 function toggleImportMenu() {
@@ -970,13 +1088,54 @@ async function handleImportFolder() {
 
 async function openGalleryManagement() {
   settings.currentWindowMode = "expanded";
-  closeMoreMenu();
+  closeDevToolsPopover();
   if (router) {
     await router.push("/library");
     return;
   }
 
   window.history.pushState({}, "", "/library");
+}
+
+function cleanupReindexProgressListener() {
+  unlistenReindexProgress?.();
+  unlistenReindexProgress = null;
+}
+
+async function startReindex() {
+  if (reindexing.value) return;
+
+  cleanupReindexProgressListener();
+  reindexing.value = true;
+  reindexDone.value = false;
+  reindexCurrent.value = 0;
+  reindexTotal.value = 0;
+
+  unlistenReindexProgress = await listen<{ current: number; total: number }>("reindex-progress", (event) => {
+    reindexCurrent.value = event.payload.current;
+    reindexTotal.value = event.payload.total;
+    if (event.payload.total > 0 && event.payload.current >= event.payload.total) {
+      reindexing.value = false;
+      reindexDone.value = true;
+      cleanupReindexProgressListener();
+    }
+  });
+
+  try {
+    await invoke("reindex_all");
+  } catch (error) {
+    console.error("reindex_all failed:", error);
+    reindexing.value = false;
+    cleanupReindexProgressListener();
+  }
+}
+
+async function handleClearGallery() {
+  const ok = await confirm("确认清空整个图库吗？此操作会删除所有图片及索引数据，且不可撤销。", {
+    title: "清空图库",
+  });
+  if (!ok) return;
+  await libraryStore.clearGallery();
 }
 
 function handleSearchFocus() {
@@ -997,12 +1156,12 @@ function handleSearchBlur() {
 function handlePointerDown(event: MouseEvent) {
   const target = event.target as Node | null;
   if (
-    showMoreMenu.value
+    showDevToolsPopover.value
     && target
-    && !moreMenuRef.value?.contains(target)
-    && !moreButtonRef.value?.contains(target)
+    && !devToolsPopoverRef.value?.contains(target)
+    && !devToolsButtonRef.value?.contains(target)
   ) {
-    closeMoreMenu();
+    closeDevToolsPopover();
   }
   if (
     showImportMenu.value
@@ -1290,6 +1449,7 @@ onBeforeUnmount(() => {
   if (searchBlurTimer !== null) {
     window.clearTimeout(searchBlurTimer);
   }
+  cleanupReindexProgressListener();
   loadMoreObserver?.disconnect();
   document.removeEventListener("keydown", handleGlobalKeydown);
   document.removeEventListener("mousedown", handlePointerDown);
@@ -1363,10 +1523,15 @@ onBeforeUnmount(() => {
   margin-top: -0.1rem;
 }
 
+.search-view__dock-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
 .search-view__menu-wrap {
   position: relative;
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .search-view__menu-wrap--solo {
@@ -1374,12 +1539,12 @@ onBeforeUnmount(() => {
 }
 
 .search-view__menu-button {
-  width: 2rem;
-  height: 2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.55rem;
   border: 1px solid var(--ui-border-subtle);
   border-radius: 999px;
   background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
@@ -1397,31 +1562,117 @@ onBeforeUnmount(() => {
   color: var(--ui-text-primary);
 }
 
-.search-view__more-menu {
+.search-view__menu-button--gallery {
+  min-width: auto;
+  padding-inline: 0.95rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.search-view__dev-tools-popover {
   position: absolute;
   right: 0;
   bottom: calc(100% + 0.45rem);
-  width: 12rem;
-  padding: 0.4rem;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.75rem;
   z-index: 35;
 }
-
-.search-view__more-action {
-  width: 100%;
-  padding: 0.65rem 0.8rem;
-  border: none;
-  border-radius: 0.85rem;
-  background: transparent;
+.search-view__dev-tools-header,
+.search-view__dev-tools-section,
+.search-view__dev-tools-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.search-view__dev-tools-title,
+.search-view__dev-tools-copy,
+.search-view__dev-tools-section-title,
+.search-view__dev-tools-progress-text {
+  margin: 0;
+}
+.search-view__dev-tools-title,
+.search-view__dev-tools-section-title {
+  font-size: 0.84rem;
+  font-weight: 700;
   color: var(--ui-text-primary);
-  text-align: left;
+}
+.search-view__dev-tools-copy,
+.search-view__dev-tools-progress-text {
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--ui-text-secondary);
+}
+.search-view__dev-tools-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.search-view__dev-tools-toggle {
+  padding: 0.75rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.64);
+}
+.search-view__dev-tools-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--ui-text-primary);
+}
+.search-view__dev-tools-section {
+  padding: 0.75rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.64);
+}
+.search-view__dev-tools-section--danger {
+  border-color: rgba(180, 63, 46, 0.22);
+  background: rgba(255, 245, 242, 0.78);
+}
+.search-view__dev-tools-action {
+  flex-shrink: 0;
+  min-width: 5.2rem;
+  padding: 0.52rem 0.8rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ui-text-primary);
   cursor: pointer;
 }
-
-.search-view__more-action:hover {
+.search-view__dev-tools-action:hover {
   background: var(--ui-bg-hover);
+}
+.search-view__dev-tools-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.search-view__dev-tools-action--danger {
+  border-color: rgba(180, 63, 46, 0.22);
+  color: #a33423;
+}
+.search-view__dev-tools-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.search-view__dev-tools-progress-bar {
+  height: 0.36rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(149, 157, 179, 0.22);
+}
+.search-view__dev-tools-progress-fill {
+  height: 100%;
+  background: var(--ui-accent);
+  transition: width 120ms ease;
+}
+.search-view__dev-tools-progress-fill--danger {
+  background: #d24f3d;
 }
 
 .search-assist-panel {
@@ -1879,6 +2130,19 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 0.82rem;
   color: #888;
+}
+
+@media (max-width: 799px) {
+  .search-view__dock-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .search-view__dev-tools-row {
+    flex-direction: column;
+  }
+  .search-view__dev-tools-action {
+    width: 100%;
+  }
 }
 
 .search-dock {
