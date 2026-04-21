@@ -8,7 +8,6 @@
 2. 再看当前模块文档：
    - [搜索模块](./product/modules/search.md)
    - [图库管理模块](./product/modules/library.md)
-   - [设置模块](./product/modules/settings.md)
    - [私有角色库模块](./product/modules/private-role-library.md)
 3. 若需要理解一次具体能力或交互方案，再看对应 feature spec
 4. 若发现新旧口径切换，优先查看 `changes/` 下的收口文档
@@ -49,8 +48,8 @@
 
 - 搜索与首页职责：[product/modules/search.md](./product/modules/search.md)
 - 图库管理职责：[product/modules/library.md](./product/modules/library.md)
-- 设置边界：[product/modules/settings.md](./product/modules/settings.md)
 - 私有角色库定位：[product/modules/private-role-library.md](./product/modules/private-role-library.md)
+- 设置模块优化与下线：[FEAT-设置模块优化与高级能力收口功能](./product/features/FEAT-设置模块优化与高级能力收口功能.md)
 
 ### 当前关键 feature
 
@@ -60,18 +59,19 @@
 - 搜索体验增强：[FEAT-5.1.4-搜索体验增强功能](./product/features/FEAT-5.1.4-搜索体验增强功能.md)
 - 导入协议与入口分流：[FEAT-5.2.1-添加图片](./product/features/FEAT-5.2.1-添加图片.md)
 - 删除图片与批量删除：[FEAT-5.2.2-删除图片功能](./product/features/FEAT-5.2.2-删除图片功能.md)
-- 清空图库与高风险清理：[FEAT-5.2.3-清空图库功能](./product/features/FEAT-5.2.3-清空图库功能.md)
+- 清空图库内部重置能力：[FEAT-5.2.3-清空图库功能](./product/features/FEAT-5.2.3-清空图库功能.md)
 - 图库图片列表与分页浏览：[FEAT-5.2.4-图片列表功能](./product/features/FEAT-5.2.4-图片列表功能.md)
 - 标签编辑与单图标记维护：[FEAT-5.3.1-标签编辑功能](./product/features/FEAT-5.3.1-标签编辑功能.md)
 - 标记对象与私有角色卡片模型：[FEAT-5.3.2.2-标签分类与存储模型](./product/features/FEAT-5.3.2.2-标签分类与存储模型.md)
 - 标记提权规则：[FEAT-5.3.2.3-标记提权规则](./product/features/FEAT-5.3.2.3-标记提权规则.md)
 - 图片详情查看与快捷操作：[FEAT-5.4.1-详情页展示功能](./product/features/FEAT-5.4.1-详情页展示功能.md)
-- 基础设置项范围：[FEAT-5.5.1-基础设置功能](./product/features/FEAT-5.5.1-基础设置功能.md)
+- 基础设置兼容入口：[FEAT-5.5.1-基础设置功能](./product/features/FEAT-5.5.1-基础设置功能.md)
 - 导航与信息架构分层：[FEAT-5.6.1-导航与信息架构重构功能](./product/features/FEAT-5.6.1-导航与信息架构重构功能.md)
 - 窗口双态与布局：[FEAT-5.6.2-聊天伴随型侧边栏工作台与窗口布局](./product/features/FEAT-5.6.2-聊天伴随型侧边栏工作台与窗口布局.md)
 - 冷启动导入闭环与图库管理解耦：[FEAT-5.6.3-导入与图库管理解耦及冷启动导入闭环](./product/features/FEAT-5.6.3-导入与图库管理解耦及冷启动导入闭环.md)
 - 高频使用体验与状态反馈：[FEAT-5.7.1-高频使用体验与状态反馈功能](./product/features/FEAT-5.7.1-高频使用体验与状态反馈功能.md)
 - 私有角色库维护工具：[FEAT-5.5.2-私有角色库维护工具](./product/features/FEAT-5.5.2-私有角色库维护工具.md)
+- 设置模块优化与高级能力收口：[FEAT-设置模块优化与高级能力收口功能](./product/features/FEAT-设置模块优化与高级能力收口功能.md)
 
 ### 当前关键 change note
 

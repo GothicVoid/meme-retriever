@@ -15,14 +15,12 @@
 
 - 搜索模块：空查询首页、冷启动首页、非空搜索结果
 - 图库管理模块：导入后的整理、修复和批量治理
-- 设置模块：少量基础配置、窗口偏好和高级入口承接
-- 私有角色库模块：受控高级能力，不是普通用户主路径
+- 私有角色库模块：高级检索增强能力，不是普通用户主路径
 
 当前模块主文档：
 
 - [搜索模块](./product/modules/search.md)
 - [图库管理模块](./product/modules/library.md)
-- [设置模块](./product/modules/settings.md)
 - [私有角色库模块](./product/modules/private-role-library.md)
 
 ## 当前关键 feature 文档
@@ -38,7 +36,7 @@
 
 - [FEAT-5.2.1 添加图片功能](./product/features/FEAT-5.2.1-添加图片.md)
 - [FEAT-5.2.2 删除图片功能](./product/features/FEAT-5.2.2-删除图片功能.md)
-- [FEAT-5.2.3 清空图库功能](./product/features/FEAT-5.2.3-清空图库功能.md)
+- [FEAT-5.2.3 清空图库内部重置能力](./product/features/FEAT-5.2.3-清空图库功能.md)
 - [FEAT-5.2.4 图片列表功能](./product/features/FEAT-5.2.4-图片列表功能.md)
 
 ### 增强能力
@@ -48,7 +46,7 @@
 - [FEAT-5.3.2.2 标签分类与存储模型](./product/features/FEAT-5.3.2.2-标签分类与存储模型.md)
 - [FEAT-5.3.2.3 标记提权规则](./product/features/FEAT-5.3.2.3-标记提权规则.md)
 - [FEAT-5.4.1 详情页展示功能](./product/features/FEAT-5.4.1-详情页展示功能.md)
-- [FEAT-5.5.1 基础设置功能](./product/features/FEAT-5.5.1-基础设置功能.md)
+- [FEAT-5.5.1 基础设置功能（兼容入口）](./product/features/FEAT-5.5.1-基础设置功能.md)
 - [FEAT-5.5.2 私有角色库维护工具](./product/features/FEAT-5.5.2-私有角色库维护工具.md)
 
 ### 信息架构与窗口
@@ -56,6 +54,7 @@
 - [FEAT-5.6.1 导航与信息架构重构功能](./product/features/FEAT-5.6.1-导航与信息架构重构功能.md)
 - [FEAT-5.6.2 聊天伴随型侧边栏工作台与窗口布局功能](./product/features/FEAT-5.6.2-聊天伴随型侧边栏工作台与窗口布局.md)
 - [FEAT-5.6.3 导入与图库管理解耦及冷启动导入闭环功能](./product/features/FEAT-5.6.3-导入与图库管理解耦及冷启动导入闭环.md)
+- [FEAT-设置模块优化与高级能力收口功能](./product/features/FEAT-设置模块优化与高级能力收口功能.md)
 
 ### 体验与设计规范
 
@@ -70,14 +69,15 @@
 - 搜索输入引导、失败反馈和历史复用以 [`FEAT-5.1.4`](./product/features/FEAT-5.1.4-搜索体验增强功能.md) 为准
 - 冷启动首页导入行为以 [`FEAT-5.6.3`](./product/features/FEAT-5.6.3-导入与图库管理解耦及冷启动导入闭环.md) 与 [`FEAT-5.2.1`](./product/features/FEAT-5.2.1-添加图片.md) 为准
 - 删除图片与批量删除行为以 [`FEAT-5.2.2`](./product/features/FEAT-5.2.2-删除图片功能.md) 为准
-- 清空图库行为与保护约束以 [`FEAT-5.2.3`](./product/features/FEAT-5.2.3-清空图库功能.md) 为准
+- 清空图库内部重置能力与保护约束以 [`FEAT-5.2.3`](./product/features/FEAT-5.2.3-清空图库功能.md) 为准
 - 图库图片列表、分页加载与失效图片清理入口以 [`FEAT-5.2.4`](./product/features/FEAT-5.2.4-图片列表功能.md) 为准
 - 标签编辑与单图标记维护以 [`FEAT-5.3.1`](./product/features/FEAT-5.3.1-标签编辑功能.md) 为准
 - 标记对象与私有角色卡片的模型边界以 [`FEAT-5.3.2.2`](./product/features/FEAT-5.3.2.2-标签分类与存储模型.md) 为准
 - 标记提权与搜索辅路关系以 [`FEAT-5.3.2.3`](./product/features/FEAT-5.3.2.3-标记提权规则.md) 为准
 - 图片详情查看、异常态处理与快捷操作以 [`FEAT-5.4.1`](./product/features/FEAT-5.4.1-详情页展示功能.md) 为准
-- 基础设置项范围与调试模式边界以 [`FEAT-5.5.1`](./product/features/FEAT-5.5.1-基础设置功能.md) 为准
+- 基础设置历史边界与兼容入口见 [`FEAT-5.5.1`](./product/features/FEAT-5.5.1-基础设置功能.md)
 - 窗口双态与布局以 [`FEAT-5.6.2`](./product/features/FEAT-5.6.2-聊天伴随型侧边栏工作台与窗口布局.md) 为准
+- 设置模块下线、私有角色库定位、调试与维护能力分层以 [`FEAT-设置模块优化与高级能力收口功能`](./product/features/FEAT-设置模块优化与高级能力收口功能.md) 为准
 - 私有角色库入口层级、导航分层与维护工具以 [`FEAT-5.6.1`](./product/features/FEAT-5.6.1-导航与信息架构重构功能.md) 与 [`FEAT-5.5.2`](./product/features/FEAT-5.5.2-私有角色库维护工具.md) 为准
 - 高频使用交互、快速预览和关键状态反馈以 [`FEAT-5.7.1`](./product/features/FEAT-5.7.1-高频使用体验与状态反馈功能.md) 为准
 - 信息架构迁移与旧口径映射以 [`changes/`](./changes/) 下文档为准
