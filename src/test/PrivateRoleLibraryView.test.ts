@@ -69,7 +69,7 @@ describe("PrivateRoleLibraryView", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("kb_get_state");
-    expect(wrapper.text()).toContain("私有角色库维护");
+    expect(wrapper.text()).toContain("角色识别增强维护");
     expect(wrapper.text()).toContain("阿布");
     expect(wrapper.text()).toContain("老板");
     expect(wrapper.text()).toContain("检测到潜在冲突词");

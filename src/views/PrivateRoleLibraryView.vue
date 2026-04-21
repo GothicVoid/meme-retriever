@@ -3,11 +3,11 @@
     <header class="hero">
       <div>
         <p class="eyebrow">
-          Dev Only
+          高级检索增强
         </p>
-        <h2>私有角色库维护</h2>
+        <h2>角色识别增强维护</h2>
         <p class="hero-copy">
-          在同一页里完成角色卡片编辑、结构校验和角色召回测试，保存前就能看到潜在冲突。
+          在同一页里维护角色卡片、校验结构并测试角色召回，帮助系统更稳定地识别冷门角色和私有对象。
         </p>
       </div>
       <div class="hero-actions">

@@ -74,6 +74,26 @@
         图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
       </div>
     </div>
+    <section
+      v-if="showAdvancedCapabilities"
+      class="advanced-capabilities"
+    >
+      <div class="advanced-capabilities__copy">
+        <p class="advanced-capabilities__eyebrow">
+          高级能力
+        </p>
+        <h3>角色识别增强</h3>
+        <p>当系统认不出冷门角色或私有对象时，可以用示例图帮助它学会识别，提升后续搜索的稳定性。</p>
+      </div>
+      <button
+        type="button"
+        class="advanced-capabilities__action"
+        data-action="open-private-role-library"
+        @click="openPrivateRoleLibrary"
+      >
+        打开角色维护
+      </button>
+    </section>
     <div
       v-if="recoveryStore.pendingCount > 0"
       class="recovery-banner"
@@ -196,16 +216,18 @@
 import { onMounted, computed, ref, inject, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { routeLocationKey, type RouteLocationNormalizedLoaded } from "vue-router";
+import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from "vue-router";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
+import { isDevelopmentMode } from "@/utils/runtime";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
+const router = inject<Router | undefined>(routerKey, undefined);
 const detailId = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const currentPage = ref(0);
@@ -215,6 +237,7 @@ const pagingError = ref(false);
 const showBackToTop = ref(false);
 const clearingMissing = ref(false);
 const currentView = ref<"all" | "recent" | "issues">("all");
+const showAdvancedCapabilities = isDevelopmentMode();
 
 const progressPercent = computed(() =>
   store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
@@ -417,6 +440,15 @@ async function handleClearMissing() {
     clearingMissing.value = false;
   }
 }
+
+async function openPrivateRoleLibrary() {
+  if (router) {
+    await router.push("/private-role-maintenance");
+    return;
+  }
+
+  window.history.pushState({}, "", "/private-role-maintenance");
+}
 </script>
 
 <style scoped>
@@ -469,6 +501,39 @@ async function handleClearMissing() {
 }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.advanced-capabilities {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, #eef6ff);
+}
+.advanced-capabilities__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.advanced-capabilities__copy h3,
+.advanced-capabilities__copy p,
+.advanced-capabilities__eyebrow {
+  margin: 0;
+}
+.advanced-capabilities__copy p {
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+.advanced-capabilities__eyebrow {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ui-accent);
+  letter-spacing: 0.03em;
+}
+.advanced-capabilities__action {
+  flex-shrink: 0;
+}
 .recovery-banner {
   display: flex;
   align-items: center;
@@ -522,6 +587,10 @@ async function handleClearMissing() {
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.18);
 }
 @media (max-width: 799px) {
+  .advanced-capabilities {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .gallery-scroll { height: calc(100vh - 210px); }
   .back-to-top { right: 1rem; bottom: 1rem; }
 }
