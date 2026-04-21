@@ -212,12 +212,6 @@
         </template>
       </div>
       <template v-else>
-        <div
-          v-if="settings.devDebugMode && store.results.length"
-          class="debug-formula"
-        >
-          开发调试模式：显示当前排序主路、贡献项与最终得分，用于辅助排查结果排序
-        </div>
         <ImageGrid
           :images="visibleResults"
           :loading="store.loading"
@@ -1775,15 +1769,6 @@ onBeforeUnmount(() => {
   font-size: 0.86rem;
   font-weight: 700;
   color: var(--ui-text-primary);
-}
-.debug-formula {
-  font-size: 0.78rem;
-  color: #888;
-  background: #f5f5f5;
-  border-left: 3px solid #646cff;
-  padding: 0.35rem 0.75rem;
-  margin-bottom: 0.5rem;
-  border-radius: 0 4px 4px 0;
 }
 .result-feedback {
   display: flex;

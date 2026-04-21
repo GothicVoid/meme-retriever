@@ -1177,7 +1177,7 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
-  it("开启开发调试模式时显示顶部提示", async () => {
+  it("内部调试开关开启时仍会显示调试叠层", async () => {
     localStorage.setItem("settings", JSON.stringify({ devDebugMode: true }));
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_images") return Promise.resolve([mockImage]);
@@ -1211,7 +1211,7 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    expect(wrapper.text()).toContain("开发调试模式");
+    expect(wrapper.find(".debug-overlay").exists()).toBe(true);
   });
 
   it("详情页删除事件会调用 delete_image 并关闭弹窗", async () => {
