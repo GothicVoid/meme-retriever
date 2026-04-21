@@ -2133,10 +2133,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 799px) {
-  .search-view__dock-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
   .search-view__dev-tools-row {
     flex-direction: column;
   }
