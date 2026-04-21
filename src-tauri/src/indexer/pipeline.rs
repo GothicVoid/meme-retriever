@@ -13,8 +13,14 @@ pub struct IndexProgress {
     pub id: String,
     pub file_name: String,
     pub status: String, // "completed" | "error"
+    pub result_kind: String, // "imported" | "duplicated" | "failed"
     pub message: Option<String>,
     pub elapsed_ms: u64,
+}
+
+enum IndexResult {
+    Imported(String),
+    Duplicated(String),
 }
 
 /// 入库流水线。返回进度接收端，调用方可监听每张图的处理结果。
@@ -51,19 +57,27 @@ async fn process_one(
         .unwrap_or_else(|| src_path.to_string());
 
     match do_index(pool, src, library_dir, engine).await {
-        Ok(id) => IndexProgress {
-            id,
-            file_name,
-            status: "completed".into(),
-            message: None,
-            elapsed_ms: start.elapsed().as_millis() as u64,
-        },
+        Ok(result) => {
+            let (id, result_kind) = match result {
+                IndexResult::Imported(id) => (id, "imported"),
+                IndexResult::Duplicated(id) => (id, "duplicated"),
+            };
+            IndexProgress {
+                id,
+                file_name,
+                status: "completed".into(),
+                result_kind: result_kind.into(),
+                message: None,
+                elapsed_ms: start.elapsed().as_millis() as u64,
+            }
+        }
         Err(e) => {
             tracing::warn!("[INDEX] Failed to process {}: {e}", src_path);
             IndexProgress {
                 id: String::new(),
                 file_name,
                 status: "error".into(),
+                result_kind: "failed".into(),
                 message: Some(e.to_string()),
                 elapsed_ms: start.elapsed().as_millis() as u64,
             }
@@ -76,7 +90,7 @@ async fn do_index(
     src: &Path,
     library_dir: &Path,
     engine: &SearchEngine,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<IndexResult> {
     // 2.3 任务队列：记录任务进度，支持断点续传
     let task_id = Uuid::new_v4().to_string();
     crate::db::task_repo::insert_task(pool, &task_id, &src.to_string_lossy()).await?;
@@ -99,7 +113,7 @@ async fn do_index(
             .await;
         }
     }
-    result
+    result.map(|(_, outcome)| outcome)
 }
 
 async fn do_index_inner(
@@ -107,7 +121,7 @@ async fn do_index_inner(
     src: &Path,
     library_dir: &Path,
     engine: &SearchEngine,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, IndexResult)> {
     if !src.exists() {
         anyhow::bail!("file not found: {:?}", src);
     }
@@ -123,7 +137,8 @@ async fn do_index_inner(
         .map(|d| d.as_secs() as i64);
 
     if let Some(existing) = repo::get_image_by_hash(pool, &file_hash).await? {
-        return Ok(existing.id);
+        let id = existing.id;
+        return Ok((id.clone(), IndexResult::Duplicated(id)));
     }
 
     let id = Uuid::new_v4().to_string();
@@ -194,7 +209,7 @@ async fn do_index_inner(
         repo::insert_tags(pool, &id, &auto_tags).await?;
     }
 
-    Ok(id)
+    Ok((id.clone(), IndexResult::Imported(id)))
 }
 
 fn image_dimensions(path: &Path) -> (Option<i64>, Option<i64>) {
@@ -465,8 +480,24 @@ mod tests {
         assert_eq!(r2.len(), 1);
         assert_eq!(r2[0].status, "completed");
         assert_eq!(r2[0].id, first_id);
+        assert_eq!(r1[0].result_kind, "imported");
+        assert_eq!(r2[0].result_kind, "duplicated");
 
         let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
         assert_eq!(images.len(), 1);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_pipeline_invalid_path_reports_failed_result_kind(pool: SqlitePool) {
+        let lib = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
+        let paths = vec!["/nonexistent/image.jpg".to_string()];
+
+        let rx = index_images(pool.clone(), paths, lib.path().to_path_buf(), engine);
+        let results = collect(rx).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, "error");
+        assert_eq!(results[0].result_kind, "failed");
     }
 }

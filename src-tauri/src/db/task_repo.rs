@@ -81,7 +81,7 @@ pub async fn reset_stale_tasks(pool: &DbPool) -> anyhow::Result<()> {
 }
 
 pub async fn clear_task_queue(pool: &DbPool) -> anyhow::Result<()> {
-    sqlx::query("DELETE FROM task_queue WHERE status IN ('completed','failed')")
+    sqlx::query("DELETE FROM task_queue WHERE status IN ('pending','processing','completed','failed')")
         .execute(pool)
         .await?;
     Ok(())
@@ -139,9 +139,30 @@ mod tests {
             .await
             .unwrap();
         clear_task_queue(&pool).await.unwrap();
-        let pending = get_pending_tasks(&pool).await.unwrap();
-        assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].id, "t3");
+        let row = sqlx::query("SELECT COUNT(*) as cnt FROM task_queue")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let count: i64 = row.get("cnt");
+        assert_eq!(count, 0);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_task_queue_also_removes_pending_tasks(pool: SqlitePool) {
+        insert_task(&pool, "t1", "/tmp/a.jpg").await.unwrap();
+        insert_task(&pool, "t2", "/tmp/b.jpg").await.unwrap();
+        update_task_status(&pool, "t2", "processing", None)
+            .await
+            .unwrap();
+
+        clear_task_queue(&pool).await.unwrap();
+
+        let row = sqlx::query("SELECT COUNT(*) as cnt FROM task_queue")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let count: i64 = row.get("cnt");
+        assert_eq!(count, 0, "放弃任务后不应保留 pending / processing 任务");
     }
 
     #[sqlx::test(migrations = "./migrations")]
