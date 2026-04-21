@@ -50,6 +50,7 @@ const mockImage: ImageMeta = {
 
 const mockHomeState = {
   imageCount: 1,
+  pendingTaskCount: 0,
   recentSearches: [{ query: "阿布 撇嘴", updatedAt: 2 }],
   recentUsed: [{
     id: "recent-1",
@@ -155,6 +156,27 @@ describe("SearchView", () => {
 
     expect(wrapper.get('[data-action="open-gallery-management"]').text()).toContain("图库");
     expect(wrapper.find('[data-action="toggle-more-menu"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("存在未完成任务时，底部图库按钮显示提醒角标", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          pendingTaskCount: 2,
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const button = wrapper.get('[data-action="open-gallery-management"]');
+    expect(button.text()).toContain("图库");
+    expect(wrapper.get('[data-testid="gallery-pending-badge"]').text()).toContain("2");
 
     wrapper.unmount();
   });
@@ -741,10 +763,11 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("这次搜索没成功");
-    expect(wrapper.text()).toContain("可以重试，或先去图库管理检查图片状态");
+    expect(wrapper.text()).toContain("可以重试，或先查看异常图片");
 
-    const galleryAction = wrapper.find('[data-action="go-gallery-management"]');
+    const galleryAction = wrapper.find('[data-action="primary-recovery-action"]');
     expect(galleryAction.exists()).toBe(true);
+    expect(galleryAction.text()).toContain("查看异常图片");
 
     await galleryAction.trigger("click");
     expect(window.location.pathname).toBe("/library");

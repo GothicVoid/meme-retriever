@@ -21,6 +21,7 @@ const mockInvoke = vi.mocked(invoke);
 
 const mockHomeState = {
   imageCount: 1,
+  pendingTaskCount: 0,
   recentSearches: [],
   recentUsed: [{
     id: "recent-1",
@@ -45,6 +46,7 @@ function createTestRouter() {
     routes: [
       { path: "/", component: SearchView },
       { path: "/library", component: { template: "<div>library</div>" } },
+      { path: "/private-role-maintenance", component: { template: "<div>role-lib</div>" } },
     ],
   });
 }
@@ -55,7 +57,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     mockInvoke.mockReset();
   });
 
-  it("无结果时展示去图库管理入口，并跳转到最近新增视图", async () => {
+  it("无结果时默认推荐查看最近新增，并跳转到最近新增视图", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -81,8 +83,9 @@ describe("SearchView 搜索失败修复闭环", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    const action = wrapper.find('[data-action="go-gallery-management"]');
+    const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
+    expect(action.text()).toContain("查看最近新增");
 
     await action.trigger("click");
     await flushPromises();
@@ -93,7 +96,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     wrapper.unmount();
   });
 
-  it("低相关结果时展示去图库管理入口，并跳转到异常图片视图", async () => {
+  it("低相关结果时默认推荐查看异常图片，并跳转到异常图片视图", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -124,14 +127,97 @@ describe("SearchView 搜索失败修复闭环", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    const action = wrapper.find('[data-action="go-gallery-management"]');
+    const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
+    expect(action.text()).toContain("查看异常图片");
 
     await action.trigger("click");
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
     expect(router.currentRoute.value.query.view).toBe("issues");
+
+    wrapper.unmount();
+  });
+
+  it("存在未完成任务时，搜索失败默认推荐去图库继续处理", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          pendingTaskCount: 2,
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.reject(new Error("boom"));
+      return Promise.resolve([]);
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(SearchView, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const action = wrapper.find('[data-action="primary-recovery-action"]');
+    expect(action.exists()).toBe(true);
+    expect(action.text()).toContain("去图库继续处理");
+
+    await action.trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe("/library");
+    expect(router.currentRoute.value.query.view).toBe("recent");
+
+    wrapper.unmount();
+  });
+
+  it("角色名搜不到时默认推荐维护角色示例图", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(SearchView, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const action = wrapper.find('[data-action="primary-recovery-action"]');
+    expect(action.exists()).toBe(true);
+    expect(action.text()).toContain("维护角色示例图");
+
+    await action.trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe("/private-role-maintenance");
 
     wrapper.unmount();
   });

@@ -263,12 +263,12 @@
               看看最近用过
             </button>
             <button
-              v-if="showSearchErrorHint || showZeroResultHint || showLowConfidenceHint"
+              v-if="primaryRecoveryAction"
               class="result-feedback__action"
-              data-action="go-gallery-management"
-              @click="goToGalleryManagement(showLowConfidenceHint || showSearchErrorHint ? 'issues' : 'recent')"
+              data-action="primary-recovery-action"
+              @click="runPrimaryRecoveryAction"
             >
-              去图库管理
+              {{ primaryRecoveryAction.label }}
             </button>
             <button
               v-if="canShowSecondaryResults"
@@ -537,6 +537,13 @@
               @click="openGalleryManagement"
             >
               图库
+              <span
+                v-if="pendingTaskCount > 0"
+                class="search-view__gallery-badge"
+                data-testid="gallery-pending-badge"
+              >
+                {{ pendingTaskCount }}
+              </span>
             </button>
           </div>
         </div>
@@ -592,9 +599,16 @@ interface HomeImage {
 
 interface HomeState {
   imageCount: number;
+  pendingTaskCount?: number;
   recentSearches: { query: string; updatedAt: number }[];
   recentUsed: HomeImage[];
   frequentUsed: HomeImage[];
+}
+
+interface RecoveryAction {
+  kind: "gallery" | "role-library";
+  label: string;
+  targetView?: "recent" | "issues";
 }
 
 interface SearchBarExpose {
@@ -650,6 +664,7 @@ const showColdStart = computed(() =>
 );
 
 const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
+const pendingTaskCount = computed(() => homeState.value?.pendingTaskCount ?? 0);
 const showSearchAssistPanel = computed(() =>
   searchFocused.value && isHomeMode.value && (recentSearches.value.length > 0 || exampleQueries.length > 0)
 );
@@ -840,6 +855,8 @@ const showSearchErrorHint = computed(() =>
   !!store.query.trim() && !store.loading && !!store.error
 );
 
+const looksLikeRoleQuery = computed(() => isLikelyRoleQuery(store.query));
+
 const guidanceItems = [
   "试试图片里的原文",
   "试试角色名 + 动作",
@@ -896,13 +913,23 @@ const searchSummaryTitle = computed(() => {
 
 const searchSummaryMeta = computed(() => {
   if (showSearchErrorHint.value) {
-    return "可以重试，或去图库管理检查图片状态。";
+    return pendingTaskCount.value > 0
+      ? "可以重试，或先去图库继续处理未完成任务。"
+      : "可以重试，或先查看异常图片。";
   }
   if (showZeroResultHint.value) {
+    if (pendingTaskCount.value > 0) {
+      return "换个说法试试，或先去图库继续处理未完成任务。";
+    }
+    if (looksLikeRoleQuery.value) {
+      return "按角色名搜不到时，可以补几张示例图帮助系统认识这个角色。";
+    }
     return "换个说法试试，先从图里的原文、角色名、动作或场景词开始搜。";
   }
   if (showLowConfidenceHint.value) {
-    return "先试试图里的原文、角色名或更短一点的关键词。";
+    return pendingTaskCount.value > 0
+      ? "先去图库继续处理未完成任务，或查看异常图片。"
+      : "先试试图里的原文、角色名或更短一点的关键词。";
   }
   if (showLowRelevanceStopNotice.value) {
     return "";
@@ -928,13 +955,23 @@ const feedbackTitle = computed(() => {
 
 const feedbackText = computed(() => {
   if (showSearchErrorHint.value) {
-    return "可以重试，或先去图库管理检查图片状态。";
+    return pendingTaskCount.value > 0
+      ? "可以重试，或先去图库继续处理未完成任务。"
+      : "可以重试，或先查看异常图片。";
   }
   if (showZeroResultHint.value) {
+    if (pendingTaskCount.value > 0) {
+      return "可以先去图库继续处理未完成任务，再回来搜索。";
+    }
+    if (looksLikeRoleQuery.value) {
+      return "如果图片里没字、模型也认不出这个角色，可以补几张角色示例图。";
+    }
     return "可以从图片里的原文、角色名、动作或场景词开始搜。";
   }
   if (showLowConfidenceHint.value) {
-    return "如果你愿意，也可以展开看看其余候选，再决定要不要换词。";
+    return pendingTaskCount.value > 0
+      ? "可以先去图库继续处理未完成任务，或先查看异常图片。"
+      : "如果你愿意，也可以展开看看其余候选，再决定要不要换词。";
   }
   if (showSecondaryResults.value) {
     return secondaryResultsCount.value > 0
@@ -1033,6 +1070,68 @@ function goToGalleryManagement(targetView: "recent" | "issues") {
   window.history.pushState({}, "", `/library?${search.toString()}`);
 }
 
+function goToPrivateRoleLibrary() {
+  showImportMenu.value = false;
+  settings.currentWindowMode = "expanded";
+  if (router) {
+    void router.push("/private-role-maintenance");
+    return;
+  }
+
+  window.history.pushState({}, "", "/private-role-maintenance");
+}
+
+const primaryRecoveryAction = computed<RecoveryAction | null>(() => {
+  if (!(showSearchErrorHint.value || showZeroResultHint.value || showLowConfidenceHint.value)) {
+    return null;
+  }
+
+  if (pendingTaskCount.value > 0) {
+    return {
+      kind: "gallery",
+      label: "去图库继续处理",
+      targetView: "recent",
+    };
+  }
+
+  if (showSearchErrorHint.value || showLowConfidenceHint.value) {
+    return {
+      kind: "gallery",
+      label: "查看异常图片",
+      targetView: "issues",
+    };
+  }
+
+  if (showZeroResultHint.value && looksLikeRoleQuery.value) {
+    return {
+      kind: "role-library",
+      label: "维护角色示例图",
+    };
+  }
+
+  if (showZeroResultHint.value) {
+    return {
+      kind: "gallery",
+      label: "查看最近新增",
+      targetView: "recent",
+    };
+  }
+
+  return null;
+});
+
+function runPrimaryRecoveryAction() {
+  const action = primaryRecoveryAction.value;
+  if (!action) return;
+
+  if (action.kind === "role-library") {
+    goToPrivateRoleLibrary();
+    return;
+  }
+
+  goToGalleryManagement(action.targetView ?? "recent");
+}
+
 function closeDevToolsPopover() {
   showDevToolsPopover.value = false;
 }
@@ -1089,12 +1188,30 @@ async function handleImportFolder() {
 async function openGalleryManagement() {
   settings.currentWindowMode = "expanded";
   closeDevToolsPopover();
+  if (pendingTaskCount.value > 0) {
+    goToGalleryManagement("recent");
+    return;
+  }
   if (router) {
     await router.push("/library");
     return;
   }
 
   window.history.pushState({}, "", "/library");
+}
+
+function isLikelyRoleQuery(raw: string) {
+  const query = raw.trim();
+  if (!query) return false;
+  if (query.includes(" ") || query.length > 4) return false;
+  if (/[0-9]/.test(query)) return false;
+
+  const nonRoleHints = ["表情", "台词", "动作", "场景", "猫猫", "狗狗", "笑", "哭", "生气", "无语", "打工"];
+  if (nonRoleHints.some((item) => query.includes(item))) {
+    return false;
+  }
+
+  return /^[\u4e00-\u9fa5A-Za-z]+$/.test(query);
 }
 
 function cleanupReindexProgressListener() {
@@ -1563,10 +1680,27 @@ onBeforeUnmount(() => {
 }
 
 .search-view__menu-button--gallery {
+  position: relative;
   min-width: auto;
   padding-inline: 0.95rem;
   font-size: 0.82rem;
   font-weight: 600;
+}
+
+.search-view__gallery-badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: #b42318;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.05rem;
+  text-align: center;
 }
 
 .search-view__dev-tools-popover {
