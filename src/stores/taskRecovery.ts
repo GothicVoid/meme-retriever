@@ -16,7 +16,7 @@ export const useTaskRecoveryStore = defineStore("taskRecovery", () => {
 
   async function fetchPendingTasks(force = false) {
     if (loaded.value && !force) return;
-    const tasks = await invoke<PendingTask[]>("get_pending_tasks");
+    const tasks = (await invoke<PendingTask[]>("get_pending_tasks")) ?? [];
     pendingCount.value = tasks.length;
     loaded.value = true;
   }

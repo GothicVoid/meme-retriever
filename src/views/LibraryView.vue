@@ -123,6 +123,56 @@
         </button>
       </div>
     </div>
+    <section
+      v-else-if="latestImportSummary"
+      class="import-summary"
+      data-section="latest-import-summary"
+    >
+      <div class="import-summary__copy">
+        <p class="import-summary__eyebrow">
+          最近一次导入
+        </p>
+        <h3>共处理 {{ latestImportSummary.totalCount }} 张</h3>
+        <p class="import-summary__stats">
+          <span>新增 {{ latestImportSummary.importedCount }}</span>
+          <span>已存在 {{ latestImportSummary.duplicatedCount }}</span>
+          <span>失败 {{ latestImportSummary.failedCount }}</span>
+        </p>
+      </div>
+      <div class="import-summary__actions">
+        <button
+          v-if="latestImportSummary.failedCount > 0"
+          data-action="show-import-failures"
+          @click="showImportFailures = !showImportFailures"
+        >
+          {{ showImportFailures ? "收起失败项" : "查看失败项" }}
+        </button>
+        <button
+          v-if="latestImportSummary.importedCount > 0"
+          data-action="view-latest-imported"
+          @click="switchToRecentView"
+        >
+          查看最近新增
+        </button>
+      </div>
+      <ul
+        v-if="showImportFailures && importFailures.length > 0"
+        class="import-summary__failures"
+      >
+        <li
+          v-for="failure in importFailures"
+          :key="failure.taskId"
+          class="import-summary__failure-item"
+        >
+          <p class="import-summary__failure-name">
+            {{ failure.fileName }}
+          </p>
+          <p class="import-summary__failure-reason">
+            {{ failure.errorMessage || "处理失败，请重试" }}
+          </p>
+        </li>
+      </ul>
+    </section>
     <div
       v-if="store.indexing"
       class="index-status"
@@ -222,7 +272,6 @@ import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
-import { isDevelopmentMode } from "@/utils/runtime";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
@@ -237,7 +286,25 @@ const pagingError = ref(false);
 const showBackToTop = ref(false);
 const clearingMissing = ref(false);
 const currentView = ref<"all" | "recent" | "issues">("all");
-const showAdvancedCapabilities = isDevelopmentMode();
+const showAdvancedCapabilities = true;
+const latestImportSummary = ref<LatestImportSummary | null>(null);
+const importFailures = ref<ImportFailure[]>([]);
+const showImportFailures = ref(false);
+
+interface LatestImportSummary {
+  batchId: string;
+  totalCount: number;
+  importedCount: number;
+  duplicatedCount: number;
+  failedCount: number;
+}
+
+interface ImportFailure {
+  taskId: string;
+  filePath: string;
+  errorMessage?: string;
+  fileName: string;
+}
 
 const progressPercent = computed(() =>
   store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
@@ -331,11 +398,40 @@ async function loadPage(page: number, append = false) {
   }
 }
 
+async function fetchLatestImportSummary() {
+  showImportFailures.value = false;
+  importFailures.value = [];
+  try {
+    const summary = await invoke<LatestImportSummary | null>("get_latest_import_summary");
+    if (!summary || typeof summary !== "object" || !("batchId" in summary)) {
+      latestImportSummary.value = null;
+      return;
+    }
+
+    latestImportSummary.value = summary;
+    if (summary.failedCount <= 0) {
+      return;
+    }
+
+    const failures =
+      (await invoke<Omit<ImportFailure, "fileName">[]>("get_import_batch_failures", {
+        batchId: summary.batchId,
+      })) ?? [];
+    importFailures.value = failures.map((item) => ({
+      ...item,
+      fileName: item.filePath.split(/[\\/]/).pop() || item.filePath,
+    }));
+  } catch {
+    latestImportSummary.value = null;
+  }
+}
+
 async function reloadGallery() {
   pagingError.value = false;
   showBackToTop.value = false;
   try {
     await store.fetchImageCount();
+    await fetchLatestImportSummary();
     await loadPage(0);
   } catch {
     loadError.value = true;
@@ -376,6 +472,10 @@ async function retryLoad() {
     return;
   }
   await reloadGallery();
+}
+
+function switchToRecentView() {
+  currentView.value = "recent";
 }
 
 async function handleAdd() {
@@ -550,6 +650,63 @@ async function openPrivateRoleLibrary() {
 .recovery-banner__title { font-weight: 600; }
 .recovery-banner__text { color: var(--ui-text-secondary); }
 .recovery-banner__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.import-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 90%, #eef6ff);
+}
+.import-summary__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.import-summary__copy h3,
+.import-summary__copy p {
+  margin: 0;
+}
+.import-summary__eyebrow {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ui-accent);
+  letter-spacing: 0.03em;
+}
+.import-summary__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  color: var(--ui-text-secondary);
+}
+.import-summary__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.import-summary__failures {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.import-summary__failure-item {
+  color: var(--ui-text-primary);
+}
+.import-summary__failure-name,
+.import-summary__failure-reason {
+  margin: 0;
+}
+.import-summary__failure-name {
+  font-weight: 600;
+}
+.import-summary__failure-reason {
+  color: var(--ui-text-secondary);
+  line-height: 1.45;
+}
 .selection-count { font-size: 0.875rem; color: #666; }
 .gallery-total { font-size: 0.95rem; color: #444; font-weight: 600; }
 .index-status { margin-bottom: 0.75rem; font-size: 0.875rem; color: #666; display: flex; flex-direction: column; gap: 0.25rem; }

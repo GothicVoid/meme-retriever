@@ -157,4 +157,74 @@ describe("LibraryView 管理视图", () => {
 
     wrapper.unmount();
   });
+
+  it("存在最近一次导入失败时展示结果摘要，并可查看失败明细", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-a",
+          totalCount: 3,
+          importedCount: 1,
+          duplicatedCount: 1,
+          failedCount: 1,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-a2",
+          filePath: "/tmp/imports/a2.jpg",
+          errorMessage: "图片已损坏",
+        }];
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("最近一次导入");
+    expect(wrapper.text()).toContain("新增 1");
+    expect(wrapper.text()).toContain("已存在 1");
+    expect(wrapper.text()).toContain("失败 1");
+    expect(wrapper.get("[data-action='show-import-failures']").text()).toContain("查看失败项");
+
+    await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("a2.jpg");
+    expect(wrapper.text()).toContain("图片已损坏");
+
+    wrapper.unmount();
+  });
+
+  it("最近一次导入只有新增成功时，主动作切到最近新增视图", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-b",
+          totalCount: 2,
+          importedCount: 2,
+          duplicatedCount: 0,
+          failedCount: 0,
+        };
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='view-latest-imported']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get("[data-view='recent']").classes()).toContain("active");
+
+    wrapper.unmount();
+  });
 });

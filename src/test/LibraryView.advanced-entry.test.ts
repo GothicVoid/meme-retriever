@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
@@ -55,11 +55,7 @@ describe("LibraryView 高级能力入口", () => {
     setActivePinia(createPinia());
   });
 
-  afterEach(() => {
-    vi.doUnmock("@/utils/runtime");
-  });
-
-  it("开发模式下展示角色识别增强入口和说明文案", async () => {
+  it("展示角色识别增强入口和说明文案", async () => {
     vi.resetModules();
     vi.doMock("@/utils/runtime", () => ({
       isDevelopmentMode: () => true,
@@ -73,7 +69,7 @@ describe("LibraryView 高级能力入口", () => {
     expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(true);
   });
 
-  it("非开发模式下不展示高级能力入口", async () => {
+  it("非开发模式下仍展示角色识别增强入口", async () => {
     vi.resetModules();
     vi.doMock("@/utils/runtime", () => ({
       isDevelopmentMode: () => false,
@@ -81,8 +77,8 @@ describe("LibraryView 高级能力入口", () => {
 
     const { wrapper } = await mountLibraryView();
 
-    expect(wrapper.text()).not.toContain("角色识别增强");
-    expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(false);
+    expect(wrapper.text()).toContain("角色识别增强");
+    expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(true);
   });
 
   it("点击入口后跳转到角色维护页", async () => {
