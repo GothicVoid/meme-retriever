@@ -31,8 +31,8 @@ pub fn run() {
 
                 // 初始化知识库
                 let kb_path = kb::maintenance::resolve_default_kb_path();
-                let kb_file = kb::maintenance::KnowledgeBaseFile::load(&kb_path)
-                    .unwrap_or_default();
+                let kb_file =
+                    kb::maintenance::KnowledgeBaseFile::load(&kb_path).unwrap_or_default();
                 let kb = kb::local::LocalKBProvider::load(&kb_path)
                     .unwrap_or_else(|_| kb::local::LocalKBProvider::empty());
                 let example_image_index =
@@ -100,6 +100,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::search,
             commands::get_home_state,
+            commands::get_latest_import_summary,
+            commands::get_import_batch_failures,
             commands::delete_search_history,
             commands::import_entries,
             commands::add_images,

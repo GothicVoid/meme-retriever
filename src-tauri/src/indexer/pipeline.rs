@@ -12,7 +12,7 @@ use crate::search::engine::SearchEngine;
 pub struct IndexProgress {
     pub id: String,
     pub file_name: String,
-    pub status: String, // "completed" | "error"
+    pub status: String,      // "completed" | "error"
     pub result_kind: String, // "imported" | "duplicated" | "failed"
     pub message: Option<String>,
     pub elapsed_ms: u64,
@@ -31,10 +31,21 @@ pub fn index_images(
     library_dir: PathBuf,
     engine: std::sync::Arc<SearchEngine>,
 ) -> mpsc::Receiver<IndexProgress> {
+    index_images_with_batch(pool, paths, library_dir, engine, None)
+}
+
+pub fn index_images_with_batch(
+    pool: DbPool,
+    paths: Vec<String>,
+    library_dir: PathBuf,
+    engine: std::sync::Arc<SearchEngine>,
+    batch_id: Option<String>,
+) -> mpsc::Receiver<IndexProgress> {
     let (tx, rx) = mpsc::channel(64);
     tokio::spawn(async move {
         for path in paths {
-            let progress = process_one(&pool, &path, &library_dir, &engine).await;
+            let progress =
+                process_one(&pool, &path, &library_dir, &engine, batch_id.as_deref()).await;
             if tx.send(progress).await.is_err() {
                 break; // 接收端已关闭
             }
@@ -48,6 +59,7 @@ async fn process_one(
     src_path: &str,
     library_dir: &Path,
     engine: &SearchEngine,
+    batch_id: Option<&str>,
 ) -> IndexProgress {
     let start = Instant::now();
     let src = Path::new(src_path);
@@ -56,7 +68,7 @@ async fn process_one(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| src_path.to_string());
 
-    match do_index(pool, src, library_dir, engine).await {
+    match do_index(pool, src, library_dir, engine, batch_id).await {
         Ok(result) => {
             let (id, result_kind) = match result {
                 IndexResult::Imported(id) => (id, "imported"),
@@ -90,24 +102,42 @@ async fn do_index(
     src: &Path,
     library_dir: &Path,
     engine: &SearchEngine,
+    batch_id: Option<&str>,
 ) -> anyhow::Result<IndexResult> {
     // 2.3 任务队列：记录任务进度，支持断点续传
     let task_id = Uuid::new_v4().to_string();
-    crate::db::task_repo::insert_task(pool, &task_id, &src.to_string_lossy()).await?;
+    crate::db::task_repo::insert_task_with_batch(
+        pool,
+        &task_id,
+        &src.to_string_lossy(),
+        batch_id.unwrap_or(""),
+    )
+    .await?;
     crate::db::task_repo::update_task_status(pool, &task_id, "processing", None).await?;
 
     let result = do_index_inner(pool, src, library_dir, engine).await;
 
     match &result {
-        Ok(_) => {
-            let _ =
-                crate::db::task_repo::update_task_status(pool, &task_id, "completed", None).await;
+        Ok((_, outcome)) => {
+            let result_kind = match outcome {
+                IndexResult::Imported(_) => Some("imported"),
+                IndexResult::Duplicated(_) => Some("duplicated"),
+            };
+            let _ = crate::db::task_repo::update_task_status_with_result(
+                pool,
+                &task_id,
+                "completed",
+                result_kind,
+                None,
+            )
+            .await;
         }
         Err(e) => {
-            let _ = crate::db::task_repo::update_task_status(
+            let _ = crate::db::task_repo::update_task_status_with_result(
                 pool,
                 &task_id,
                 "failed",
+                Some("failed"),
                 Some(&e.to_string()),
             )
             .await;

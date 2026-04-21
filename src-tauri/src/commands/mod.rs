@@ -8,11 +8,11 @@ use uuid::Uuid;
 
 use crate::db::{repo, DbPool};
 use crate::kb::example_index::ExampleImageIndex;
+use crate::kb::local::LocalKBProvider;
 use crate::kb::maintenance::{
     KnowledgeBaseEntry, KnowledgeBaseFile, MatchCandidate, ValidationReport,
 };
 use crate::kb::provider::KnowledgeBaseProvider;
-use crate::kb::local::LocalKBProvider;
 use crate::search::engine::SearchEngine;
 
 // SearchEngine 包在 Arc 里以便 Tauri State 共享
@@ -74,9 +74,28 @@ pub struct RecentSearchItem {
 #[serde(rename_all = "camelCase")]
 pub struct HomeStatePayload {
     pub image_count: i64,
+    pub pending_task_count: i64,
     pub recent_searches: Vec<RecentSearchItem>,
     pub recent_used: Vec<ImageMeta>,
     pub frequent_used: Vec<ImageMeta>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatestImportSummaryPayload {
+    pub batch_id: String,
+    pub total_count: i64,
+    pub imported_count: i64,
+    pub duplicated_count: i64,
+    pub failed_count: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportBatchFailurePayload {
+    pub task_id: String,
+    pub file_path: String,
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -239,8 +258,12 @@ fn clamp_snapshot_to_work_area(
     max_height: f64,
     work_area: &WorkAreaMetrics,
 ) -> (f64, f64, f64, f64) {
-    let width = snapshot.width.clamp(min_width, max_width.min(work_area.width));
-    let height = snapshot.height.clamp(min_height, max_height.min(work_area.height));
+    let width = snapshot
+        .width
+        .clamp(min_width, max_width.min(work_area.width));
+    let height = snapshot
+        .height
+        .clamp(min_height, max_height.min(work_area.height));
     let max_x = work_area.x + (work_area.width - width).max(0.0);
     let max_y = work_area.y + (work_area.height - height).max(0.0);
     let x = snapshot.x.clamp(work_area.x, max_x);
@@ -269,12 +292,7 @@ fn resolve_window_metrics(
         let min_height = 560.0;
         if let Some(snapshot) = &prefs.sidebar_snapshot {
             let (width, height, x, y) = clamp_snapshot_to_work_area(
-                snapshot,
-                min_width,
-                min_height,
-                460.0,
-                860.0,
-                &work_area,
+                snapshot, min_width, min_height, 460.0, 860.0, &work_area,
             );
             return ((width, height), (min_width, min_height), (x, y));
         }
@@ -292,19 +310,17 @@ fn resolve_window_metrics(
     let min_width = 820.0;
     let min_height = 620.0;
     if let Some(snapshot) = &prefs.expanded_snapshot {
-        let (width, height, x, y) = clamp_snapshot_to_work_area(
-            snapshot,
-            min_width,
-            min_height,
-            1320.0,
-            980.0,
-            &work_area,
-        );
+        let (width, height, x, y) =
+            clamp_snapshot_to_work_area(snapshot, min_width, min_height, 1320.0, 980.0, &work_area);
         return ((width, height), (min_width, min_height), (x, y));
     }
     let x = work_area_x + ((work_area_width - default_width) / 2.0);
     let y = work_area_y + ((work_area_height - default_height) / 2.0);
-    ((default_width, default_height), (min_width, min_height), (x, y))
+    (
+        (default_width, default_height),
+        (min_width, min_height),
+        (x, y),
+    )
 }
 
 pub fn update_window_snapshot_in_dir(
@@ -356,9 +372,7 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     );
 
     window
-        .set_min_size(Some(Size::Logical(LogicalSize::new(
-            min_width, min_height,
-        ))))
+        .set_min_size(Some(Size::Logical(LogicalSize::new(min_width, min_height))))
         .map_err(|e| e.to_string())?;
     window
         .set_size(Size::Logical(LogicalSize::new(width, height)))
@@ -407,7 +421,11 @@ fn sanitize_path_segment(value: &str) -> String {
     }
 }
 
-fn import_example_image_impl(source_path: &str, name: &str, kb_path: &Path) -> Result<String, String> {
+fn import_example_image_impl(
+    source_path: &str,
+    name: &str,
+    kb_path: &Path,
+) -> Result<String, String> {
     let source = Path::new(source_path);
     if !source.exists() {
         return Err("示例图文件不存在".into());
@@ -752,10 +770,16 @@ fn spawn_index_task(
     pool: crate::db::DbPool,
     engine: Arc<crate::search::engine::SearchEngine>,
     app_handle: tauri::AppHandle,
+    batch_id: Option<String>,
 ) {
     tokio::spawn(async move {
-        let mut rx =
-            crate::indexer::pipeline::index_images(pool, paths, library_dir, Arc::clone(&engine));
+        let mut rx = crate::indexer::pipeline::index_images_with_batch(
+            pool,
+            paths,
+            library_dir,
+            Arc::clone(&engine),
+            batch_id,
+        );
         while let Some(progress) = rx.recv().await {
             if progress.status == "completed" && !progress.id.is_empty() {
                 if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
@@ -780,8 +804,8 @@ fn resolve_import_paths(entries: Vec<ImportEntry>) -> Result<Vec<String>, String
                 }
             }
             "directory" => {
-                let paths =
-                    scan_images_in_dir(std::path::Path::new(&entry.path)).map_err(|e| e.to_string())?;
+                let paths = scan_images_in_dir(std::path::Path::new(&entry.path))
+                    .map_err(|e| e.to_string())?;
                 deduped.extend(paths);
             }
             other => {
@@ -892,6 +916,7 @@ pub async fn import_entries(
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("library");
+    let batch_id = Uuid::new_v4().to_string();
 
     spawn_index_task(
         paths,
@@ -899,6 +924,7 @@ pub async fn import_entries(
         db.inner().clone(),
         Arc::clone(engine.inner()),
         app,
+        Some(batch_id),
     );
 
     Ok(total)
@@ -1211,6 +1237,21 @@ pub async fn get_home_state(db: State<'_, DbPool>) -> Result<HomeStatePayload, S
 }
 
 #[tauri::command]
+pub async fn get_latest_import_summary(
+    db: State<'_, DbPool>,
+) -> Result<Option<LatestImportSummaryPayload>, String> {
+    get_latest_import_summary_impl(db.inner()).await
+}
+
+#[tauri::command]
+pub async fn get_import_batch_failures(
+    batch_id: String,
+    db: State<'_, DbPool>,
+) -> Result<Vec<ImportBatchFailurePayload>, String> {
+    get_import_batch_failures_impl(batch_id, db.inner()).await
+}
+
+#[tauri::command]
 pub async fn delete_search_history(query: String, db: State<'_, DbPool>) -> Result<(), String> {
     delete_search_history_impl(query, db.inner()).await
 }
@@ -1227,6 +1268,9 @@ async fn get_home_state_impl(db: &DbPool) -> Result<HomeStatePayload, String> {
     const FREQUENT_USED_LIMIT: i64 = 12;
 
     let image_count = repo::get_image_count(db).await.map_err(|e| e.to_string())?;
+    let pending_task_count = crate::db::task_repo::get_pending_task_count(db)
+        .await
+        .map_err(|e| e.to_string())?;
     let recent_searches = repo::get_recent_search_history(db, RECENT_SEARCH_LIMIT)
         .await
         .map_err(|e| e.to_string())?
@@ -1258,10 +1302,45 @@ async fn get_home_state_impl(db: &DbPool) -> Result<HomeStatePayload, String> {
 
     Ok(HomeStatePayload {
         image_count,
+        pending_task_count,
         recent_searches,
         recent_used,
         frequent_used,
     })
+}
+
+async fn get_latest_import_summary_impl(
+    db: &DbPool,
+) -> Result<Option<LatestImportSummaryPayload>, String> {
+    let summary = crate::db::task_repo::get_latest_import_batch_summary(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(summary.map(|item| LatestImportSummaryPayload {
+        batch_id: item.batch_id,
+        total_count: item.total_count,
+        imported_count: item.imported_count,
+        duplicated_count: item.duplicated_count,
+        failed_count: item.failed_count,
+    }))
+}
+
+async fn get_import_batch_failures_impl(
+    batch_id: String,
+    db: &DbPool,
+) -> Result<Vec<ImportBatchFailurePayload>, String> {
+    crate::db::task_repo::get_import_batch_failures(db, &batch_id)
+        .await
+        .map_err(|e| e.to_string())
+        .map(|items| {
+            items
+                .into_iter()
+                .map(|item| ImportBatchFailurePayload {
+                    task_id: item.task_id,
+                    file_path: item.file_path,
+                    error_message: item.error_message,
+                })
+                .collect()
+        })
 }
 
 async fn collect_home_images(
@@ -1466,6 +1545,7 @@ pub async fn resume_pending_tasks(
             db.inner().clone(),
             Arc::clone(engine.inner()),
             app,
+            None,
         );
     }
     Ok(count)
@@ -1505,7 +1585,10 @@ pub async fn kb_test_match_entries(
     let matches = kb_file_from_payload(knowledge_base).test_match(&text);
     let recommended_name = matches.first().map(|item| item.name.clone());
     Ok(KbTestMatchPayload {
-        matches: matches.into_iter().map(match_candidate_to_payload).collect(),
+        matches: matches
+            .into_iter()
+            .map(match_candidate_to_payload)
+            .collect(),
         recommended_name,
     })
 }
@@ -1518,7 +1601,8 @@ pub async fn kb_save_entries(
     let path = resolve_kb_path()?;
     let mut store =
         crate::kb::maintenance::KnowledgeBaseStore::open(&path).map_err(|e| e.to_string())?;
-    store.replace_all(kb_file_from_payload(knowledge_base))
+    store
+        .replace_all(kb_file_from_payload(knowledge_base))
         .map_err(|e| e.to_string())?;
     store.save().map_err(|e| e.to_string())?;
     let (provider, example_image_index) = load_runtime_knowledge_base(&path)?;
@@ -1534,10 +1618,7 @@ pub async fn kb_import_example_image(source_path: String, name: String) -> Resul
 }
 
 #[tauri::command]
-pub async fn apply_window_layout(
-    mode: String,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn apply_window_layout(mode: String, app: tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "主窗口不存在".to_string())?;
@@ -1547,10 +1628,7 @@ pub async fn apply_window_layout(
 }
 
 #[tauri::command]
-pub async fn save_window_preferences(
-    mode: String,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn save_window_preferences(mode: String, app: tauri::AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
     save_window_mode_to_dir(&app_data_dir, &mode)
@@ -1655,9 +1733,15 @@ mod tests {
             json.get("debugInfo").is_some(),
             "should have debugInfo (null)"
         );
-        assert!(json.get("matchedOcrTerms").is_some(), "should have matchedOcrTerms");
+        assert!(
+            json.get("matchedOcrTerms").is_some(),
+            "should have matchedOcrTerms"
+        );
         assert!(json.get("matchedTags").is_some(), "should have matchedTags");
-        assert!(json.get("matchedRoleName").is_some(), "should have matchedRoleName");
+        assert!(
+            json.get("matchedRoleName").is_some(),
+            "should have matchedRoleName"
+        );
     }
 
     #[test]
@@ -1784,8 +1868,8 @@ mod tests {
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures")
             .join("sample.jpg");
-        let relative = import_example_image_impl(source.to_str().unwrap(), "甄嬛传", &kb_path)
-            .unwrap();
+        let relative =
+            import_example_image_impl(source.to_str().unwrap(), "甄嬛传", &kb_path).unwrap();
 
         assert!(relative.starts_with("kb_examples/entry/"));
         let copied = kb_path.parent().unwrap().join(&relative);
@@ -1995,12 +2079,20 @@ mod tests {
         .await
         .unwrap();
 
-        repo::upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
-        repo::upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+        repo::upsert_search_history(&pool, "阿布 撇嘴", 100)
+            .await
+            .unwrap();
+        repo::upsert_search_history(&pool, "猫猫 心虚", 200)
+            .await
+            .unwrap();
+        crate::db::task_repo::insert_task(&pool, "pending-home", "/tmp/pending-home.jpg")
+            .await
+            .unwrap();
 
         let home = get_home_state_impl(&pool).await.unwrap();
 
         assert_eq!(home.image_count, 3);
+        assert_eq!(home.pending_task_count, 1);
         assert_eq!(home.recent_searches.len(), 2);
         assert_eq!(home.recent_searches[0].query, "猫猫 心虚");
         assert_eq!(home.recent_used.len(), 2);
@@ -2012,11 +2104,61 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_delete_search_history_impl_removes_target_query(pool: SqlitePool) {
-        repo::upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
-        repo::upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+    async fn test_get_latest_import_summary_and_failures_impl(pool: SqlitePool) {
+        crate::db::task_repo::insert_task_with_batch(&pool, "a1", "/tmp/a1.jpg", "batch-a")
+            .await
+            .unwrap();
+        crate::db::task_repo::insert_task_with_batch(&pool, "a2", "/tmp/a2.jpg", "batch-a")
+            .await
+            .unwrap();
+        crate::db::task_repo::update_task_status_with_result(
+            &pool,
+            "a1",
+            "completed",
+            Some("imported"),
+            None,
+        )
+        .await
+        .unwrap();
+        crate::db::task_repo::update_task_status_with_result(
+            &pool,
+            "a2",
+            "failed",
+            Some("failed"),
+            Some("损坏"),
+        )
+        .await
+        .unwrap();
 
-        delete_search_history_impl("阿布 撇嘴".into(), &pool).await.unwrap();
+        let summary = get_latest_import_summary_impl(&pool)
+            .await
+            .unwrap()
+            .expect("should have summary");
+        assert_eq!(summary.batch_id, "batch-a");
+        assert_eq!(summary.total_count, 2);
+        assert_eq!(summary.imported_count, 1);
+        assert_eq!(summary.failed_count, 1);
+
+        let failures = get_import_batch_failures_impl("batch-a".into(), &pool)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].file_path, "/tmp/a2.jpg");
+        assert_eq!(failures[0].error_message.as_deref(), Some("损坏"));
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_delete_search_history_impl_removes_target_query(pool: SqlitePool) {
+        repo::upsert_search_history(&pool, "阿布 撇嘴", 100)
+            .await
+            .unwrap();
+        repo::upsert_search_history(&pool, "猫猫 心虚", 200)
+            .await
+            .unwrap();
+
+        delete_search_history_impl("阿布 撇嘴".into(), &pool)
+            .await
+            .unwrap();
 
         let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
         assert_eq!(history.len(), 1);
