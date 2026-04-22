@@ -777,7 +777,7 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
-  it("搜索失败时展示明确反馈，并保留去图库管理入口", async () => {
+  it("搜索失败时展示明确反馈，并保留去图库失效图片入口", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -795,15 +795,15 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("这次搜索没成功");
-    expect(wrapper.text()).toContain("可以重试，或先查看异常图片");
+    expect(wrapper.text()).toContain("可以重试，或先查看失效图片");
 
     const galleryAction = wrapper.find('[data-action="primary-recovery-action"]');
     expect(galleryAction.exists()).toBe(true);
-    expect(galleryAction.text()).toContain("查看异常图片");
+    expect(galleryAction.text()).toContain("查看失效图片");
 
     await galleryAction.trigger("click");
     expect(window.location.pathname).toBe("/library");
-    expect(window.location.search).toContain("view=issues");
+    expect(window.location.search).toContain("fileStatus=missing");
 
     wrapper.unmount();
   });

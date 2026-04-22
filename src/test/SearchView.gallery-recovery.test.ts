@@ -100,7 +100,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     wrapper.unmount();
   });
 
-  it("低相关结果时默认推荐查看异常图片，并跳转到异常图片视图", async () => {
+  it("低相关结果时默认推荐查看失效图片，并跳转到失效图片过滤态", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -133,13 +133,13 @@ describe("SearchView 搜索失败修复闭环", () => {
 
     const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
-    expect(action.text()).toContain("查看异常图片");
+    expect(action.text()).toContain("查看失效图片");
 
     await action.trigger("click");
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
-    expect(router.currentRoute.value.query.view).toBe("issues");
+    expect(router.currentRoute.value.query.fileStatus).toBe("missing");
 
     wrapper.unmount();
   });

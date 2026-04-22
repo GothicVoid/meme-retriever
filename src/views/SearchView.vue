@@ -617,7 +617,7 @@ interface HomeState {
 interface RecoveryAction {
   kind: "gallery" | "role-library";
   label: string;
-  targetView?: "recent" | "issues";
+  targetView?: "recent" | "missing";
 }
 
 interface SearchBarExpose {
@@ -937,7 +937,7 @@ const searchSummaryMeta = computed(() => {
   if (showSearchErrorHint.value) {
     return pendingTaskCount.value > 0
       ? "可以重试，或先去图库继续导入未完成任务。"
-      : "可以重试，或先查看异常图片。";
+      : "可以重试，或先查看失效图片。";
   }
   if (showZeroResultHint.value) {
     if (pendingTaskCount.value > 0) {
@@ -950,7 +950,7 @@ const searchSummaryMeta = computed(() => {
   }
   if (showLowConfidenceHint.value) {
     return pendingTaskCount.value > 0
-      ? "先去图库继续导入未完成任务，或查看异常图片。"
+      ? "先去图库继续导入未完成任务，或查看失效图片。"
       : "先试试图里的原文、角色名或更短一点的关键词。";
   }
   if (showLowRelevanceStopNotice.value) {
@@ -979,7 +979,7 @@ const feedbackText = computed(() => {
   if (showSearchErrorHint.value) {
     return pendingTaskCount.value > 0
       ? "可以重试，或先去图库继续导入未完成任务。"
-      : "可以重试，或先查看异常图片。";
+      : "可以重试，或先查看失效图片。";
   }
   if (showZeroResultHint.value) {
     if (pendingTaskCount.value > 0) {
@@ -992,7 +992,7 @@ const feedbackText = computed(() => {
   }
   if (showLowConfidenceHint.value) {
     return pendingTaskCount.value > 0
-      ? "可以先去图库继续导入未完成任务，或先查看异常图片。"
+      ? "可以先去图库继续导入未完成任务，或先查看失效图片。"
       : "如果你愿意，也可以展开看看其余候选，再决定要不要换词。";
   }
   if (showSecondaryResults.value) {
@@ -1076,19 +1076,28 @@ function goBackToHome() {
   onQueryChange("");
 }
 
-function goToGalleryManagement(targetView: "recent" | "issues") {
+function goToGalleryManagement(targetView: "recent" | "missing") {
   if (showColdStart.value && targetView === "recent") {
     setPendingPostImportFlag();
   }
   showImportMenu.value = false;
   settings.currentWindowMode = "expanded";
   if (router) {
-    void router.push({ path: "/library", query: { view: targetView } });
+    void router.push({
+      path: "/library",
+      query: targetView === "missing" ? { fileStatus: "missing" } : { view: targetView },
+    });
     return;
   }
 
   const search = new URLSearchParams(window.location.search);
-  search.set("view", targetView);
+  if (targetView === "missing") {
+    search.delete("view");
+    search.set("fileStatus", "missing");
+  } else {
+    search.delete("fileStatus");
+    search.set("view", targetView);
+  }
   window.history.pushState({}, "", `/library?${search.toString()}`);
 }
 
@@ -1119,8 +1128,8 @@ const primaryRecoveryAction = computed<RecoveryAction | null>(() => {
   if (showSearchErrorHint.value || showLowConfidenceHint.value) {
     return {
       kind: "gallery",
-      label: "查看异常图片",
-      targetView: "issues",
+      label: "查看失效图片",
+      targetView: "missing",
     };
   }
 

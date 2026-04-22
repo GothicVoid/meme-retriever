@@ -480,7 +480,7 @@ describe("LibraryView 管理视图", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.get("[data-action='clear-missing']").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("[data-action='view-missing-images']").attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("导入处理中，完成后再整理图库");
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
     expect(wrapper.find("[data-view='issues']").exists()).toBe(false);

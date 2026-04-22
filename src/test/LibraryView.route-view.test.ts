@@ -76,4 +76,55 @@ describe("LibraryView 路由视图恢复", () => {
     expect(wrapper.get("[data-view='all']").classes()).toContain("active");
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
   });
+
+  it("fileStatus=missing 时进入失效图片过滤态", async () => {
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_image_count") return 2;
+      if (cmd === "get_images") {
+        return [
+          {
+            id: "img-missing",
+            filePath: "/library/images/missing.jpg",
+            fileName: "missing.jpg",
+            thumbnailPath: "/library/thumbs/missing.jpg",
+            fileFormat: "jpg",
+            fileStatus: "missing",
+            width: 100,
+            height: 100,
+            addedAt: 2,
+            useCount: 0,
+            tags: [],
+          },
+          {
+            id: "img-normal",
+            filePath: "/library/images/normal.jpg",
+            fileName: "normal.jpg",
+            thumbnailPath: "/library/thumbs/normal.jpg",
+            fileFormat: "jpg",
+            fileStatus: "normal",
+            width: 100,
+            height: 100,
+            addedAt: 1,
+            useCount: 0,
+            tags: [],
+          },
+        ];
+      }
+      return [];
+    });
+
+    const router = createTestRouter();
+    await router.push("/library?fileStatus=missing");
+    await router.isReady();
+
+    const wrapper = mount(LibraryView, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在查看已发现的失效图片，共 1 张");
+    expect(wrapper.find("[data-action='view-all-images']").exists()).toBe(true);
+  });
 });

@@ -36,6 +36,7 @@
           导入文件夹
         </button>
         <button
+          v-if="showMissingFilter"
           :disabled="managementActionsDisabled || clearingMissing"
           data-action="clear-missing"
           @click="handleClearMissing"
@@ -63,6 +64,37 @@
         导入处理中，完成后再整理图库。
       </p>
     </div>
+    <section
+      v-if="hasMissingImages && !showMissingFilter"
+      class="missing-entry"
+    >
+      <div class="missing-entry__copy">
+        <h3>已发现失效图片</h3>
+        <p>有 {{ missingImages.length }} 张图片的原文件已丢失，可以先筛出来集中处理。</p>
+      </div>
+      <button
+        data-action="view-missing-images"
+        :disabled="managementActionsDisabled"
+        @click="handleViewMissingImages"
+      >
+        查看失效图片
+      </button>
+    </section>
+    <section
+      v-if="showMissingFilter"
+      class="missing-filter-banner"
+    >
+      <div class="missing-filter-banner__copy">
+        <h3>正在查看已发现的失效图片，共 {{ missingImages.length }} 张</h3>
+        <p>失效图片仍沿用普通图库卡片；处理完成后可随时回到全部图片。</p>
+      </div>
+      <button
+        data-action="view-all-images"
+        @click="handleViewAllImages"
+      >
+        查看全部图片
+      </button>
+    </section>
     <section
       v-if="showAdvancedCapabilities"
       class="advanced-capabilities"
@@ -271,7 +303,7 @@
 import { onMounted, computed, ref, inject, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { routerKey, type Router } from "vue-router";
+import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from "vue-router";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
@@ -280,6 +312,7 @@ import type { SearchResult } from "@/stores/search";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
+const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
 const router = inject<Router | undefined>(routerKey, undefined);
 const detailId = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -289,6 +322,7 @@ const loadError = ref(false);
 const pagingError = ref(false);
 const showBackToTop = ref(false);
 const clearingMissing = ref(false);
+const showMissingFilter = ref(false);
 const showAdvancedCapabilities = true;
 const latestImportSummary = ref<LatestImportSummary | null>(null);
 const importFailures = ref<ImportFailure[]>([]);
@@ -365,9 +399,19 @@ const summaryTitle = computed(() => {
 
 const hasMore = computed(() => store.images.length < store.total);
 
-const visibleImages = computed(() => store.images);
+const missingImages = computed(() =>
+  store.images.filter((image) => image.fileStatus === "missing")
+);
 
-const emptyMessage = computed(() => "图库为空，请先添加图片");
+const hasMissingImages = computed(() => missingImages.value.length > 0);
+
+const visibleImages = computed(() =>
+  showMissingFilter.value ? missingImages.value : store.images
+);
+
+const emptyMessage = computed(() =>
+  showMissingFilter.value ? "当前没有失效图片" : "图库为空，请先添加图片"
+);
 
 const latestImportedHighlightIds = computed(() => {
   const count = latestImportedState.value?.count ?? 0;
@@ -429,6 +473,33 @@ watch(
       latestImportedState.value = null;
     }
   }
+);
+
+watch(hasMissingImages, (nextHasMissing) => {
+  if (!nextHasMissing) {
+    showMissingFilter.value = false;
+  }
+});
+
+watch(
+  () => route?.query.fileStatus,
+  (fileStatus) => {
+    if (fileStatus === "missing") {
+      showMissingFilter.value = true;
+      store.clearSelection();
+      return;
+    }
+
+    const browserFileStatus = new URLSearchParams(window.location.search).get("fileStatus");
+    if (browserFileStatus === "missing") {
+      showMissingFilter.value = true;
+      store.clearSelection();
+      return;
+    }
+
+    showMissingFilter.value = false;
+  },
+  { immediate: true }
 );
 
 onMounted(() => {
@@ -536,6 +607,17 @@ function scrollToTop() {
   }
 }
 
+function handleViewMissingImages() {
+  showMissingFilter.value = true;
+  store.clearSelection();
+  scrollToTop();
+}
+
+function handleViewAllImages() {
+  showMissingFilter.value = false;
+  store.clearSelection();
+}
+
 async function retryLoad() {
   if (pagingError.value && store.images.length > 0) {
     await loadNextPage();
@@ -639,6 +721,9 @@ async function handleClearMissing() {
       store.clearSelection();
     }
     await reloadGallery();
+    if (missingImages.value.length === 0) {
+      showMissingFilter.value = false;
+    }
   } finally {
     clearingMissing.value = false;
   }
@@ -704,6 +789,33 @@ async function openPrivateRoleLibrary() {
 }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.missing-entry,
+.missing-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 88%, #fff1f1);
+}
+.missing-entry__copy,
+.missing-filter-banner__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.missing-entry__copy h3,
+.missing-entry__copy p,
+.missing-filter-banner__copy h3,
+.missing-filter-banner__copy p {
+  margin: 0;
+}
+.missing-entry__copy p,
+.missing-filter-banner__copy p {
+  color: var(--ui-text-secondary);
+}
 .latest-import-position-tip {
   padding: 0.75rem 1rem;
   border-radius: var(--ui-radius-md);
