@@ -45,7 +45,7 @@ describe("LibraryView 路由视图恢复", () => {
     });
   });
 
-  it("view=issues 时忽略旧视图参数并保持全部图片视图", async () => {
+  it("旧的 view=issues 参数会被忽略并保持全部图片视图", async () => {
     const router = createTestRouter();
     await router.push("/library?view=issues");
     await router.isReady();
@@ -61,7 +61,7 @@ describe("LibraryView 路由视图恢复", () => {
     expect(wrapper.find("[data-view='issues']").exists()).toBe(false);
   });
 
-  it("view=recent 时忽略旧视图参数并保持全部图片视图", async () => {
+  it("旧的 view=recent 参数会被忽略并保持全部图片视图", async () => {
     const router = createTestRouter();
     await router.push("/library?view=recent");
     await router.isReady();

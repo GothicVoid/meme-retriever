@@ -61,7 +61,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     mockListen.mockResolvedValue(() => {});
   });
 
-  it("无结果时默认推荐查看最近新增，并跳转到最近新增视图", async () => {
+  it("无结果时默认推荐查看最近新增，并跳转到最近新增入口", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
