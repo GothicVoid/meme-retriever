@@ -212,6 +212,30 @@
           </p>
         </li>
       </ul>
+      <div
+        v-if="showImportFailures && displayedFailures.length > 0"
+        class="import-summary__follow-up"
+      >
+        <p class="import-summary__follow-up-text">
+          {{ failureFollowUpText }}
+        </p>
+        <div class="import-summary__follow-up-actions">
+          <button
+            v-if="showRetryFailuresAction"
+            data-action="retry-import-failures"
+            :disabled="retryingFailures || managementActionsDisabled"
+            @click="handleRetryImportFailures"
+          >
+            {{ retryingFailures ? "重试导入中..." : "重试导入" }}
+          </button>
+          <button
+            data-action="continue-managing-library"
+            @click="handleContinueManagingLibrary"
+          >
+            继续整理图库
+          </button>
+        </div>
+      </div>
     </section>
     <section
       v-if="showLatestImportedTip"
@@ -328,6 +352,7 @@ const latestImportSummary = ref<LatestImportSummary | null>(null);
 const importFailures = ref<ImportFailure[]>([]);
 const showImportFailures = ref(false);
 const latestImportedState = ref<LatestImportedState | null>(null);
+const retryingFailures = ref(false);
 
 interface LatestImportSummary {
   batchId: string;
@@ -339,6 +364,7 @@ interface LatestImportSummary {
 
 interface ImportFailure {
   taskId: string;
+  filePath?: string;
   errorMessage?: string;
   fileName: string;
   failureKind?: string;
@@ -441,6 +467,39 @@ const latestImportedBadgeLabels = computed(() => {
 const showLatestImportedTip = computed(() =>
   !!latestImportedState.value && latestImportedState.value.activated && latestImportedHighlightIds.value.size > 0
 );
+
+const retryableImportFailures = computed(() =>
+  recoveryStore.completedRecoverySummary
+    ? []
+    : importFailures.value.filter((failure) => failure.retryable && failure.filePath)
+);
+
+const showRetryFailuresAction = computed(() =>
+  showImportFailures.value && retryableImportFailures.value.length > 0
+);
+
+const failureFollowUpText = computed(() => {
+  if (!showImportFailures.value || displayedFailures.value.length === 0) {
+    return "";
+  }
+
+  const hasRetryableFailures = displayedFailures.value.some((failure) => failure.retryable);
+  const hasNonRetryableFailures = displayedFailures.value.some((failure) => !failure.retryable);
+
+  if (hasRetryableFailures && hasNonRetryableFailures) {
+    return "可重试的失败项可以直接再试一次，其余失败已先跳过。";
+  }
+
+  if (hasRetryableFailures) {
+    return "可重试的失败项可以直接再试一次。";
+  }
+
+  if ((displayedSummary.value?.importedCount ?? 0) > 0) {
+    return "这些失败项已先跳过，你可以先看本次新增，稍后再继续整理图库。";
+  }
+
+  return "这些失败项已先跳过，你可以继续整理图库。";
+});
 
 watch(displayedSummarySourceKey, (sourceKey) => {
   if (!sourceKey || !displayedSummary.value) {
@@ -653,6 +712,10 @@ function handleShowFailures() {
   showImportFailures.value = !showImportFailures.value;
 }
 
+function handleContinueManagingLibrary() {
+  showImportFailures.value = false;
+}
+
 function handleViewLatestImported() {
   const sourceKey = displayedSummarySourceKey.value;
   const importedCount = displayedSummary.value?.importedCount ?? 0;
@@ -671,6 +734,26 @@ function handleViewLatestImported() {
   }
 
   scrollToTop();
+}
+
+async function handleRetryImportFailures() {
+  if (retryableImportFailures.value.length === 0) {
+    return;
+  }
+
+  retryingFailures.value = true;
+  try {
+    await store.importEntries(
+      retryableImportFailures.value.map((failure) => ({
+        kind: "file" as const,
+        path: failure.filePath!,
+      }))
+    );
+    showImportFailures.value = false;
+    await reloadGallery();
+  } finally {
+    retryingFailures.value = false;
+  }
 }
 
 async function handleAdd() {
@@ -914,6 +997,24 @@ async function openPrivateRoleLibrary() {
   color: var(--ui-text-secondary);
 }
 .import-summary__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.import-summary__follow-up {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--ui-border-subtle);
+}
+.import-summary__follow-up-text {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+.import-summary__follow-up-actions {
   display: flex;
   align-items: center;
   gap: 0.75rem;

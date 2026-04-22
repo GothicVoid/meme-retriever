@@ -164,6 +164,135 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
+  it("存在可重试失败时展开后显示重试导入动作", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-retryable",
+          totalCount: 1,
+          importedCount: 0,
+          duplicatedCount: 0,
+          failedCount: 1,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-r1",
+          filePath: "/tmp/imports/retry.jpg",
+          errorMessage: "import interrupted",
+          failureKind: "interrupted_recoverable",
+          retryable: true,
+          userMessage: "导入被中断了，可以继续导入剩余图片。",
+        }];
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("导入被中断了，可以继续导入剩余图片。");
+    expect(wrapper.get("[data-action='retry-import-failures']").text()).toContain("重试导入");
+    expect(wrapper.find("[data-action='continue-managing-library']").exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it("普通不可重试失败不显示重试导入，并保留继续整理图库动作", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-non-retry",
+          totalCount: 2,
+          importedCount: 1,
+          duplicatedCount: 0,
+          failedCount: 1,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-n1",
+          filePath: "/tmp/imports/damaged.jpg",
+          errorMessage: "damaged file",
+          failureKind: "file_damaged",
+          retryable: false,
+          userMessage: "图片文件可能已损坏，暂时无法导入。",
+        }];
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("[data-action='retry-import-failures']").exists()).toBe(false);
+    expect(wrapper.get("[data-action='continue-managing-library']").text()).toContain("继续整理图库");
+    expect(wrapper.get("[data-action='view-latest-imported']").text()).toContain("查看本次新增");
+
+    wrapper.unmount();
+  });
+
+  it("混合失败时展示混合说明，并仍以重试导入作为主动作", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-mixed",
+          totalCount: 3,
+          importedCount: 1,
+          duplicatedCount: 0,
+          failedCount: 2,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [
+          {
+            taskId: "task-m1",
+            filePath: "/tmp/imports/retry.jpg",
+            errorMessage: "interrupted",
+            failureKind: "interrupted_recoverable",
+            retryable: true,
+            userMessage: "导入被中断了，可以继续导入剩余图片。",
+          },
+          {
+            taskId: "task-m2",
+            filePath: "/tmp/imports/missing.jpg",
+            errorMessage: "file not found",
+            failureKind: "file_missing",
+            retryable: false,
+            userMessage: "原文件不存在，已跳过这张图片。",
+          },
+        ];
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("可重试的失败项可以直接再试一次，其余失败已先跳过。");
+    expect(wrapper.get("[data-action='retry-import-failures']").exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
   it("最近一次导入点击查看本次新增后停留在全部图片并滚动到顶部", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
