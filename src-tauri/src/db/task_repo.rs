@@ -124,9 +124,7 @@ pub async fn reset_stale_tasks(pool: &DbPool) -> anyhow::Result<()> {
 }
 
 pub async fn clear_task_queue(pool: &DbPool) -> anyhow::Result<()> {
-    sqlx::query(
-        "DELETE FROM task_queue WHERE status IN ('pending','processing','completed','failed')",
-    )
+    sqlx::query("DELETE FROM task_queue WHERE status IN ('pending','processing')")
     .execute(pool)
     .await?;
     Ok(())
@@ -238,7 +236,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_clear_task_queue(pool: SqlitePool) {
+    async fn test_clear_task_queue_only_removes_unfinished_tasks(pool: SqlitePool) {
         insert_task(&pool, "t1", "/tmp/a.jpg").await.unwrap();
         insert_task(&pool, "t2", "/tmp/b.jpg").await.unwrap();
         insert_task(&pool, "t3", "/tmp/c.jpg").await.unwrap();
@@ -254,7 +252,23 @@ mod tests {
             .await
             .unwrap();
         let count: i64 = row.get("cnt");
-        assert_eq!(count, 0);
+        assert_eq!(count, 2);
+
+        let rows = sqlx::query("SELECT id, status FROM task_queue ORDER BY id ASC")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let remaining: Vec<(String, String)> = rows
+            .into_iter()
+            .map(|row| (row.get("id"), row.get("status")))
+            .collect();
+        assert_eq!(
+            remaining,
+            vec![
+                ("t1".to_string(), "completed".to_string()),
+                ("t2".to_string(), "failed".to_string()),
+            ]
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

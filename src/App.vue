@@ -49,7 +49,7 @@
       class="resume-backdrop ui-dialog-backdrop"
     >
       <div class="resume-dialog ui-dialog">
-        <p>上次有 {{ recoveryStore.pendingCount }} 张图片还没整理完。</p>
+        <p>上次导入中断，还有 {{ recoveryStore.pendingCount }} 张图片未处理。</p>
         <div class="resume-actions">
           <button
             data-action="resume-pending-tasks"
@@ -57,7 +57,7 @@
             :disabled="recoveryStore.resuming || recoveryStore.clearing"
             @click="resumeTasks"
           >
-            {{ recoveryStore.resuming ? "继续处理中..." : "继续处理" }}
+            {{ recoveryStore.resuming ? "继续导入中..." : "继续导入" }}
           </button>
           <button
             data-action="clear-pending-tasks"
@@ -65,7 +65,7 @@
             :disabled="recoveryStore.resuming || recoveryStore.clearing"
             @click="clearPendingTasks"
           >
-            {{ recoveryStore.clearing ? "清理中..." : "放弃并清理" }}
+            {{ recoveryStore.clearing ? "放弃中..." : "放弃剩余图片" }}
           </button>
         </div>
       </div>
@@ -78,13 +78,11 @@ import { computed, nextTick, onMounted, watch } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
-import { useLibraryStore } from "@/stores/library";
 import { useSettingsStore, type WindowMode } from "@/stores/settings";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 
 const recoveryStore = useTaskRecoveryStore();
-const libraryStore = useLibraryStore();
 const settings = useSettingsStore();
 const route = useRoute();
 const router = useRouter();
@@ -98,7 +96,7 @@ const effectiveWindowMode = computed<WindowMode>(() =>
 );
 
 const showRecoveryDialog = computed(() =>
-  recoveryStore.pendingCount > 0 && !recoveryStore.activeRecovery && !libraryStore.indexing
+  recoveryStore.shouldShowRecoveryDialog && route.path !== "/library"
 );
 
 const expandedTitle = computed(() => {

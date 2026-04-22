@@ -106,14 +106,14 @@ describe("首页图库角标与异常恢复联动", () => {
 
     expect(router.currentRoute.value.path).toBe("/library");
     expect(router.currentRoute.value.query.view).toBe("recent");
-    expect(wrapper.text()).toContain("上次有 2 张图片还没整理完");
+    expect(wrapper.text()).toContain("上次导入中断，还有 2 张图片未处理");
     expect(wrapper.find("[data-action='resume-pending-tasks']").exists()).toBe(true);
     expect(wrapper.find("[data-action='clear-pending-tasks']").exists()).toBe(true);
 
     wrapper.unmount();
   });
 
-  it("有角标时进入图库后可以继续处理未完成任务", async () => {
+  it("有角标时进入图库后可以继续导入未完成任务", async () => {
     let progressHandler: ((event: { payload: { id: string; status: string } }) => void) | null = null;
     mockListen.mockImplementation(async (_event, handler) => {
       progressHandler = handler as typeof progressHandler;
@@ -154,7 +154,7 @@ describe("首页图库角标与异常恢复联动", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("resume_pending_tasks");
-    expect(wrapper.text()).not.toContain("上次有 2 张图片还没整理完");
+    expect(wrapper.text()).not.toContain("上次导入中断，还有 2 张图片未处理");
     expect(wrapper.find(".index-status").exists()).toBe(true);
     expect(wrapper.text()).toContain("0/2");
 
@@ -166,7 +166,7 @@ describe("首页图库角标与异常恢复联动", () => {
     wrapper.unmount();
   });
 
-  it("有角标时进入图库后可以放弃并清理未完成任务", async () => {
+  it("有角标时进入图库后可以放弃剩余图片", async () => {
     mockInvoke.mockImplementation(async (cmd) => {
       if (cmd === "get_home_state") return homeStateWithPending;
       if (cmd === "get_pending_tasks") {
@@ -201,7 +201,7 @@ describe("首页图库角标与异常恢复联动", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("clear_task_queue");
-    expect(wrapper.text()).not.toContain("上次有 2 张图片还没整理完");
+    expect(wrapper.text()).not.toContain("上次导入中断，还有 2 张图片未处理");
     expect(wrapper.find("[data-action='resume-pending-tasks']").exists()).toBe(false);
     expect(wrapper.find("[data-action='clear-pending-tasks']").exists()).toBe(false);
 
@@ -248,7 +248,7 @@ describe("首页图库角标与异常恢复联动", () => {
 
     expect(router.currentRoute.value.path).toBe("/library");
     expect(router.currentRoute.value.query.view).toBe("recent");
-    expect(wrapper.text()).toContain("上次有 3 张图片还没整理完");
+    expect(wrapper.text()).toContain("上次导入中断，还有 3 张图片未处理");
 
     wrapper.unmount();
   });

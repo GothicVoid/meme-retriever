@@ -280,6 +280,13 @@
             </button>
           </div>
         </div>
+        <p
+          v-if="showIncompleteResultsHint"
+          class="result-feedback result-feedback--secondary"
+          data-testid="search-incomplete-hint"
+        >
+          当前结果可能不完整，处理完成后再搜一次会更稳。
+        </p>
         <div
           v-if="showLowRelevanceStopNotice"
           class="result-more-strip"
@@ -536,7 +543,7 @@
               aria-label="打开图库管理"
               @click="openGalleryManagement"
             >
-              图库
+              {{ galleryEntryLabel }}
               <span
                 v-if="pendingTaskCount > 0"
                 class="search-view__gallery-badge"
@@ -667,10 +674,15 @@ const showColdStart = computed(() =>
 
 const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
 const pendingTaskCount = computed(() =>
-  libraryStore.indexing
+  libraryStore.indexing || recoveryStore.activeRecovery
     ? 0
-    : recoveryStore.loaded ? recoveryStore.pendingCount : (homeState.value?.pendingTaskCount ?? 0)
+    : Math.max(
+      recoveryStore.loaded ? recoveryStore.pendingCount : 0,
+      homeState.value?.pendingTaskCount ?? 0
+    )
 );
+const inProgressIndicator = computed(() => recoveryStore.inProgressIndicator);
+const galleryEntryLabel = computed(() => inProgressIndicator.value?.label ?? "图库");
 const showSearchAssistPanel = computed(() =>
   searchFocused.value && isHomeMode.value && (recentSearches.value.length > 0 || exampleQueries.length > 0)
 );
@@ -861,6 +873,10 @@ const showSearchErrorHint = computed(() =>
   !!store.query.trim() && !store.loading && !!store.error
 );
 
+const showIncompleteResultsHint = computed(() =>
+  !!store.query.trim() && !isHomeMode.value && !!inProgressIndicator.value
+);
+
 const looksLikeRoleQuery = computed(() => isLikelyRoleQuery(store.query));
 
 const guidanceItems = [
@@ -920,12 +936,12 @@ const searchSummaryTitle = computed(() => {
 const searchSummaryMeta = computed(() => {
   if (showSearchErrorHint.value) {
     return pendingTaskCount.value > 0
-      ? "可以重试，或先去图库继续处理未完成任务。"
+      ? "可以重试，或先去图库继续导入未完成任务。"
       : "可以重试，或先查看异常图片。";
   }
   if (showZeroResultHint.value) {
     if (pendingTaskCount.value > 0) {
-      return "换个说法试试，或先去图库继续处理未完成任务。";
+      return "换个说法试试，或先去图库继续导入未完成任务。";
     }
     if (looksLikeRoleQuery.value) {
       return "按角色名搜不到时，可以补几张示例图帮助系统认识这个角色。";
@@ -934,7 +950,7 @@ const searchSummaryMeta = computed(() => {
   }
   if (showLowConfidenceHint.value) {
     return pendingTaskCount.value > 0
-      ? "先去图库继续处理未完成任务，或查看异常图片。"
+      ? "先去图库继续导入未完成任务，或查看异常图片。"
       : "先试试图里的原文、角色名或更短一点的关键词。";
   }
   if (showLowRelevanceStopNotice.value) {
@@ -962,12 +978,12 @@ const feedbackTitle = computed(() => {
 const feedbackText = computed(() => {
   if (showSearchErrorHint.value) {
     return pendingTaskCount.value > 0
-      ? "可以重试，或先去图库继续处理未完成任务。"
+      ? "可以重试，或先去图库继续导入未完成任务。"
       : "可以重试，或先查看异常图片。";
   }
   if (showZeroResultHint.value) {
     if (pendingTaskCount.value > 0) {
-      return "可以先去图库继续处理未完成任务，再回来搜索。";
+      return "可以先去图库继续导入未完成任务，再回来搜索。";
     }
     if (looksLikeRoleQuery.value) {
       return "如果图片里没字、模型也认不出这个角色，可以补几张角色示例图。";
@@ -976,7 +992,7 @@ const feedbackText = computed(() => {
   }
   if (showLowConfidenceHint.value) {
     return pendingTaskCount.value > 0
-      ? "可以先去图库继续处理未完成任务，或先查看异常图片。"
+      ? "可以先去图库继续导入未完成任务，或先查看异常图片。"
       : "如果你愿意，也可以展开看看其余候选，再决定要不要换词。";
   }
   if (showSecondaryResults.value) {
@@ -1095,7 +1111,7 @@ const primaryRecoveryAction = computed<RecoveryAction | null>(() => {
   if (pendingTaskCount.value > 0) {
     return {
       kind: "gallery",
-      label: "去图库继续处理",
+      label: "去图库继续导入",
       targetView: "recent",
     };
   }
@@ -1194,6 +1210,15 @@ async function handleImportFolder() {
 async function openGalleryManagement() {
   settings.currentWindowMode = "expanded";
   closeDevToolsPopover();
+  if (inProgressIndicator.value) {
+    if (router) {
+      await router.push("/library");
+      return;
+    }
+
+    window.history.pushState({}, "", "/library");
+    return;
+  }
   if (pendingTaskCount.value > 0) {
     goToGalleryManagement("recent");
     return;
@@ -1560,7 +1585,10 @@ async function handleDeleteFromGrid(id: string) {
 }
 
 onMounted(async () => {
-  await fetchHomeState();
+  await Promise.all([
+    fetchHomeState(),
+    recoveryStore.fetchPendingTasks(true),
+  ]);
   void libraryStore.fetchImages();
   await nextTick();
   attachLoadMoreObserver();

@@ -81,10 +81,14 @@ describe("App 工作台壳层", () => {
     });
   });
 
-  it("启动时存在未完成入库任务时显示恢复对话框", async () => {
+  it("启动时存在 3 条及以上未完成入库任务时显示恢复对话框", async () => {
     mockInvoke.mockImplementation(async (cmd) => {
       if (cmd === "get_pending_tasks") {
-        return [{ id: 1, filePath: "/tmp/a.jpg" }, { id: 2, filePath: "/tmp/b.jpg" }];
+        return [
+          { id: 1, filePath: "/tmp/a.jpg" },
+          { id: 2, filePath: "/tmp/b.jpg" },
+          { id: 3, filePath: "/tmp/c.jpg" },
+        ];
       }
       return undefined;
     });
@@ -100,8 +104,8 @@ describe("App 工作台壳层", () => {
     });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("上次有 2 张图片还没整理完");
-    expect(wrapper.text()).toContain("继续处理");
-    expect(wrapper.text()).toContain("放弃并清理");
+    expect(wrapper.text()).toContain("上次导入中断，还有 3 张图片未处理");
+    expect(wrapper.text()).toContain("继续导入");
+    expect(wrapper.text()).toContain("放弃剩余图片");
   });
 });

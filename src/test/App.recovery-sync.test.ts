@@ -67,7 +67,7 @@ describe("App 恢复任务状态同步", () => {
     mockListen.mockReset();
   });
 
-  it("继续处理后首页不再显示恢复角标，而是切换为进行中状态", async () => {
+  it("继续导入后首页不再显示恢复角标，而是切换为进行中状态", async () => {
     let pendingCount = 3;
     const eventHandlers: Array<(event: { payload: { status: string } }) => unknown> = [];
 
@@ -106,6 +106,8 @@ describe("App 恢复任务状态同步", () => {
 
     expect(wrapper.get('[data-testid="gallery-pending-badge"]').text()).toContain("3");
 
+    await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
+    await flushPromises();
     await wrapper.get("[data-action='resume-pending-tasks']").trigger("click");
     await flushPromises();
 
@@ -160,10 +162,9 @@ describe("App 恢复任务状态同步", () => {
     });
     await flushPromises();
 
-    await wrapper.get("[data-action='resume-pending-tasks']").trigger("click");
-    await flushPromises();
-
     await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
+    await flushPromises();
+    await wrapper.get("[data-action='resume-pending-tasks']").trigger("click");
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
@@ -219,6 +220,68 @@ describe("App 恢复任务状态同步", () => {
     wrapper.unmount();
   });
 
+  it("待恢复数量小于 3 时不弹启动恢复对话框，达到 3 才弹", async () => {
+    mockListen.mockResolvedValue(() => {});
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_home_state") return makeHomeState(2);
+      if (cmd === "get_pending_tasks") {
+        return [
+          { id: "task-1", filePath: "/tmp/1.jpg", status: "processing" },
+          { id: "task-2", filePath: "/tmp/2.jpg", status: "pending" },
+        ];
+      }
+      if (cmd === "get_image_count") return 0;
+      if (cmd === "get_images") return [];
+      if (cmd === "get_latest_import_summary") return null;
+      return [];
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(App, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.find(".resume-backdrop").exists()).toBe(false);
+    expect(wrapper.get('[data-testid="gallery-pending-badge"]').text()).toContain("2");
+
+    wrapper.unmount();
+
+    mockInvoke.mockReset();
+    mockInvoke.mockImplementation(async (cmd) => {
+      if (cmd === "get_home_state") return makeHomeState(3);
+      if (cmd === "get_pending_tasks") {
+        return [
+          { id: "task-1", filePath: "/tmp/1.jpg", status: "processing" },
+          { id: "task-2", filePath: "/tmp/2.jpg", status: "pending" },
+          { id: "task-3", filePath: "/tmp/3.jpg", status: "pending" },
+        ];
+      }
+      if (cmd === "get_image_count") return 0;
+      if (cmd === "get_images") return [];
+      if (cmd === "get_latest_import_summary") return null;
+      return [];
+    });
+
+    const wrapper2 = mount(App, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper2.find(".resume-backdrop").exists()).toBe(true);
+
+    wrapper2.unmount();
+  });
+
   it("恢复全部完成后进入图库页会优先显示本次恢复结果", async () => {
     let pendingCount = 2;
     const eventHandlers: Array<(event: { payload: { id?: string; status: string; resultKind?: string; file_name?: string; message?: string } }) => unknown> = [];
@@ -271,6 +334,8 @@ describe("App 恢复任务状态同步", () => {
     });
     await flushPromises();
 
+    await wrapper.get('[data-action="open-gallery-management"]').trigger("click");
+    await flushPromises();
     await wrapper.get("[data-action='resume-pending-tasks']").trigger("click");
     await flushPromises();
 
@@ -304,8 +369,8 @@ describe("App 恢复任务状态同步", () => {
     await router.push("/library");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("刚刚继续处理");
-    expect(wrapper.text()).toContain("刚处理完剩余 2 张");
+    expect(wrapper.text()).toContain("刚刚继续导入");
+    expect(wrapper.text()).toContain("刚导完剩余 2 张");
     expect(wrapper.text()).toContain("新增 1");
     expect(wrapper.text()).toContain("失败 1");
     expect(wrapper.text()).not.toContain("共处理 14 张");

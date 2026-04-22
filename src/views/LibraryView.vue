@@ -54,7 +54,7 @@
           添加文件夹
         </button>
         <button
-          :disabled="store.indexing || clearingMissing"
+          :disabled="managementActionsDisabled || clearingMissing"
           data-action="clear-missing"
           @click="handleClearMissing"
         >
@@ -64,6 +64,7 @@
           <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
           <button
             data-action="delete-selected"
+            :disabled="managementActionsDisabled"
             @click="handleDeleteSelected"
           >
             删除选中
@@ -73,6 +74,12 @@
       <div class="usage-notice">
         图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
       </div>
+      <p
+        v-if="managementActionsDisabled"
+        class="toolbar-lock-reason"
+      >
+        导入处理中，完成后再整理图库。
+      </p>
     </div>
     <section
       v-if="showAdvancedCapabilities"
@@ -100,10 +107,10 @@
     >
       <div class="recovery-banner__copy">
         <p class="recovery-banner__title">
-          上次有 {{ recoveryStore.pendingCount }} 张图片还没整理完
+          上次导入中断，还有 {{ recoveryStore.pendingCount }} 张图片未处理
         </p>
         <p class="recovery-banner__text">
-          你可以继续处理这批图片，或放弃并清理未完成任务。
+          你可以继续导入剩余图片，或放弃剩余图片。
         </p>
       </div>
       <div class="recovery-banner__actions">
@@ -112,15 +119,27 @@
           :disabled="recoveryStore.resuming || recoveryStore.clearing"
           @click="handleResumePendingTasks"
         >
-          {{ recoveryStore.resuming ? "继续处理中..." : "继续处理" }}
+          {{ recoveryStore.resuming ? "继续导入中..." : "继续导入" }}
         </button>
         <button
           data-action="clear-pending-tasks"
           :disabled="recoveryStore.resuming || recoveryStore.clearing"
           @click="handleClearPendingTasks"
         >
-          {{ recoveryStore.clearing ? "清理中..." : "放弃并清理" }}
+          {{ recoveryStore.clearing ? "放弃中..." : "放弃剩余图片" }}
         </button>
+      </div>
+    </div>
+    <div
+      v-else-if="inProgressIndicator"
+      class="index-status"
+    >
+      <span>{{ inProgressIndicator.label }}</span>
+      <div class="progress-bar">
+        <div
+          class="progress-fill"
+          :style="{ width: progressPercent + '%' }"
+        />
       </div>
     </div>
     <section
@@ -143,16 +162,23 @@
         <button
           v-if="displayedSummary.failedCount > 0"
           data-action="show-import-failures"
-          @click="showImportFailures = !showImportFailures"
+          @click="handleShowFailures"
         >
           {{ showImportFailures ? "收起失败项" : "查看失败项" }}
         </button>
         <button
           v-if="displayedSummary.importedCount > 0"
           data-action="view-latest-imported"
-          @click="switchToRecentView"
+          @click="handleViewLatestImported"
         >
           查看最近新增
+        </button>
+        <button
+          v-if="recoveryStore.completedRecoverySummary"
+          data-action="dismiss-recovery-summary"
+          @click="dismissRecoverySummary"
+        >
+          稍后再看
         </button>
       </div>
       <ul
@@ -173,18 +199,6 @@
         </li>
       </ul>
     </section>
-    <div
-      v-if="store.indexing"
-      class="index-status"
-    >
-      <span>正在入库… {{ store.indexCurrent }}/{{ store.indexTotal }}</span>
-      <div class="progress-bar">
-        <div
-          class="progress-fill"
-          :style="{ width: progressPercent + '%' }"
-        />
-      </div>
-    </div>
     <div
       ref="scrollContainer"
       class="gallery-scroll"
@@ -306,12 +320,18 @@ interface ImportFailure {
 }
 
 const progressPercent = computed(() =>
-  store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
+  inProgressIndicator.value && inProgressIndicator.value.total > 0
+    ? (inProgressIndicator.value.current / inProgressIndicator.value.total) * 100
+    : 0
 );
 
 const showRecoveryBanner = computed(() =>
   recoveryStore.pendingCount > 0 && !recoveryStore.activeRecovery && !store.indexing
 );
+
+const inProgressIndicator = computed(() => recoveryStore.inProgressIndicator);
+
+const managementActionsDisabled = computed(() => !!inProgressIndicator.value);
 
 const displayedSummary = computed(() =>
   recoveryStore.completedRecoverySummary ?? latestImportSummary.value
@@ -322,14 +342,14 @@ const displayedFailures = computed(() =>
 );
 
 const summaryEyebrow = computed(() =>
-  recoveryStore.completedRecoverySummary ? "刚刚继续处理" : "最近一次导入"
+  recoveryStore.completedRecoverySummary ? "刚刚继续导入" : "最近一次导入"
 );
 
 const summaryTitle = computed(() => {
   const summary = displayedSummary.value;
   if (!summary) return "";
   if (recoveryStore.completedRecoverySummary) {
-    return `刚处理完剩余 ${summary.totalCount} 张`;
+    return `刚导完剩余 ${summary.totalCount} 张`;
   }
   return `共处理 ${summary.totalCount} 张`;
 });
@@ -500,6 +520,29 @@ async function retryLoad() {
 
 function switchToRecentView() {
   currentView.value = "recent";
+}
+
+function dismissRecoverySummary() {
+  recoveryStore.dismissCompletedRecoverySummary();
+  showImportFailures.value = false;
+}
+
+function handleShowFailures() {
+  if (recoveryStore.completedRecoverySummary) {
+    recoveryStore.markRecoveryResultSeen();
+    showImportFailures.value = false;
+    currentView.value = "issues";
+    return;
+  }
+
+  showImportFailures.value = !showImportFailures.value;
+}
+
+function handleViewLatestImported() {
+  if (recoveryStore.completedRecoverySummary) {
+    recoveryStore.markRecoveryResultSeen();
+  }
+  switchToRecentView();
 }
 
 async function handleAdd() {

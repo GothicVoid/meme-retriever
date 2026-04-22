@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Event } from "@tauri-apps/api/event";
 import { flushPromises } from "@vue/test-utils";
 import { useLibraryStore, type ImageMeta, type ImportEntry } from "@/stores/library";
+import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
@@ -340,5 +341,109 @@ describe("useLibraryStore 批量选择", () => {
     expect(store.images).toHaveLength(1);
     expect(store.images[0].id).toBe("uuid-2");
     expect(store.selectedIds.size).toBe(0);
+  });
+});
+
+describe("useTaskRecoveryStore", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => {});
+  });
+
+  it("支持显式关闭恢复结果摘要", () => {
+    const store = useTaskRecoveryStore();
+    store.completedRecoverySummary = {
+      totalCount: 3,
+      importedCount: 2,
+      duplicatedCount: 0,
+      failedCount: 1,
+      failures: [{
+        taskId: "task-1",
+        fileName: "a.jpg",
+        errorMessage: "损坏",
+      }],
+    };
+
+    store.dismissCompletedRecoverySummary();
+
+    expect(store.completedRecoverySummary).toBeNull();
+  });
+
+  it("查看失败项后标记恢复结果已查看并清空摘要", () => {
+    const store = useTaskRecoveryStore();
+    store.completedRecoverySummary = {
+      totalCount: 2,
+      importedCount: 1,
+      duplicatedCount: 0,
+      failedCount: 1,
+      failures: [{
+        taskId: "task-2",
+        fileName: "b.jpg",
+        errorMessage: "恢复失败",
+      }],
+    };
+
+    store.markRecoveryResultSeen();
+
+    expect(store.completedRecoverySummary).toBeNull();
+    expect(store.recoveryResultSeen).toBe(true);
+  });
+
+  it("新导入开始时清空已确认的恢复结果", () => {
+    const recoveryStore = useTaskRecoveryStore();
+    recoveryStore.completedRecoverySummary = {
+      totalCount: 2,
+      importedCount: 2,
+      duplicatedCount: 0,
+      failedCount: 0,
+      failures: [],
+    };
+
+    const libraryStore = useLibraryStore();
+    libraryStore.importState = "preparing";
+
+    recoveryStore.clearRecoveryResultOnNewImport();
+
+    expect(recoveryStore.completedRecoverySummary).toBeNull();
+  });
+
+  it("恢复处理中与普通导入中都暴露统一进行中承接数据", async () => {
+    mockInvoke.mockResolvedValueOnce([
+      { id: "task-1", filePath: "/tmp/1.jpg", status: "processing" },
+      { id: "task-2", filePath: "/tmp/2.jpg", status: "pending" },
+      { id: "task-3", filePath: "/tmp/3.jpg", status: "pending" },
+    ]);
+
+    const recoveryStore = useTaskRecoveryStore();
+    await recoveryStore.fetchPendingTasks(true);
+
+    expect(recoveryStore.inProgressIndicator).toBeNull();
+
+    recoveryStore.activeRecovery = true;
+    recoveryStore.recoveryTotal = 3;
+    recoveryStore.recoveryImported = 1;
+    recoveryStore.recoveryDuplicated = 1;
+
+    expect(recoveryStore.inProgressIndicator).toMatchObject({
+      kind: "recovery",
+      current: 2,
+      total: 3,
+      remaining: 1,
+    });
+
+    const libraryStore = useLibraryStore();
+    libraryStore.indexing = true;
+    libraryStore.indexCurrent = 1;
+    libraryStore.indexTotal = 4;
+    recoveryStore.activeRecovery = false;
+
+    expect(recoveryStore.inProgressIndicator).toMatchObject({
+      kind: "import",
+      current: 1,
+      total: 4,
+      remaining: 3,
+    });
   });
 });

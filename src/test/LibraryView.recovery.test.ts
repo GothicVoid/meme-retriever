@@ -47,7 +47,7 @@ describe("LibraryView 入库恢复提示", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("上次有 2 张图片还没整理完");
+    expect(wrapper.text()).toContain("上次导入中断，还有 2 张图片未处理");
     expect(wrapper.find("[data-action='resume-pending-tasks']").exists()).toBe(true);
     expect(wrapper.find("[data-action='clear-pending-tasks']").exists()).toBe(true);
 
@@ -67,13 +67,13 @@ describe("LibraryView 入库恢复提示", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("上次有 1 张图片还没整理完");
+    expect(wrapper.text()).toContain("上次导入中断，还有 1 张图片未处理");
     expect(wrapper.find("[data-action='resume-pending-tasks']").exists()).toBe(true);
 
     wrapper.unmount();
   });
 
-  it("点击继续处理后隐藏恢复提示，并接入入库进度状态", async () => {
+  it("点击继续导入后隐藏恢复提示，并接入入库进度状态", async () => {
     let progressHandler: ((event: { payload: { id: string; status: string } }) => void) | null = null;
     mockListen.mockImplementation(async (_event, handler) => {
       progressHandler = handler as typeof progressHandler;
@@ -97,7 +97,7 @@ describe("LibraryView 入库恢复提示", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("resume_pending_tasks");
-    expect(wrapper.text()).not.toContain("上次有 2 张图片还没整理完");
+    expect(wrapper.text()).not.toContain("上次导入中断，还有 2 张图片未处理");
     expect(wrapper.find(".index-status").exists()).toBe(true);
     expect(wrapper.text()).toContain("0/2");
 
@@ -108,7 +108,7 @@ describe("LibraryView 入库恢复提示", () => {
     wrapper.unmount();
   });
 
-  it("点击放弃并清理后隐藏恢复提示", async () => {
+  it("点击放弃剩余图片后隐藏恢复提示", async () => {
     mockInvoke.mockImplementation(async (cmd) => {
       if (cmd === "get_pending_tasks") {
         return [{ id: 1, filePath: "/tmp/a.jpg" }];
@@ -126,7 +126,7 @@ describe("LibraryView 入库恢复提示", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("clear_task_queue");
-    expect(wrapper.text()).not.toContain("上次有 1 张图片还没整理完");
+    expect(wrapper.text()).not.toContain("上次导入中断，还有 1 张图片未处理");
 
     wrapper.unmount();
   });

@@ -258,7 +258,7 @@ describe("LibraryView 管理视图", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("上次有 1 张图片还没整理完");
+    expect(wrapper.text()).toContain("上次导入中断，还有 1 张图片未处理");
     expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
 
     wrapper.unmount();
@@ -304,17 +304,121 @@ describe("LibraryView 管理视图", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("刚刚继续处理");
-    expect(wrapper.text()).toContain("刚处理完剩余 3 张");
+    expect(wrapper.text()).toContain("刚刚继续导入");
+    expect(wrapper.text()).toContain("刚导完剩余 3 张");
     expect(wrapper.text()).toContain("新增 2");
     expect(wrapper.text()).toContain("失败 1");
     expect(wrapper.text()).not.toContain("共处理 14 张");
 
+    wrapper.unmount();
+  });
+
+  it("恢复结果查看失败项后立即退场，并回落到普通导入历史摘要", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-history",
+          totalCount: 6,
+          importedCount: 4,
+          duplicatedCount: 1,
+          failedCount: 1,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-history-6",
+          filePath: "/tmp/imports/history-6.jpg",
+          errorMessage: "历史失败项",
+        }];
+      }
+      return [];
+    });
+
+    const recoveryStore = useTaskRecoveryStore();
+    recoveryStore.completedRecoverySummary = {
+      totalCount: 2,
+      importedCount: 1,
+      duplicatedCount: 0,
+      failedCount: 1,
+      failures: [{
+        taskId: "task-recovery-2",
+        fileName: "recovery-2.jpg",
+        errorMessage: "恢复失败",
+      }],
+    };
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("刚刚继续导入");
+
     await wrapper.get("[data-action='show-import-failures']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("recovery-3.jpg");
-    expect(wrapper.text()).toContain("恢复后仍失败");
+    expect(wrapper.text()).toContain("最近一次导入");
+    expect(wrapper.text()).toContain("共处理 6 张");
+    expect(wrapper.text()).not.toContain("刚导完剩余 2 张");
+
+    wrapper.unmount();
+  });
+
+  it("恢复结果查看最近新增后切到最近新增视图并立即退场", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") return null;
+      return [];
+    });
+
+    const recoveryStore = useTaskRecoveryStore();
+    recoveryStore.completedRecoverySummary = {
+      totalCount: 2,
+      importedCount: 2,
+      duplicatedCount: 0,
+      failedCount: 0,
+      failures: [],
+    };
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='view-latest-imported']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get("[data-view='recent']").classes()).toContain("active");
+    expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("处理中禁用治理操作并显示原因文案，但仍允许切换视图", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") return null;
+      return [];
+    });
+
+    const recoveryStore = useTaskRecoveryStore();
+    recoveryStore.activeRecovery = true;
+    recoveryStore.recoveryTotal = 3;
+    recoveryStore.recoveryImported = 1;
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.get("[data-action='clear-missing']").attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("导入处理中，完成后再整理图库");
+
+    await wrapper.get("[data-view='issues']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get("[data-view='issues']").classes()).toContain("active");
 
     wrapper.unmount();
   });
