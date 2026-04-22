@@ -153,7 +153,7 @@
           data-action="view-latest-imported"
           @click="handleViewLatestImported"
         >
-          查看最近新增
+          查看本次新增
         </button>
         <button
           v-if="recoveryStore.completedRecoverySummary"
@@ -181,6 +181,13 @@
         </li>
       </ul>
     </section>
+    <section
+      v-if="showLatestImportedTip"
+      class="latest-import-position-tip"
+      data-section="latest-import-position-tip"
+    >
+      已定位到本次新增图片，共 {{ latestImportedState?.count }} 张
+    </section>
     <div
       ref="scrollContainer"
       class="gallery-scroll"
@@ -205,6 +212,8 @@
         :show-debug-info="false"
         :selectable="true"
         :selected-ids="store.selectedIds"
+        :focused-ids="latestImportedHighlightIds"
+        :status-badge-labels="latestImportedBadgeLabels"
         :empty-message="emptyMessage"
         @delete="handleDelete"
         @select="store.toggleSelection"
@@ -259,7 +268,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed, ref, inject } from "vue";
+import { onMounted, computed, ref, inject, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { routerKey, type Router } from "vue-router";
@@ -284,6 +293,7 @@ const showAdvancedCapabilities = true;
 const latestImportSummary = ref<LatestImportSummary | null>(null);
 const importFailures = ref<ImportFailure[]>([]);
 const showImportFailures = ref(false);
+const latestImportedState = ref<LatestImportedState | null>(null);
 
 interface LatestImportSummary {
   batchId: string;
@@ -297,6 +307,11 @@ interface ImportFailure {
   taskId: string;
   errorMessage?: string;
   fileName: string;
+}
+
+interface LatestImportedState {
+  sourceKey: string;
+  count: number;
 }
 
 const progressPercent = computed(() =>
@@ -321,6 +336,19 @@ const displayedFailures = computed(() =>
   recoveryStore.completedRecoverySummary?.failures ?? importFailures.value
 );
 
+const displayedSummarySourceKey = computed(() => {
+  if (recoveryStore.completedRecoverySummary) {
+    const summary = recoveryStore.completedRecoverySummary;
+    return `recovery:${summary.totalCount}:${summary.importedCount}:${summary.failedCount}:${summary.duplicatedCount}`;
+  }
+
+  if (latestImportSummary.value) {
+    return `import:${latestImportSummary.value.batchId}`;
+  }
+
+  return null;
+});
+
 const summaryEyebrow = computed(() =>
   recoveryStore.completedRecoverySummary ? "刚刚继续导入" : "最近一次导入"
 );
@@ -339,6 +367,63 @@ const hasMore = computed(() => store.images.length < store.total);
 const visibleImages = computed(() => store.images);
 
 const emptyMessage = computed(() => "图库为空，请先添加图片");
+
+const latestImportedHighlightIds = computed(() => {
+  const count = latestImportedState.value?.count ?? 0;
+  if (count <= 0) {
+    return new Set<string>();
+  }
+
+  return new Set(
+    [...store.images]
+      .sort((a, b) => b.addedAt - a.addedAt)
+      .slice(0, count)
+      .map((image) => image.id)
+  );
+});
+
+const latestImportedBadgeLabels = computed(() => {
+  const labels: Record<string, string> = {};
+  latestImportedHighlightIds.value.forEach((id) => {
+    labels[id] = "新";
+  });
+  return labels;
+});
+
+const showLatestImportedTip = computed(() =>
+  !!latestImportedState.value && latestImportedHighlightIds.value.size > 0
+);
+
+watch(displayedSummarySourceKey, (sourceKey) => {
+  if (!latestImportedState.value) {
+    return;
+  }
+
+  if (!sourceKey || !displayedSummary.value) {
+    return;
+  }
+
+  if (displayedSummary.value.importedCount <= 0) {
+    latestImportedState.value = null;
+    return;
+  }
+
+  if (latestImportedState.value.sourceKey !== sourceKey) {
+    latestImportedState.value = {
+      sourceKey,
+      count: displayedSummary.value.importedCount,
+    };
+  }
+});
+
+watch(
+  () => store.importState,
+  (state) => {
+    if (state === "preparing" || state === "importing") {
+      latestImportedState.value = null;
+    }
+  }
+);
 
 onMounted(() => {
   void reloadGallery();
@@ -456,12 +541,14 @@ async function retryLoad() {
 function dismissRecoverySummary() {
   recoveryStore.dismissCompletedRecoverySummary();
   showImportFailures.value = false;
+  latestImportedState.value = null;
 }
 
 function handleShowFailures() {
   if (recoveryStore.completedRecoverySummary) {
     recoveryStore.markRecoveryResultSeen();
     showImportFailures.value = false;
+    latestImportedState.value = null;
     return;
   }
 
@@ -469,9 +556,22 @@ function handleShowFailures() {
 }
 
 function handleViewLatestImported() {
+  const sourceKey = displayedSummarySourceKey.value;
+  const importedCount = displayedSummary.value?.importedCount ?? 0;
+  if (!sourceKey || importedCount <= 0) {
+    return;
+  }
+
+  latestImportedState.value = {
+    sourceKey,
+    count: importedCount,
+  };
+
   if (recoveryStore.completedRecoverySummary) {
     recoveryStore.markRecoveryResultSeen();
   }
+
+  scrollToTop();
 }
 
 async function handleAdd() {
@@ -597,6 +697,14 @@ async function openPrivateRoleLibrary() {
 }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.latest-import-position-tip {
+  padding: 0.75rem 1rem;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid color-mix(in srgb, #b7791f 28%, var(--ui-border-subtle));
+  background: color-mix(in srgb, #fff7eb 88%, white);
+  color: #8a5a14;
+  font-size: 0.9rem;
+}
 .advanced-capabilities {
   display: flex;
   align-items: center;

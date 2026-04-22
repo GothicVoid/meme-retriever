@@ -75,6 +75,7 @@ describe("LibraryView 管理视图", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    HTMLElement.prototype.scrollTo = vi.fn();
   });
 
   it("显示图库管理标题、主视图入口和新的导入工具条文案", async () => {
@@ -160,7 +161,7 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
-  it("最近一次导入只有新增成功时，主动作仍停留在全部图片视图", async () => {
+  it("最近一次导入点击查看本次新增后停留在全部图片并滚动到顶部", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
@@ -177,6 +178,8 @@ describe("LibraryView 管理视图", () => {
       return [];
     });
 
+    const scrollToMock = vi.fn();
+    HTMLElement.prototype.scrollTo = scrollToMock;
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
@@ -185,6 +188,83 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.get("[data-view='all']").classes()).toContain("active");
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
+    expect(scrollToMock).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+    expect(wrapper.find('[data-section="latest-import-position-tip"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("已定位到本次新增图片");
+
+    wrapper.unmount();
+  });
+
+  it("查看本次新增后仅为本轮新增图片显示新角标", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-new",
+          totalCount: 3,
+          importedCount: 2,
+          duplicatedCount: 0,
+          failedCount: 1,
+        };
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='view-latest-imported']").trigger("click");
+    await flushPromises();
+
+    const newBadges = wrapper.findAll(".status-badge--new");
+    expect(newBadges).toHaveLength(2);
+    expect(newBadges[0].text()).toContain("新");
+    expect(newBadges[1].text()).toContain("新");
+    expect(wrapper.findAll(".image-card--focused")).toHaveLength(2);
+
+    wrapper.unmount();
+  });
+
+  it("新的导入结果会覆盖上一轮本次新增标记", async () => {
+    const scrollToMock = vi.fn();
+    HTMLElement.prototype.scrollTo = scrollToMock;
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") return null;
+      return [];
+    });
+
+    const recoveryStore = useTaskRecoveryStore();
+    recoveryStore.completedRecoverySummary = {
+      totalCount: 2,
+      importedCount: 2,
+      duplicatedCount: 0,
+      failedCount: 0,
+      failures: [],
+    };
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='view-latest-imported']").trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll(".status-badge--new")).toHaveLength(2);
+
+    recoveryStore.completedRecoverySummary = {
+      totalCount: 1,
+      importedCount: 1,
+      duplicatedCount: 0,
+      failedCount: 0,
+      failures: [],
+    };
+    await flushPromises();
+
+    expect(wrapper.findAll(".status-badge--new")).toHaveLength(1);
+    expect(wrapper.findAll(".image-card--focused")).toHaveLength(1);
 
     wrapper.unmount();
   });
@@ -325,7 +405,7 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
-  it("恢复结果查看最近新增后保持全部图片视图并立即退场", async () => {
+  it("恢复结果查看本次新增后保持全部图片视图并立即退场，同时显示定位反馈", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
@@ -351,6 +431,8 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.get("[data-view='all']").classes()).toContain("active");
     expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
+    expect(wrapper.findAll(".status-badge--new")).toHaveLength(2);
+    expect(wrapper.find('[data-section="latest-import-position-tip"]').exists()).toBe(true);
 
     wrapper.unmount();
   });

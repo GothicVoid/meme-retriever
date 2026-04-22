@@ -9,7 +9,8 @@
       :show-debug-info="showDebugInfo"
       :selectable="selectable"
       :selected="selectedIds?.has(img.id) ?? false"
-      :focused="focusedId === img.id"
+      :focused="focusedIds?.has(img.id) || focusedId === img.id"
+      :status-badge-label="statusBadgeLabels?.[img.id]"
       @delete="$emit('delete', $event)"
       @copied="$emit('copied', $event)"
       @select="$emit('select', $event)"
@@ -31,6 +32,8 @@ defineProps<{
   selectable?: boolean;
   selectedIds?: Set<string>;
   focusedId?: string | null;
+  focusedIds?: Set<string>;
+  statusBadgeLabels?: Record<string, string>;
 }>();
 defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string]; preview: [id: string] }>();
 </script>

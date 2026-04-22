@@ -43,6 +43,10 @@
           v-if="image.fileStatus === 'missing'"
           class="status-badge ui-result-card__badge"
         >文件已丢失</span>
+        <span
+          v-if="statusBadgeLabel"
+          class="status-badge status-badge--new ui-result-card__badge"
+        >{{ statusBadgeLabel }}</span>
         <div
           v-if="showDebugInfo && image.debugInfo"
           class="debug-overlay"
@@ -163,6 +167,7 @@ const props = defineProps<{
   selectable?: boolean;
   selected?: boolean;
   focused?: boolean;
+  statusBadgeLabel?: string;
 }>();
 const emit = defineEmits<{
   delete: [id: string];
@@ -507,6 +512,13 @@ onUnmounted(() => {
   background: rgba(192, 57, 43, 0.86);
   color: #fff;
   font-size: 0.64rem;
+}
+
+.status-badge--new {
+  left: auto;
+  right: 5px;
+  bottom: 5px;
+  background: rgba(183, 121, 31, 0.92);
 }
 
 .select-checkbox {
