@@ -115,7 +115,7 @@
         {{ placeholderText }}
       </div>
       <button
-        class="hover-preview__action"
+        class="hover-preview__action ui-button ui-button--secondary ui-button--compact"
         data-testid="hover-preview-open"
         @click.stop="handlePreview"
       >
@@ -129,19 +129,25 @@
       :style="{ top: `${menuY}px`, left: `${menuX}px` }"
     >
       <li>
-        <button @click.stop="handleOpen">
+        <button
+          class="context-menu__button ui-button ui-button--text ui-button--compact"
+          @click.stop="handleOpen"
+        >
           查看详情
         </button>
       </li>
       <li>
-        <button @click.stop="handleReveal">
+        <button
+          class="context-menu__button ui-button ui-button--text ui-button--compact"
+          @click.stop="handleReveal"
+        >
           在文件夹中显示
         </button>
       </li>
       <li>
         <button
           data-action="delete"
-          class="danger"
+          class="context-menu__button context-menu__button--danger ui-button ui-button--text ui-button--compact danger"
           @click.stop="handleDelete"
         >
           删除
@@ -478,12 +484,6 @@ onUnmounted(() => {
 }
 
 .hover-preview__action {
-  min-height: 36px;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
-  color: var(--ui-text-primary);
-  cursor: pointer;
   font-size: 0.85rem;
 }
 
@@ -625,16 +625,17 @@ onUnmounted(() => {
   min-width: 140px;
   z-index: 120;
 }
-.context-menu li button {
+.context-menu__button {
   width: 100%;
-  padding: 0.5rem 1rem;
+  justify-content: flex-start;
+  padding: 0 1rem;
   text-align: left;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: #333;
 }
-.context-menu li button:hover { background: #f5f5f5; }
-.context-menu li button.danger { color: #c0392b; }
+.context-menu__button:hover {
+  background: var(--ui-bg-hover);
+}
+.context-menu__button--danger,
+.context-menu li button.danger {
+  color: #c0392b;
+}
 </style>

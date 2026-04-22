@@ -71,6 +71,11 @@ const mockImages: ImageMeta[] = [
   },
 ];
 
+const mockImagesWithoutMissing = mockImages.map((image) => ({
+  ...image,
+  fileStatus: "normal" as const,
+}));
+
 describe("LibraryView 管理视图", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -297,7 +302,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
       if (cmd === "get_latest_import_summary") {
         return {
           batchId: "batch-b",
@@ -331,7 +336,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
       if (cmd === "get_latest_import_summary") {
         return {
           batchId: "batch-new",
@@ -363,7 +368,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
       if (cmd === "get_latest_import_summary") {
         return {
           batchId: "batch-auto",
@@ -391,7 +396,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
       if (cmd === "get_latest_import_summary") return null;
       return [];
     });
@@ -567,7 +572,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
       if (cmd === "get_latest_import_summary") return null;
       return [];
     });
@@ -599,7 +604,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
       if (cmd === "get_latest_import_summary") return null;
       return [];
     });
@@ -612,7 +617,7 @@ describe("LibraryView 管理视图", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.get("[data-action='view-missing-images']").attributes("disabled")).toBeDefined();
+    expect(wrapper.find("[data-action='view-missing-images']").exists()).toBe(false);
     expect(wrapper.text()).toContain("导入处理中，完成后再整理图库");
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
     expect(wrapper.find("[data-view='issues']").exists()).toBe(false);

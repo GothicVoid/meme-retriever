@@ -5,18 +5,23 @@
     @keydown.esc="emit('close')"
   >
     <div class="modal">
-      <button class="close-btn" @click="emit('close')">×</button>
+      <button
+        class="close-btn ui-button ui-button--secondary ui-button--icon"
+        @click="emit('close')"
+      >
+        ×
+      </button>
 
       <button
         v-if="hasPrev"
-        class="nav-btn prev"
+        class="nav-btn prev ui-button ui-button--secondary ui-button--icon"
         @click="navigate(-1)"
       >
         ‹
       </button>
       <button
         v-if="hasNext"
-        class="nav-btn next"
+        class="nav-btn next ui-button ui-button--secondary ui-button--icon"
         @click="navigate(1)"
       >
         ›
@@ -44,14 +49,14 @@
             </p>
             <div class="missing-actions">
               <button
-                class="relocate-btn"
+                class="relocate-btn ui-button ui-button--secondary"
                 :disabled="relocating"
                 @click="handleRelocate"
               >
                 {{ relocating ? "重新定位中..." : "重新定位" }}
               </button>
               <button
-                class="delete-btn"
+                class="delete-btn ui-button ui-button--danger"
                 @click="emit('delete', currentImage.id)"
               >
                 删除图片
@@ -60,7 +65,7 @@
           </div>
           <button
             v-if="isLargeGif && !isMissing"
-            class="gif-toggle"
+            class="gif-toggle ui-button ui-button--secondary ui-button--compact"
             @click="gifPlaying = !gifPlaying"
           >
             {{ gifPlaying ? '⏸ 显示缩略图' : '▶ 播放 GIF（大文件）' }}
@@ -102,8 +107,12 @@
           >
             <div class="tags-header">
               <div>
-                <div class="meta-label">标签</div>
-                <div class="tags-hint">按分类分组管理，点击各行“+ 添加”可直接加入对应类型。</div>
+                <div class="meta-label">
+                  标签
+                </div>
+                <div class="tags-hint">
+                  按分类分组管理，点击各行“+ 添加”可直接加入对应类型。
+                </div>
               </div>
             </div>
             <TagEditor
@@ -112,11 +121,14 @@
               @update:tags="editTags = $event"
             />
             <div class="tags-footer">
-              <div class="save-status" :class="{ dirty: hasUnsavedChanges }">
+              <div
+                class="save-status"
+                :class="{ dirty: hasUnsavedChanges }"
+              >
                 {{ saving ? "正在保存..." : hasUnsavedChanges ? "有未保存更改" : "已保存" }}
               </div>
               <button
-                class="save-btn"
+                class="save-btn ui-button ui-button--primary"
                 :disabled="saving"
                 @click="saveTags"
               >
@@ -309,13 +321,13 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   position: absolute;
   top: 10px;
   right: 14px;
-  background: none;
-  border: none;
   font-size: 1.6rem;
-  cursor: pointer;
   color: #666;
   z-index: 10;
   line-height: 1;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
 }
 .close-btn:hover { color: #333; }
 
@@ -323,18 +335,16 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.35);
-  color: #fff;
-  border: none;
   font-size: 2rem;
   width: 36px;
   height: 60px;
-  cursor: pointer;
   z-index: 10;
-  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
 }
 .nav-btn:hover { background: rgba(0, 0, 0, 0.55); }
 .prev { left: 8px; }
@@ -393,36 +403,20 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
+  border-color: rgba(255, 255, 255, 0.14);
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 0.3rem 0.8rem;
-  cursor: pointer;
   font-size: 0.85rem;
 }
 
 .relocate-btn {
-  border: 1px solid #fff;
-  background: transparent;
   color: #fff;
-  padding: 0.6rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.relocate-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .delete-btn {
-  border: 1px solid #c0392b;
-  background: #c0392b;
-  color: #fff;
-  padding: 0.6rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
+  box-shadow: none;
 }
 
 .meta-area {
@@ -498,17 +492,39 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 }
 
 .save-btn {
-  padding: 0.7rem 1.2rem;
-  background: #c16d1d;
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
   font-size: 0.92rem;
+}
+.ui-button {
+  font: inherit;
   font-weight: 600;
 }
-.save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.save-btn:hover:not(:disabled) { background: #a85d17; }
+
+.ui-button--compact {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.ui-button--icon {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+.ui-button--danger {
+  background: color-mix(in srgb, #fff1f1 90%, white);
+  border-color: color-mix(in srgb, #d26a6a 34%, var(--ui-border-subtle));
+  color: #a33838;
+}
+
+.ui-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, #ffe7e7 92%, white);
+  border-color: color-mix(in srgb, #b94d4d 46%, var(--ui-border-subtle));
+}
+
+.ui-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
 
 @media (max-width: 900px) {
   .modal {

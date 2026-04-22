@@ -161,7 +161,7 @@ describe("LibraryView 失效图片过滤态", () => {
 
     expect(wrapper.text()).not.toContain("正在查看已发现的失效图片");
     expect(wrapper.findAll(".image-card")).toHaveLength(3);
-    expect(wrapper.find("[data-action='clear-missing']").exists()).toBe(false);
+    expect(wrapper.find("[data-action='clear-missing']").exists()).toBe(true);
 
     wrapper.unmount();
   });

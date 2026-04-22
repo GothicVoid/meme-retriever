@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
+import { useSettingsStore } from "@/stores/settings";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string) => {
@@ -29,6 +30,7 @@ function createTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: "/", component: { template: "<div>search</div>" } },
       { path: "/library", component: { template: "<div>library</div>" } },
       { path: "/private-role-maintenance", component: { template: "<div>private-role</div>" } },
     ],
@@ -55,7 +57,7 @@ describe("LibraryView 高级能力入口", () => {
     setActivePinia(createPinia());
   });
 
-  it("展示角色识别增强入口和说明文案", async () => {
+  it("工具条中展示角色维护入口", async () => {
     vi.resetModules();
     vi.doMock("@/utils/runtime", () => ({
       isDevelopmentMode: () => true,
@@ -63,13 +65,11 @@ describe("LibraryView 高级能力入口", () => {
 
     const { wrapper } = await mountLibraryView();
 
-    expect(wrapper.text()).toContain("高级能力");
-    expect(wrapper.text()).toContain("角色识别增强");
-    expect(wrapper.text()).toContain("冷门角色或私有对象");
+    expect(wrapper.text()).toContain("角色维护");
     expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(true);
   });
 
-  it("非开发模式下仍展示角色识别增强入口", async () => {
+  it("非开发模式下仍展示角色维护入口", async () => {
     vi.resetModules();
     vi.doMock("@/utils/runtime", () => ({
       isDevelopmentMode: () => false,
@@ -77,7 +77,7 @@ describe("LibraryView 高级能力入口", () => {
 
     const { wrapper } = await mountLibraryView();
 
-    expect(wrapper.text()).toContain("角色识别增强");
+    expect(wrapper.text()).toContain("角色维护");
     expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(true);
   });
 
@@ -93,5 +93,22 @@ describe("LibraryView 高级能力入口", () => {
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/private-role-maintenance");
+  });
+
+  it("页头提供返回搜索按钮，点击后回到搜索页并切回侧边栏态", async () => {
+    vi.resetModules();
+    vi.doMock("@/utils/runtime", () => ({
+      isDevelopmentMode: () => true,
+    }));
+
+    const { wrapper, router } = await mountLibraryView();
+    const settingsStore = useSettingsStore();
+    settingsStore.currentWindowMode = "expanded";
+
+    await wrapper.get("[data-action='back-to-search']").trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.path).toBe("/");
+    expect(settingsStore.currentWindowMode).toBe("sidebar");
   });
 });

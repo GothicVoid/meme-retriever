@@ -168,8 +168,8 @@ describe("App 恢复任务状态同步", () => {
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
-    expect(wrapper.find(".recovery-banner").exists()).toBe(false);
-    expect(wrapper.find(".index-status").exists()).toBe(true);
+    expect(wrapper.find(".main-task-card--recovery").exists()).toBe(false);
+    expect(wrapper.find(".main-task-card--progress").exists()).toBe(true);
     expect(wrapper.text()).toContain("0/2");
 
     pendingCount = 1;

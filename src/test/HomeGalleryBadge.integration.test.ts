@@ -155,7 +155,7 @@ describe("首页图库角标与异常恢复联动", () => {
 
     expect(mockInvoke).toHaveBeenCalledWith("resume_pending_tasks");
     expect(wrapper.text()).not.toContain("上次导入中断，还有 2 张图片未处理");
-    expect(wrapper.find(".index-status").exists()).toBe(true);
+    expect(wrapper.find(".main-task-card--progress").exists()).toBe(true);
     expect(wrapper.text()).toContain("0/2");
 
     progressHandler?.({ payload: { id: "task-1", status: "completed" } });

@@ -33,7 +33,7 @@ describe("App 工作台壳层", () => {
     });
   });
 
-  it("搜索首页默认不渲染展开工作台头部", async () => {
+  it("搜索首页默认不渲染顶部壳层导航", async () => {
     const router = createTestRouter();
     await router.push("/");
     await router.isReady();
@@ -48,7 +48,7 @@ describe("App 工作台壳层", () => {
     expect(wrapper.find(".app-shell__expanded-toolbar").exists()).toBe(false);
   });
 
-  it("进入图库页时切换为展开工作台头部", async () => {
+  it("进入图库页时也不渲染顶部壳层导航", async () => {
     const router = createTestRouter();
     await router.push("/library");
     await router.isReady();
@@ -60,7 +60,7 @@ describe("App 工作台壳层", () => {
     });
     await flushPromises();
 
-    expect(wrapper.get(".app-shell__expanded-toolbar").text()).toContain("图库整理");
+    expect(wrapper.find(".app-shell__expanded-toolbar").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("设置");
   });
 

@@ -50,8 +50,8 @@ describe("LibraryView 进度条", () => {
     await wrapper.get("[data-action='add-images']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.find(".index-status .progress-bar").exists()).toBe(true);
-    expect(wrapper.find(".index-status").text()).toContain("0/2");
+    expect(wrapper.find(".main-task-card--progress .progress-bar").exists()).toBe(true);
+    expect(wrapper.find(".main-task-card--progress").text()).toContain("0/2");
     expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
       entries: [
         { kind: "file", path: "/tmp/a.jpg" },
@@ -79,8 +79,8 @@ describe("LibraryView 进度条", () => {
     await wrapper.get("[data-action='add-folder']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.find(".index-status .progress-bar").exists()).toBe(true);
-    expect(wrapper.find(".index-status").text()).toContain("0/3");
+    expect(wrapper.find(".main-task-card--progress .progress-bar").exists()).toBe(true);
+    expect(wrapper.find(".main-task-card--progress").text()).toContain("0/3");
     expect(mockInvoke).toHaveBeenCalledWith("import_entries", {
       entries: [{ kind: "directory", path: "/tmp/memes" }],
     });
@@ -98,7 +98,7 @@ describe("LibraryView 进度条", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.find(".index-status .progress-bar").exists()).toBe(false);
+    expect(wrapper.find(".main-task-card--progress .progress-bar").exists()).toBe(false);
     wrapper.unmount();
   });
 });

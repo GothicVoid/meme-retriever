@@ -140,7 +140,7 @@ describe("LibraryView 图片列表展示", () => {
     const wrapper = mount(LibraryView);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("图库为空，请先添加图片");
+    expect(wrapper.text()).toContain("图库为空，先导入图片开始使用");
   });
 
   it("初始加载失败时显示重试按钮并可重新加载", async () => {

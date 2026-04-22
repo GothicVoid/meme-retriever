@@ -7,36 +7,6 @@
     <GlobalProgressBar />
     <Toast />
 
-    <header
-      v-if="!isSidebarMode"
-      class="app-shell__expanded-toolbar"
-    >
-      <div class="app-shell__expanded-title">
-        <h1>{{ expandedTitle }}</h1>
-        <p>{{ expandedSubtitle }}</p>
-      </div>
-      <div class="app-shell__expanded-actions">
-        <button
-          type="button"
-          class="app-shell__toolbar-action"
-          :class="{ 'app-shell__toolbar-action--active': route.path === '/' }"
-          data-action="go-search"
-          @click="goQuickSearch"
-        >
-          快速找图
-        </button>
-        <button
-          type="button"
-          class="app-shell__toolbar-action"
-          :class="{ 'app-shell__toolbar-action--active': route.path === '/library' }"
-          data-action="go-library"
-          @click="openGalleryManagement"
-        >
-          整理图库
-        </button>
-      </div>
-    </header>
-
     <main
       class="app-shell__content"
       :class="{ 'app-shell__content--sidebar': isSidebarMode }"
@@ -75,7 +45,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, watch } from "vue";
-import { RouterView, useRoute, useRouter } from "vue-router";
+import { RouterView, useRoute } from "vue-router";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
 import { useSettingsStore, type WindowMode } from "@/stores/settings";
@@ -85,8 +55,6 @@ import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 const recoveryStore = useTaskRecoveryStore();
 const settings = useSettingsStore();
 const route = useRoute();
-const router = useRouter();
-
 const isSidebarMode = computed(() =>
   route.path === "/" && settings.currentWindowMode === "sidebar"
 );
@@ -98,34 +66,6 @@ const effectiveWindowMode = computed<WindowMode>(() =>
 const showRecoveryDialog = computed(() =>
   recoveryStore.shouldShowRecoveryDialog && route.path !== "/library"
 );
-
-const expandedTitle = computed(() => {
-  if (route.path === "/library") {
-    return "图库整理";
-  }
-  return "展开工作台";
-});
-
-const expandedSubtitle = computed(() => {
-  if (route.path === "/library") {
-    return "导入、排查、批量整理等低频重任务在这里处理。";
-  }
-  return "需要更大工作区时，再离开聊天伴随态。";
-});
-
-async function goQuickSearch() {
-  settings.currentWindowMode = "sidebar";
-  if (route.path !== "/") {
-    await router.push("/");
-  }
-}
-
-async function openGalleryManagement() {
-  settings.currentWindowMode = "expanded";
-  if (route.path !== "/library") {
-    await router.push("/library");
-  }
-}
 
 onMounted(async () => {
   try {
@@ -165,67 +105,6 @@ async function clearPendingTasks() {
 </script>
 
 <style scoped>
-.app-shell__expanded-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.app-shell__toolbar-action {
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 90%, white);
-  color: var(--ui-text-primary);
-  cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-
-.app-shell__toolbar-action:hover {
-  background: var(--ui-bg-hover);
-  border-color: var(--ui-border-strong);
-}
-
-.app-shell__expanded-title {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.app-shell__expanded-title h1 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.app-shell__expanded-title p {
-  margin: 0;
-  font-size: 0.84rem;
-  color: var(--ui-text-secondary);
-}
-
-.app-shell__expanded-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.app-shell__toolbar-action {
-  min-height: 2.4rem;
-  padding: 0 1rem;
-  font-size: 0.9rem;
-}
-
-.app-shell__toolbar-action--active {
-  background: rgba(183, 121, 31, 0.12);
-  border-color: var(--ui-border-strong);
-  color: var(--ui-accent);
-  font-weight: 600;
-}
-
 .resume-dialog p {
   font-size: 0.95rem;
   line-height: 1.6;

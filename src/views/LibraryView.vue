@@ -4,131 +4,71 @@
       <div class="page-head__copy">
         <h2>图库管理</h2>
       </div>
-      <div class="gallery-total">
-        共 {{ store.total }} 张
+      <div class="page-head__meta">
+        <button
+          v-if="showBackToSearch"
+          type="button"
+          class="page-head__back ui-button ui-button--secondary ui-button--compact"
+          data-action="back-to-search"
+          @click="handleBackToSearch"
+        >
+          返回搜索
+        </button>
+        <div class="gallery-total">
+          共 {{ store.total }} 张
+        </div>
       </div>
     </div>
 
-    <div class="view-switches">
-      <button
-        class="view-switch"
-        :class="{ active: true }"
-        data-view="all"
-      >
-        全部图片
-      </button>
-    </div>
-
-    <div class="toolbar">
-      <div class="toolbar-actions">
+    <section
+      v-if="showMissingFilter"
+      class="main-task-card main-task-card--missing"
+    >
+      <div class="main-task-card__copy">
+        <p class="main-task-card__eyebrow">
+          当前主任务
+        </p>
+        <h3>正在查看已发现的失效图片，共 {{ missingImages.length }} 张</h3>
+        <p>
+          这些图片的原文件可能已被移动或删除，处理完后可以随时回到全部图片。
+        </p>
+      </div>
+      <div class="main-task-card__actions">
         <button
-          data-action="add-images"
-          :disabled="store.indexing"
-          @click="handleAdd"
+          class="ui-button ui-button--secondary"
+          data-action="view-all-images"
+          @click="handleViewAllImages"
         >
-          导入图片
+          查看全部图片
         </button>
         <button
-          data-action="add-folder"
-          :disabled="store.indexing"
-          @click="handleAddFolder"
-        >
-          导入文件夹
-        </button>
-        <button
-          v-if="showMissingFilter"
+          class="ui-button ui-button--danger"
           :disabled="managementActionsDisabled || clearingMissing"
           data-action="clear-missing"
           @click="handleClearMissing"
         >
-          {{ clearingMissing ? "正在清除失效图片" : "清除失效图片" }}
+          {{ clearingMissing ? "正在清除失效图片" : "清理失效图片" }}
         </button>
-        <template v-if="store.selectedIds.size > 0">
-          <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
-          <button
-            data-action="delete-selected"
-            :disabled="managementActionsDisabled"
-            @click="handleDeleteSelected"
-          >
-            删除选中
-          </button>
-        </template>
       </div>
-      <div class="usage-notice">
-        图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
-      </div>
-      <p
-        v-if="managementActionsDisabled"
-        class="toolbar-lock-reason"
-      >
-        导入处理中，完成后再整理图库。
-      </p>
-    </div>
-    <section
-      v-if="hasMissingImages && !showMissingFilter"
-      class="missing-entry"
-    >
-      <div class="missing-entry__copy">
-        <h3>已发现失效图片</h3>
-        <p>有 {{ missingImages.length }} 张图片的原文件已丢失，可以先筛出来集中处理。</p>
-      </div>
-      <button
-        data-action="view-missing-images"
-        :disabled="managementActionsDisabled"
-        @click="handleViewMissingImages"
-      >
-        查看失效图片
-      </button>
-    </section>
-    <section
-      v-if="showMissingFilter"
-      class="missing-filter-banner"
-    >
-      <div class="missing-filter-banner__copy">
-        <h3>正在查看已发现的失效图片，共 {{ missingImages.length }} 张</h3>
-        <p>失效图片仍沿用普通图库卡片；处理完成后可随时回到全部图片。</p>
-      </div>
-      <button
-        data-action="view-all-images"
-        @click="handleViewAllImages"
-      >
-        查看全部图片
-      </button>
-    </section>
-    <section
-      v-if="showAdvancedCapabilities"
-      class="advanced-capabilities"
-    >
-      <div class="advanced-capabilities__copy">
-        <p class="advanced-capabilities__eyebrow">
-          高级能力
-        </p>
-        <h3>角色识别增强</h3>
-        <p>当系统认不出冷门角色或私有对象时，可以用示例图帮助它学会识别，提升后续搜索的稳定性。</p>
-      </div>
-      <button
-        type="button"
-        class="advanced-capabilities__action"
-        data-action="open-private-role-library"
-        @click="openPrivateRoleLibrary"
-      >
-        打开角色维护
-      </button>
     </section>
     <div
-      v-if="showRecoveryBanner"
-      class="recovery-banner"
+      v-else-if="showRecoveryBanner"
+      class="main-task-card main-task-card--recovery"
     >
-      <div class="recovery-banner__copy">
-        <p class="recovery-banner__title">
-          上次导入中断，还有 {{ recoveryStore.pendingCount }} 张图片未处理
+      <div class="main-task-card__copy">
+        <p class="main-task-card__eyebrow">
+          当前主任务
         </p>
-        <p class="recovery-banner__text">
-          你可以继续导入剩余图片，或放弃剩余图片。
+        <h3>
+          上次导入中断，还有 {{ recoveryStore.pendingCount }} 张图片未处理
+        </h3>
+        <p>
+          继续处理这批图片。
         </p>
       </div>
-      <div class="recovery-banner__actions">
+      <div class="main-task-card__actions">
         <button
+          class="ui-button ui-button--primary"
           data-action="resume-pending-tasks"
           :disabled="recoveryStore.resuming || recoveryStore.clearing"
           @click="handleResumePendingTasks"
@@ -136,6 +76,7 @@
           {{ recoveryStore.resuming ? "继续导入中..." : "继续导入" }}
         </button>
         <button
+          class="ui-button ui-button--secondary"
           data-action="clear-pending-tasks"
           :disabled="recoveryStore.resuming || recoveryStore.clearing"
           @click="handleClearPendingTasks"
@@ -146,35 +87,46 @@
     </div>
     <div
       v-else-if="inProgressIndicator"
-      class="index-status"
+      class="main-task-card main-task-card--progress"
     >
-      <span>{{ inProgressIndicator.label }}</span>
-      <div class="progress-bar">
-        <div
-          class="progress-fill"
-          :style="{ width: progressPercent + '%' }"
-        />
+      <div class="main-task-card__copy">
+        <p class="main-task-card__eyebrow">
+          当前主任务
+        </p>
+        <h3>{{ inProgressIndicator.label }}</h3>
+        <p>
+          处理中时会暂时锁定会改变图库基数的治理操作。
+        </p>
+        <div class="progress-bar">
+          <div
+            class="progress-fill"
+            :style="{ width: progressPercent + '%' }"
+          />
+        </div>
       </div>
     </div>
     <section
-      v-else-if="displayedSummary"
-      class="import-summary"
+      v-else-if="showFailureSummary"
+      class="main-task-card main-task-card--summary"
       data-section="latest-import-summary"
     >
-      <div class="import-summary__copy">
-        <p class="import-summary__eyebrow">
+      <div class="main-task-card__copy">
+        <p class="main-task-card__eyebrow">
           {{ summaryEyebrow }}
         </p>
         <h3>{{ summaryTitle }}</h3>
-        <p class="import-summary__stats">
+        <p class="main-task-card__description">
+          先看失败原因。
+        </p>
+        <p class="main-task-card__stats">
           <span>新增 {{ displayedSummary.importedCount }}</span>
           <span>已存在 {{ displayedSummary.duplicatedCount }}</span>
           <span>失败 {{ displayedSummary.failedCount }}</span>
         </p>
       </div>
-      <div class="import-summary__actions">
+      <div class="main-task-card__actions">
         <button
-          v-if="displayedSummary.failedCount > 0"
+          class="ui-button ui-button--primary"
           data-action="show-import-failures"
           @click="handleShowFailures"
         >
@@ -182,6 +134,7 @@
         </button>
         <button
           v-if="displayedSummary.importedCount > 0"
+          class="ui-button ui-button--secondary"
           data-action="view-latest-imported"
           @click="handleViewLatestImported"
         >
@@ -189,6 +142,7 @@
         </button>
         <button
           v-if="recoveryStore.completedRecoverySummary"
+          class="ui-button ui-button--text"
           data-action="dismiss-recovery-summary"
           @click="dismissRecoverySummary"
         >
@@ -197,31 +151,32 @@
       </div>
       <ul
         v-if="showImportFailures && displayedFailures.length > 0"
-        class="import-summary__failures"
+        class="main-task-card__failures"
       >
         <li
           v-for="failure in displayedFailures"
           :key="failure.taskId"
-          class="import-summary__failure-item"
+          class="main-task-card__failure-item"
         >
-          <p class="import-summary__failure-name">
+          <p class="main-task-card__failure-name">
             {{ failure.fileName }}
           </p>
-          <p class="import-summary__failure-reason">
+          <p class="main-task-card__failure-reason">
             {{ failure.userMessage || failure.errorMessage || "处理失败，请重试" }}
           </p>
         </li>
       </ul>
       <div
         v-if="showImportFailures && displayedFailures.length > 0"
-        class="import-summary__follow-up"
+        class="main-task-card__follow-up"
       >
-        <p class="import-summary__follow-up-text">
+        <p class="main-task-card__follow-up-text">
           {{ failureFollowUpText }}
         </p>
-        <div class="import-summary__follow-up-actions">
+        <div class="main-task-card__follow-up-actions">
           <button
             v-if="showRetryFailuresAction"
+            class="ui-button ui-button--primary"
             data-action="retry-import-failures"
             :disabled="retryingFailures || managementActionsDisabled"
             @click="handleRetryImportFailures"
@@ -229,6 +184,7 @@
             {{ retryingFailures ? "重试导入中..." : "重试导入" }}
           </button>
           <button
+            class="ui-button ui-button--text"
             data-action="continue-managing-library"
             @click="handleContinueManagingLibrary"
           >
@@ -238,76 +194,212 @@
       </div>
     </section>
     <section
+      v-else-if="hasMissingImages"
+      class="main-task-card main-task-card--missing"
+    >
+      <div class="main-task-card__copy">
+        <p class="main-task-card__eyebrow">
+          当前主任务
+        </p>
+        <h3>发现 {{ missingImages.length }} 张失效图片</h3>
+        <p>
+          这些图片的原文件可能已被移动或删除。
+        </p>
+      </div>
+      <div class="main-task-card__actions">
+        <button
+          class="ui-button ui-button--primary"
+          data-action="view-missing-images"
+          :disabled="managementActionsDisabled"
+          @click="handleViewMissingImages"
+        >
+          查看失效图片
+        </button>
+        <button
+          class="ui-button ui-button--danger"
+          :disabled="managementActionsDisabled || clearingMissing"
+          data-action="clear-missing"
+          @click="handleClearMissing"
+        >
+          {{ clearingMissing ? "正在清除失效图片" : "清理失效图片" }}
+        </button>
+      </div>
+    </section>
+    <section
+      v-else-if="showSuccessSummary"
+      class="main-task-card main-task-card--summary"
+      data-section="latest-import-summary"
+    >
+      <div class="main-task-card__copy">
+        <p class="main-task-card__eyebrow">
+          {{ summaryEyebrow }}
+        </p>
+        <h3>{{ summaryTitle }}</h3>
+        <p class="main-task-card__description">
+          先看本次新增。
+        </p>
+        <p class="main-task-card__stats">
+          <span>新增 {{ displayedSummary.importedCount }}</span>
+          <span>已存在 {{ displayedSummary.duplicatedCount }}</span>
+          <span>失败 {{ displayedSummary.failedCount }}</span>
+        </p>
+      </div>
+      <div class="main-task-card__actions">
+        <button
+          v-if="displayedSummary.importedCount > 0"
+          class="ui-button ui-button--primary"
+          data-action="view-latest-imported"
+          @click="handleViewLatestImported"
+        >
+          查看本次新增
+        </button>
+        <button
+          v-if="recoveryStore.completedRecoverySummary"
+          class="ui-button ui-button--text"
+          data-action="dismiss-recovery-summary"
+          @click="dismissRecoverySummary"
+        >
+          稍后再看
+        </button>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div class="toolbar__row">
+        <div class="toolbar-actions">
+          <button
+            class="ui-button ui-button--primary"
+            data-action="add-images"
+            :disabled="store.indexing"
+            @click="handleAdd"
+          >
+            导入图片
+          </button>
+          <button
+            class="ui-button ui-button--secondary"
+            data-action="add-folder"
+            :disabled="store.indexing"
+            @click="handleAddFolder"
+          >
+            导入文件夹
+          </button>
+          <template v-if="store.selectedIds.size > 0">
+            <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
+            <button
+              class="ui-button ui-button--danger"
+              data-action="delete-selected"
+              :disabled="managementActionsDisabled"
+              @click="handleDeleteSelected"
+            >
+              删除选中
+            </button>
+          </template>
+        </div>
+        <button
+          v-if="showAdvancedCapabilities"
+          type="button"
+          class="advanced-capabilities__action ui-button ui-button--secondary ui-button--compact"
+          data-action="open-private-role-library"
+          @click="openPrivateRoleLibrary"
+        >
+          角色维护
+        </button>
+      </div>
+      <p
+        v-if="managementActionsDisabled"
+        class="toolbar-lock-reason"
+      >
+        导入处理中，完成后再整理图库。
+      </p>
+    </div>
+    <section
       v-if="showLatestImportedTip"
       class="latest-import-position-tip"
       data-section="latest-import-position-tip"
     >
       已定位到本次新增图片，共 {{ latestImportedState?.count }} 张
     </section>
-    <div
-      ref="scrollContainer"
-      class="gallery-scroll"
-      @scroll="handleScroll"
-    >
-      <div
-        v-if="loadError && store.images.length === 0"
-        class="gallery-feedback gallery-error"
-      >
-        <p>加载失败，请重试</p>
-        <button
-          data-action="retry-load"
-          @click="retryLoad"
-        >
-          重试
-        </button>
+    <section class="gallery-panel">
+      <div class="gallery-panel__head">
+        <div class="gallery-panel__view">
+          <span
+            class="view-switch active"
+            data-view="all"
+          >
+            全部图片
+          </span>
+        </div>
+        <p class="usage-notice">
+          图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
+        </p>
       </div>
-      <ImageGrid
-        v-else
-        :images="visibleImages as unknown as SearchResult[]"
-        :loading="store.loading && store.images.length === 0"
-        :show-debug-info="false"
-        :selectable="true"
-        :selected-ids="store.selectedIds"
-        :focused-ids="latestImportedHighlightIds"
-        :status-badge-labels="latestImportedBadgeLabels"
-        :empty-message="emptyMessage"
-        @delete="handleDelete"
-        @select="store.toggleSelection"
-        @open="detailId = $event"
-      />
       <div
-        v-if="visibleImages.length > 0"
-        class="gallery-footer"
+        ref="scrollContainer"
+        class="gallery-scroll"
+        @scroll="handleScroll"
       >
-        <p
-          v-if="pagingError"
+        <div
+          v-if="loadError && store.images.length === 0"
           class="gallery-feedback gallery-error"
         >
-          加载失败，请重试
+          <p>加载失败，请重试</p>
           <button
-            data-action="retry-pagination"
+            class="ui-button ui-button--secondary ui-button--compact"
+            data-action="retry-load"
             @click="retryLoad"
           >
             重试
           </button>
-        </p>
-        <p
-          v-else-if="isPaging"
-          class="gallery-feedback"
+        </div>
+        <ImageGrid
+          v-else
+          :images="visibleImages as unknown as SearchResult[]"
+          :loading="store.loading && store.images.length === 0"
+          :show-debug-info="false"
+          :selectable="true"
+          :selected-ids="store.selectedIds"
+          :focused-ids="latestImportedHighlightIds"
+          :status-badge-labels="latestImportedBadgeLabels"
+          :empty-message="emptyMessage"
+          @delete="handleDelete"
+          @select="store.toggleSelection"
+          @open="detailId = $event"
+        />
+        <div
+          v-if="visibleImages.length > 0"
+          class="gallery-footer"
         >
-          加载中...
-        </p>
-        <p
-          v-else-if="!hasMore"
-          class="gallery-feedback"
-        >
-          已显示全部图片
-        </p>
+          <p
+            v-if="pagingError"
+            class="gallery-feedback gallery-error"
+          >
+            加载失败，请重试
+            <button
+              class="ui-button ui-button--text ui-button--compact"
+              data-action="retry-pagination"
+              @click="retryLoad"
+            >
+              重试
+            </button>
+          </p>
+          <p
+            v-else-if="isPaging"
+            class="gallery-feedback"
+          >
+            加载中...
+          </p>
+          <p
+            v-else-if="!hasMore"
+            class="gallery-feedback"
+          >
+            已显示全部图片
+          </p>
+        </div>
       </div>
-    </div>
+    </section>
     <button
       v-if="showBackToTop"
-      class="back-to-top"
+      class="back-to-top ui-button ui-button--primary"
       data-action="back-to-top"
       @click="scrollToTop"
     >
@@ -333,9 +425,11 @@ import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
+import { useSettingsStore } from "@/stores/settings";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
+const settingsStore = useSettingsStore();
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
 const router = inject<Router | undefined>(routerKey, undefined);
 const detailId = ref<string | null>(null);
@@ -400,6 +494,16 @@ const displayedFailures = computed(() =>
   recoveryStore.completedRecoverySummary?.failures ?? importFailures.value
 );
 
+const showFailureSummary = computed(() =>
+  !!displayedSummary.value && displayedSummary.value.failedCount > 0
+);
+
+const showSuccessSummary = computed(() =>
+  !!displayedSummary.value && displayedSummary.value.failedCount === 0 && displayedSummary.value.importedCount > 0
+);
+
+const showBackToSearch = computed(() => !!router);
+
 const displayedSummarySourceKey = computed(() => {
   if (recoveryStore.completedRecoverySummary) {
     const summary = recoveryStore.completedRecoverySummary;
@@ -439,7 +543,7 @@ const visibleImages = computed(() =>
 );
 
 const emptyMessage = computed(() =>
-  showMissingFilter.value ? "当前没有失效图片" : "图库为空，请先添加图片"
+  showMissingFilter.value ? "当前没有失效图片" : "图库为空，先导入图片开始使用"
 );
 
 const latestImportedHighlightIds = computed(() => {
@@ -830,10 +934,29 @@ async function openPrivateRoleLibrary() {
 
   window.history.pushState({}, "", "/private-role-maintenance");
 }
+
+async function handleBackToSearch() {
+  settingsStore.currentWindowMode = "sidebar";
+
+  if (router) {
+    await router.push("/");
+    return;
+  }
+
+  window.history.pushState({}, "", "/");
+}
 </script>
 
 <style scoped>
-.library-view { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+.library-view {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, #fde7cf 42%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--ui-bg-surface-strong) 96%, #fffaf2), var(--ui-bg-app));
+}
 .page-head {
   display: flex;
   align-items: flex-start;
@@ -844,19 +967,112 @@ async function openPrivateRoleLibrary() {
 .page-head__copy {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
 }
-.page-head__copy h2 { font-size: 1.25rem; }
-.page-head__copy p {
-  max-width: 720px;
-  color: #666;
-  font-size: 0.9rem;
+.page-head__copy h2 { margin: 0; font-size: 1.4rem; }
+.page-head__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.page-head__back {
+  color: var(--ui-text-secondary);
+}
+
+.main-task-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: calc(var(--ui-radius-md) + 2px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+}
+.main-task-card--recovery {
+  background: linear-gradient(135deg, color-mix(in srgb, #fff7e6 88%, white), color-mix(in srgb, #fff1cc 72%, white));
+}
+.main-task-card--missing {
+  background: linear-gradient(135deg, color-mix(in srgb, #fff6f5 88%, white), color-mix(in srgb, #ffe2df 68%, white));
+}
+.main-task-card--summary {
+  background: linear-gradient(135deg, color-mix(in srgb, #eef6ff 88%, white), color-mix(in srgb, #dbeafe 72%, white));
+}
+.main-task-card--progress {
+  background: linear-gradient(135deg, color-mix(in srgb, #f5f8ff 90%, white), color-mix(in srgb, #e0e7ff 72%, white));
+}
+.main-task-card__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.main-task-card__copy h3,
+.main-task-card__copy p,
+.main-task-card__eyebrow {
+  margin: 0;
+}
+.main-task-card__copy h3 {
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+.main-task-card__eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #8a5a14;
+}
+.main-task-card__description,
+.main-task-card__copy p:not(.main-task-card__eyebrow) {
+  color: var(--ui-text-secondary);
   line-height: 1.5;
 }
-.view-switches {
+.main-task-card__stats {
   display: flex;
-  gap: 0.5rem;
   flex-wrap: wrap;
+  gap: 0.8rem;
+  color: var(--ui-text-secondary);
+  font-size: 0.9rem;
+}
+.main-task-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.ui-button {
+  font: inherit;
+  font-weight: 600;
+}
+.ui-button--compact {
+  min-height: 36px;
+  padding: 0 14px;
+}
+.ui-button--danger {
+  background: color-mix(in srgb, #fff1f1 90%, white);
+  border-color: color-mix(in srgb, #d26a6a 30%, var(--ui-border-subtle));
+  color: #a33838;
+}
+.ui-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, #ffe7e7 92%, white);
+  border-color: color-mix(in srgb, #b94d4d 46%, var(--ui-border-subtle));
+}
+.ui-button--text {
+  min-height: 36px;
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ui-text-secondary);
+}
+.ui-button--text:hover:not(:disabled) {
+  background: transparent;
+  color: var(--ui-text-primary);
+}
+.ui-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
 }
 .view-switch {
   border: 1px solid #d9d9d9;
@@ -872,42 +1088,74 @@ async function openPrivateRoleLibrary() {
   background: #111827;
   color: #fff;
 }
-.usage-notice {
-  flex: 1 1 360px;
-  min-width: 240px;
-  color: #8a6a2f;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  text-align: center;
+.main-task-card__failures {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.missing-entry,
-.missing-filter-banner {
+.main-task-card__failure-item {
+  color: var(--ui-text-primary);
+}
+.main-task-card__failure-name,
+.main-task-card__failure-reason {
+  margin: 0;
+}
+.main-task-card__failure-name {
+  font-weight: 600;
+}
+.main-task-card__failure-reason {
+  color: var(--ui-text-secondary);
+  line-height: 1.45;
+}
+.main-task-card__follow-up {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--ui-border-subtle);
+}
+.main-task-card__follow-up-text {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+.main-task-card__follow-up-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.usage-notice {
+  margin: 0;
+  max-width: 560px;
+  color: #8a6a2f;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-align: right;
+}
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 96%, #fff8ef);
+}
+.toolbar__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.125rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 88%, #fff1f1);
+  flex-wrap: wrap;
 }
-.missing-entry__copy,
-.missing-filter-banner__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-.missing-entry__copy h3,
-.missing-entry__copy p,
-.missing-filter-banner__copy h3,
-.missing-filter-banner__copy p {
+.toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.toolbar-lock-reason {
   margin: 0;
-}
-.missing-entry__copy p,
-.missing-filter-banner__copy p {
-  color: var(--ui-text-secondary);
+  font-size: 0.84rem;
+  color: #8a5a14;
 }
 .latest-import-position-tip {
   padding: 0.75rem 1rem;
@@ -917,133 +1165,32 @@ async function openPrivateRoleLibrary() {
   color: #8a5a14;
   font-size: 0.9rem;
 }
-.advanced-capabilities {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.125rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, #eef6ff);
-}
-.advanced-capabilities__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.advanced-capabilities__copy h3,
-.advanced-capabilities__copy p,
-.advanced-capabilities__eyebrow {
-  margin: 0;
-}
-.advanced-capabilities__copy p {
-  color: var(--ui-text-secondary);
-  line-height: 1.5;
-}
-.advanced-capabilities__eyebrow {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--ui-accent);
-  letter-spacing: 0.03em;
-}
 .advanced-capabilities__action {
   flex-shrink: 0;
 }
-.recovery-banner {
+.gallery-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--ui-border-subtle);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 98%, #fffdf9);
+}
+.gallery-panel__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.125rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 88%, #fff4d6);
-}
-.recovery-banner__copy { display: flex; flex-direction: column; gap: 0.25rem; }
-.recovery-banner__title,
-.recovery-banner__text { margin: 0; }
-.recovery-banner__title { font-weight: 600; }
-.recovery-banner__text { color: var(--ui-text-secondary); }
-.recovery-banner__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.import-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  padding: 1rem 1.125rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 90%, #eef6ff);
-}
-.import-summary__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.import-summary__copy h3,
-.import-summary__copy p {
-  margin: 0;
-}
-.import-summary__eyebrow {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--ui-accent);
-  letter-spacing: 0.03em;
-}
-.import-summary__stats {
-  display: flex;
   flex-wrap: wrap;
-  gap: 0.8rem;
-  color: var(--ui-text-secondary);
 }
-.import-summary__actions {
+.gallery-panel__view {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.import-summary__follow-up {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid var(--ui-border-subtle);
-}
-.import-summary__follow-up-text {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  line-height: 1.5;
-}
-.import-summary__follow-up-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.import-summary__failures {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.import-summary__failure-item {
-  color: var(--ui-text-primary);
-}
-.import-summary__failure-name,
-.import-summary__failure-reason {
-  margin: 0;
-}
-.import-summary__failure-name {
-  font-weight: 600;
-}
-.import-summary__failure-reason {
-  color: var(--ui-text-secondary);
-  line-height: 1.45;
+  gap: 0.5rem;
 }
 .selection-count { font-size: 0.875rem; color: #666; }
 .gallery-total { font-size: 0.95rem; color: #444; font-weight: 600; }
-.index-status { margin-bottom: 0.75rem; font-size: 0.875rem; color: #666; display: flex; flex-direction: column; gap: 0.25rem; }
 .progress-bar { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: #646cff; transition: width 0.3s; }
 .gallery-scroll {
@@ -1069,18 +1216,24 @@ async function openPrivateRoleLibrary() {
   position: fixed;
   right: 1.5rem;
   bottom: 1.5rem;
-  border: none;
-  border-radius: 999px;
-  background: #111827;
-  color: #fff;
   padding: 0.7rem 1rem;
-  cursor: pointer;
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.18);
 }
 @media (max-width: 799px) {
-  .advanced-capabilities {
+  .page-head__meta {
+    align-items: flex-start;
+  }
+  .main-task-card,
+  .gallery-panel__head,
+  .toolbar__row {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .main-task-card__actions {
+    width: 100%;
+  }
+  .usage-notice {
+    text-align: left;
   }
   .gallery-scroll { height: calc(100vh - 210px); }
   .back-to-top { right: 1rem; bottom: 1rem; }
