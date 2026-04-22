@@ -3,7 +3,6 @@
     <div class="page-head">
       <div class="page-head__copy">
         <h2>图库管理</h2>
-        <p>在这里导入、整理和排查图片问题。搜索不到时，也可以先来这里检查新增内容和异常图片。</p>
       </div>
       <div class="gallery-total">
         共 {{ store.total }} 张
@@ -13,27 +12,10 @@
     <div class="view-switches">
       <button
         class="view-switch"
-        :class="{ active: currentView === 'all' }"
+        :class="{ active: true }"
         data-view="all"
-        @click="currentView = 'all'"
       >
         全部图片
-      </button>
-      <button
-        class="view-switch"
-        :class="{ active: currentView === 'recent' }"
-        data-view="recent"
-        @click="currentView = 'recent'"
-      >
-        最近新增
-      </button>
-      <button
-        class="view-switch"
-        :class="{ active: currentView === 'issues' }"
-        data-view="issues"
-        @click="currentView = 'issues'"
-      >
-        异常图片
       </button>
     </div>
 
@@ -44,14 +26,14 @@
           :disabled="store.indexing"
           @click="handleAdd"
         >
-          添加图片
+          导入图片
         </button>
         <button
           data-action="add-folder"
           :disabled="store.indexing"
           @click="handleAddFolder"
         >
-          添加文件夹
+          导入文件夹
         </button>
         <button
           :disabled="managementActionsDisabled || clearingMissing"
@@ -277,10 +259,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed, ref, inject, watch } from "vue";
+import { onMounted, computed, ref, inject } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
-import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from "vue-router";
+import { routerKey, type Router } from "vue-router";
 import ImageGrid from "@/components/ImageGrid.vue";
 import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
@@ -289,7 +271,6 @@ import type { SearchResult } from "@/stores/search";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
-const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
 const router = inject<Router | undefined>(routerKey, undefined);
 const detailId = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
@@ -299,7 +280,6 @@ const loadError = ref(false);
 const pagingError = ref(false);
 const showBackToTop = ref(false);
 const clearingMissing = ref(false);
-const currentView = ref<"all" | "recent" | "issues">("all");
 const showAdvancedCapabilities = true;
 const latestImportSummary = ref<LatestImportSummary | null>(null);
 const importFailures = ref<ImportFailure[]>([]);
@@ -356,54 +336,9 @@ const summaryTitle = computed(() => {
 
 const hasMore = computed(() => store.images.length < store.total);
 
-const visibleImages = computed(() => {
-  if (currentView.value === "recent") {
-    return [...store.images].sort((a, b) => b.addedAt - a.addedAt);
-  }
+const visibleImages = computed(() => store.images);
 
-  if (currentView.value === "issues") {
-    return store.images.filter((image) => image.fileStatus && image.fileStatus !== "normal");
-  }
-
-  return store.images;
-});
-
-const emptyMessage = computed(() => {
-  if (currentView.value === "issues") {
-    return "当前没有异常图片";
-  }
-
-  if (currentView.value === "recent") {
-    return "最近暂无新增";
-  }
-
-  return "图库为空，请先添加图片";
-});
-
-function normalizeView(raw: unknown): "all" | "recent" | "issues" {
-  if (raw === "recent" || raw === "issues") {
-    return raw;
-  }
-  return "all";
-}
-
-function resolveRouteView() {
-  const routeView = route?.query.view;
-  if (typeof routeView === "string") {
-    return normalizeView(routeView);
-  }
-
-  const browserView = new URLSearchParams(window.location.search).get("view");
-  return normalizeView(browserView);
-}
-
-watch(
-  () => route?.query.view,
-  () => {
-    currentView.value = resolveRouteView();
-  },
-  { immediate: true }
-);
+const emptyMessage = computed(() => "图库为空，请先添加图片");
 
 onMounted(() => {
   void reloadGallery();
@@ -518,10 +453,6 @@ async function retryLoad() {
   await reloadGallery();
 }
 
-function switchToRecentView() {
-  currentView.value = "recent";
-}
-
 function dismissRecoverySummary() {
   recoveryStore.dismissCompletedRecoverySummary();
   showImportFailures.value = false;
@@ -531,7 +462,6 @@ function handleShowFailures() {
   if (recoveryStore.completedRecoverySummary) {
     recoveryStore.markRecoveryResultSeen();
     showImportFailures.value = false;
-    currentView.value = "issues";
     return;
   }
 
@@ -542,7 +472,6 @@ function handleViewLatestImported() {
   if (recoveryStore.completedRecoverySummary) {
     recoveryStore.markRecoveryResultSeen();
   }
-  switchToRecentView();
 }
 
 async function handleAdd() {

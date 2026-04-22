@@ -45,7 +45,7 @@ describe("LibraryView 路由视图恢复", () => {
     });
   });
 
-  it("view=issues 时默认选中异常图片视图", async () => {
+  it("view=issues 时忽略旧视图参数并保持全部图片视图", async () => {
     const router = createTestRouter();
     await router.push("/library?view=issues");
     await router.isReady();
@@ -57,10 +57,11 @@ describe("LibraryView 路由视图恢复", () => {
     });
     await flushPromises();
 
-    expect(wrapper.get("[data-view='issues']").classes()).toContain("active");
+    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='issues']").exists()).toBe(false);
   });
 
-  it("view=recent 时默认选中最近新增视图", async () => {
+  it("view=recent 时忽略旧视图参数并保持全部图片视图", async () => {
     const router = createTestRouter();
     await router.push("/library?view=recent");
     await router.isReady();
@@ -72,6 +73,7 @@ describe("LibraryView 路由视图恢复", () => {
     });
     await flushPromises();
 
-    expect(wrapper.get("[data-view='recent']").classes()).toContain("active");
+    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
   });
 });

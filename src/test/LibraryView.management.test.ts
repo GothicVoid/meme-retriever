@@ -77,7 +77,7 @@ describe("LibraryView 管理视图", () => {
     mockInvoke.mockReset();
   });
 
-  it("显示图库管理标题和管理视图切换入口", async () => {
+  it("显示图库管理标题、主视图入口和新的导入工具条文案", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_image_count") return 3;
       if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
@@ -88,14 +88,17 @@ describe("LibraryView 管理视图", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("图库管理");
+    expect(wrapper.text()).not.toContain("在这里导入、整理和排查图片问题");
     expect(wrapper.find("[data-view='all']").exists()).toBe(true);
-    expect(wrapper.find("[data-view='recent']").exists()).toBe(true);
-    expect(wrapper.find("[data-view='issues']").exists()).toBe(true);
+    expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
+    expect(wrapper.find("[data-view='issues']").exists()).toBe(false);
+    expect(wrapper.get("[data-action='add-images']").text()).toContain("导入图片");
+    expect(wrapper.get("[data-action='add-folder']").text()).toContain("导入文件夹");
 
     wrapper.unmount();
   });
 
-  it("切换到最近新增时按新增顺序展示图片", async () => {
+  it("默认在全部图片视图展示图库列表", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_image_count") return 3;
       if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
@@ -103,9 +106,6 @@ describe("LibraryView 管理视图", () => {
     });
 
     const wrapper = mount(LibraryView, { attachTo: document.body });
-    await flushPromises();
-
-    await wrapper.get("[data-view='recent']").trigger("click");
     await flushPromises();
 
     const cards = wrapper.findAll(".image-card");
@@ -114,47 +114,6 @@ describe("LibraryView 管理视图", () => {
     expect(images[0].attributes("alt")).toBe("img-newest");
     expect(cards[1].find(".img-missing").exists()).toBe(true);
     expect(images[1].attributes("alt")).toBe("img-older");
-
-    wrapper.unmount();
-  });
-
-  it("切换到异常图片时只展示失效图片", async () => {
-    mockInvoke.mockImplementation(async (cmd, args) => {
-      if (cmd === "get_image_count") return 3;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
-      return [];
-    });
-
-    const wrapper = mount(LibraryView, { attachTo: document.body });
-    await flushPromises();
-
-    await wrapper.get("[data-view='issues']").trigger("click");
-    await flushPromises();
-
-    const cards = wrapper.findAll(".image-card");
-    expect(cards).toHaveLength(1);
-    expect(cards[0].find(".img-missing").exists()).toBe(true);
-    expect(wrapper.findAll(".image-card img")).toHaveLength(0);
-
-    wrapper.unmount();
-  });
-
-  it("异常图片为空时显示分组空态", async () => {
-    mockInvoke.mockImplementation(async (cmd, args) => {
-      if (cmd === "get_image_count") return 2;
-      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) {
-        return mockImages.filter((item) => item.fileStatus === "normal");
-      }
-      return [];
-    });
-
-    const wrapper = mount(LibraryView, { attachTo: document.body });
-    await flushPromises();
-
-    await wrapper.get("[data-view='issues']").trigger("click");
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("当前没有异常图片");
 
     wrapper.unmount();
   });
@@ -201,7 +160,7 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
-  it("最近一次导入只有新增成功时，主动作切到最近新增视图", async () => {
+  it("最近一次导入只有新增成功时，主动作仍停留在全部图片视图", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
@@ -224,7 +183,8 @@ describe("LibraryView 管理视图", () => {
     await wrapper.get("[data-action='view-latest-imported']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.get("[data-view='recent']").classes()).toContain("active");
+    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
 
     wrapper.unmount();
   });
@@ -365,7 +325,7 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
-  it("恢复结果查看最近新增后切到最近新增视图并立即退场", async () => {
+  it("恢复结果查看最近新增后保持全部图片视图并立即退场", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
@@ -389,13 +349,13 @@ describe("LibraryView 管理视图", () => {
     await wrapper.get("[data-action='view-latest-imported']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.get("[data-view='recent']").classes()).toContain("active");
+    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
     expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
 
     wrapper.unmount();
   });
 
-  it("处理中禁用治理操作并显示原因文案，但仍允许切换视图", async () => {
+  it("处理中禁用治理操作并显示原因文案，同时不再提供旧视图切换", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
@@ -414,11 +374,8 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.get("[data-action='clear-missing']").attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("导入处理中，完成后再整理图库");
-
-    await wrapper.get("[data-view='issues']").trigger("click");
-    await flushPromises();
-
-    expect(wrapper.get("[data-view='issues']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
+    expect(wrapper.find("[data-view='issues']").exists()).toBe(false);
 
     wrapper.unmount();
   });
