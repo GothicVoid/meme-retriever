@@ -227,6 +227,32 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
+  it("导入结果出现后即展示本轮新增的新角标，但未点击前不显示定位提示", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-auto",
+          totalCount: 2,
+          importedCount: 2,
+          duplicatedCount: 0,
+          failedCount: 0,
+        };
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.findAll(".status-badge--new")).toHaveLength(2);
+    expect(wrapper.find('[data-section="latest-import-position-tip"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
   it("新的导入结果会覆盖上一轮本次新增标记", async () => {
     const scrollToMock = vi.fn();
     HTMLElement.prototype.scrollTo = scrollToMock;

@@ -312,6 +312,7 @@ interface ImportFailure {
 interface LatestImportedState {
   sourceKey: string;
   count: number;
+  activated: boolean;
 }
 
 const progressPercent = computed(() =>
@@ -391,14 +392,10 @@ const latestImportedBadgeLabels = computed(() => {
 });
 
 const showLatestImportedTip = computed(() =>
-  !!latestImportedState.value && latestImportedHighlightIds.value.size > 0
+  !!latestImportedState.value && latestImportedState.value.activated && latestImportedHighlightIds.value.size > 0
 );
 
 watch(displayedSummarySourceKey, (sourceKey) => {
-  if (!latestImportedState.value) {
-    return;
-  }
-
   if (!sourceKey || !displayedSummary.value) {
     return;
   }
@@ -408,9 +405,18 @@ watch(displayedSummarySourceKey, (sourceKey) => {
     return;
   }
 
-  if (latestImportedState.value.sourceKey !== sourceKey) {
+  if (!latestImportedState.value || latestImportedState.value.sourceKey !== sourceKey) {
     latestImportedState.value = {
       sourceKey,
+      count: displayedSummary.value.importedCount,
+      activated: false,
+    };
+    return;
+  }
+
+  if (latestImportedState.value.count !== displayedSummary.value.importedCount) {
+    latestImportedState.value = {
+      ...latestImportedState.value,
       count: displayedSummary.value.importedCount,
     };
   }
@@ -565,6 +571,7 @@ function handleViewLatestImported() {
   latestImportedState.value = {
     sourceKey,
     count: importedCount,
+    activated: true,
   };
 
   if (recoveryStore.completedRecoverySummary) {
