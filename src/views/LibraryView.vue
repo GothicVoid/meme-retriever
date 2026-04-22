@@ -208,7 +208,7 @@
             {{ failure.fileName }}
           </p>
           <p class="import-summary__failure-reason">
-            {{ failure.errorMessage || "处理失败，请重试" }}
+            {{ failure.userMessage || failure.errorMessage || "处理失败，请重试" }}
           </p>
         </li>
       </ul>
@@ -341,6 +341,9 @@ interface ImportFailure {
   taskId: string;
   errorMessage?: string;
   fileName: string;
+  failureKind?: string;
+  retryable?: boolean;
+  userMessage?: string;
 }
 
 interface LatestImportedState {
@@ -555,7 +558,14 @@ async function fetchLatestImportSummary() {
     }
 
     const failures =
-      (await invoke<Array<{ taskId: string; filePath: string; errorMessage?: string }>>("get_import_batch_failures", {
+      (await invoke<Array<{
+        taskId: string;
+        filePath: string;
+        errorMessage?: string;
+        failureKind?: string;
+        retryable?: boolean;
+        userMessage?: string;
+      }>>("get_import_batch_failures", {
         batchId: summary.batchId,
       })) ?? [];
     importFailures.value = failures.map((item) => ({

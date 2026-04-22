@@ -26,6 +26,76 @@ pub struct ImportBatchFailure {
     pub task_id: String,
     pub file_path: String,
     pub error_message: Option<String>,
+    pub failure_kind: String,
+    pub retryable: bool,
+    pub user_message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureClassification {
+    pub failure_kind: String,
+    pub retryable: bool,
+    pub user_message: String,
+}
+
+pub fn classify_failure(message: Option<&str>) -> FailureClassification {
+    let normalized = message.unwrap_or_default().to_lowercase();
+
+    if normalized.contains("interrupted")
+        || normalized.contains("cancelled")
+        || normalized.contains("canceled")
+        || normalized.contains("中断")
+    {
+        return FailureClassification {
+            failure_kind: "interrupted_recoverable".into(),
+            retryable: true,
+            user_message: "导入被中断了，可以继续导入剩余图片。".into(),
+        };
+    }
+
+    if normalized.contains("file not found")
+        || normalized.contains("not found")
+        || normalized.contains("no such file")
+        || normalized.contains("找不到文件")
+        || normalized.contains("文件不存在")
+    {
+        return FailureClassification {
+            failure_kind: "file_missing".into(),
+            retryable: false,
+            user_message: "原文件不存在，已跳过这张图片。".into(),
+        };
+    }
+
+    if normalized.contains("damaged")
+        || normalized.contains("corrupt")
+        || normalized.contains("decode")
+        || normalized.contains("损坏")
+    {
+        return FailureClassification {
+            failure_kind: "file_damaged".into(),
+            retryable: false,
+            user_message: "图片文件可能已损坏，暂时无法导入。".into(),
+        };
+    }
+
+    if normalized.contains("unsupported")
+        || normalized.contains("invalid image format")
+        || normalized.contains("unknown image format")
+        || normalized.contains("不支持")
+        || normalized.contains("格式")
+    {
+        return FailureClassification {
+            failure_kind: "unsupported_format".into(),
+            retryable: false,
+            user_message: "当前还不支持这张图片的格式，已跳过。".into(),
+        };
+    }
+
+    FailureClassification {
+        failure_kind: "unknown".into(),
+        retryable: false,
+        user_message: "处理这张图片时出错了，已先跳过。".into(),
+    }
 }
 
 fn now_secs() -> i64 {
@@ -187,10 +257,17 @@ pub async fn get_import_batch_failures(
 
     Ok(rows
         .into_iter()
-        .map(|r| ImportBatchFailure {
-            task_id: r.get("id"),
-            file_path: r.get("file_path"),
-            error_message: r.get("error_message"),
+        .map(|r| {
+            let error_message: Option<String> = r.get("error_message");
+            let classification = classify_failure(error_message.as_deref());
+            ImportBatchFailure {
+                task_id: r.get("id"),
+                file_path: r.get("file_path"),
+                error_message,
+                failure_kind: classification.failure_kind,
+                retryable: classification.retryable,
+                user_message: classification.user_message,
+            }
         })
         .collect())
 }
@@ -398,6 +475,25 @@ mod tests {
         assert_eq!(failures[0].task_id, "a1");
         assert_eq!(failures[0].file_path, "/tmp/a1.jpg");
         assert_eq!(failures[0].error_message.as_deref(), Some("损坏"));
+        assert_eq!(failures[0].failure_kind, "file_damaged");
+        assert!(!failures[0].retryable);
+        assert_eq!(failures[0].user_message, "图片文件可能已损坏，暂时无法导入。");
+    }
+
+    #[test]
+    fn test_classify_failure_file_missing() {
+        let classification = classify_failure(Some("file not found: /tmp/a.jpg"));
+        assert_eq!(classification.failure_kind, "file_missing");
+        assert!(!classification.retryable);
+        assert_eq!(classification.user_message, "原文件不存在，已跳过这张图片。");
+    }
+
+    #[test]
+    fn test_classify_failure_unknown_falls_back() {
+        let classification = classify_failure(Some("unexpected boom"));
+        assert_eq!(classification.failure_kind, "unknown");
+        assert!(!classification.retryable);
+        assert_eq!(classification.user_message, "处理这张图片时出错了，已先跳过。");
     }
 
     #[sqlx::test(migrations = "./migrations")]

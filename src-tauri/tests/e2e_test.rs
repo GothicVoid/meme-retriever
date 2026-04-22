@@ -312,6 +312,9 @@ async fn test_import_batch_summary_with_imported_duplicated_and_failed_results(
         .unwrap();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].file_path, "/nonexistent/image.jpg");
+    assert_eq!(failures[0].failure_kind, "file_missing");
+    assert!(!failures[0].retryable);
+    assert_eq!(failures[0].user_message, "原文件不存在，已跳过这张图片。");
     assert!(
         failures[0]
             .error_message

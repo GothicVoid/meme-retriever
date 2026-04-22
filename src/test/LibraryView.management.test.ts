@@ -138,6 +138,9 @@ describe("LibraryView 管理视图", () => {
           taskId: "task-a2",
           filePath: "/tmp/imports/a2.jpg",
           errorMessage: "图片已损坏",
+          failureKind: "file_damaged",
+          retryable: false,
+          userMessage: "图片文件可能已损坏，暂时无法导入。",
         }];
       }
       return [];
@@ -156,7 +159,7 @@ describe("LibraryView 管理视图", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("a2.jpg");
-    expect(wrapper.text()).toContain("图片已损坏");
+    expect(wrapper.text()).toContain("图片文件可能已损坏，暂时无法导入。");
 
     wrapper.unmount();
   });

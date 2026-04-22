@@ -96,6 +96,9 @@ pub struct ImportBatchFailurePayload {
     pub task_id: String,
     pub file_path: String,
     pub error_message: Option<String>,
+    pub failure_kind: String,
+    pub retryable: bool,
+    pub user_message: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -1367,6 +1370,9 @@ async fn get_import_batch_failures_impl(
                     task_id: item.task_id,
                     file_path: item.file_path,
                     error_message: item.error_message,
+                    failure_kind: item.failure_kind,
+                    retryable: item.retryable,
+                    user_message: item.user_message,
                 })
                 .collect()
         })
@@ -2179,6 +2185,29 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].file_path, "/tmp/a2.jpg");
         assert_eq!(failures[0].error_message.as_deref(), Some("损坏"));
+        assert_eq!(failures[0].failure_kind, "file_damaged");
+        assert!(!failures[0].retryable);
+        assert_eq!(failures[0].user_message, "图片文件可能已损坏，暂时无法导入。");
+    }
+
+    #[test]
+    fn test_import_batch_failure_payload_serializes_camel_case() {
+        let payload = ImportBatchFailurePayload {
+            task_id: "task-1".into(),
+            file_path: "/tmp/a.jpg".into(),
+            error_message: Some("file not found".into()),
+            failure_kind: "file_missing".into(),
+            retryable: false,
+            user_message: "原文件不存在，已跳过这张图片。".into(),
+        };
+
+        let value = serde_json::to_value(payload).unwrap();
+        assert_eq!(value["taskId"], "task-1");
+        assert_eq!(value["filePath"], "/tmp/a.jpg");
+        assert_eq!(value["errorMessage"], "file not found");
+        assert_eq!(value["failureKind"], "file_missing");
+        assert_eq!(value["retryable"], false);
+        assert_eq!(value["userMessage"], "原文件不存在，已跳过这张图片。");
     }
 
     #[sqlx::test(migrations = "./migrations")]

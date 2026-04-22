@@ -11,9 +11,12 @@ interface PendingTask {
 }
 
 interface RecoveryFailure {
-  taskId: string;
-  fileName: string;
-  errorMessage?: string;
+    taskId: string;
+    fileName: string;
+    errorMessage?: string;
+    failureKind?: string;
+    retryable?: boolean;
+    userMessage?: string;
 }
 
 interface RecoverySummary {
