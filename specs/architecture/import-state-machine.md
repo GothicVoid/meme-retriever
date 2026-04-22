@@ -35,7 +35,7 @@
 | `IMPORTING` | 普通导入进行中 | 系统正在处理这次新导入 | 用户在当前会话发起导入，且 `libraryStore.indexing=true`，并非恢复流程 | 全部完成；或应用中断，留下未完成任务 |
 | `RECOVERY_PENDING` | 待恢复 | 上次导入中断后还有图片没处理完，等用户决定 | `pendingCount>0`，且当前不在正常导入、不在恢复处理中 | 用户点击 `继续导入`；用户点击 `放弃剩余图片`；或遗留任务被其它方式收口 |
 | `RECOVERY_RUNNING` | 恢复处理中 | 系统正在继续导入上次剩余任务 | 用户点击 `继续导入`，且 `activeRecovery=true` | 恢复完成；或再次中断 |
-| `RECOVERY_DONE` | 恢复结果可确认 | 刚才继续导入的剩余任务已经有结果；如果用户关心，可以快速确认 | `activeRecovery=false`，`completedRecoverySummary!=null` | 用户查看失败项；查看最近新增；明确关闭/忽略本次恢复结果；发起新的普通导入；产生新的恢复结果 |
+| `RECOVERY_DONE` | 恢复结果可确认 | 刚才继续导入的剩余任务已经有结果；如果用户关心，可以快速确认 | `activeRecovery=false`，`completedRecoverySummary!=null` | 用户查看失败项；查看本次新增；明确关闭/忽略本次恢复结果；发起新的普通导入；产生新的恢复结果 |
 | `IMPORT_DONE` | 普通导入结果可查看 | 最近一整批导入已经完成；如果用户关心，可以查看历史汇总 | 无恢复结果待确认，且存在最近一次导入汇总 | 发起新的普通导入；进入恢复流程；被更新结果覆盖 |
 
 ## 状态转移
@@ -50,7 +50,7 @@
 | `RECOVERY_RUNNING` | 恢复全部完成 | `RECOVERY_DONE` | 展示本次恢复结果 |
 | `RECOVERY_RUNNING` | 再次中断 | `RECOVERY_PENDING` | 下次仍可恢复 |
 | `RECOVERY_DONE` | 用户查看失败项 | `IDLE` 或 `IMPORT_DONE` | 恢复结果完成承接后退出主位；如存在普通导入历史汇总，可回落到 `IMPORT_DONE` |
-| `RECOVERY_DONE` | 用户查看最近新增 | `IDLE` 或 `IMPORT_DONE` | 同上 |
+| `RECOVERY_DONE` | 用户查看本次新增 | `IDLE` 或 `IMPORT_DONE` | 同上 |
 | `RECOVERY_DONE` | 用户明确关闭/忽略本次恢复结果 | `IDLE` 或 `IMPORT_DONE` | 用户已知晓本次恢复结果，但选择暂不处理，结果退出主位；如存在普通导入历史汇总，可回落到 `IMPORT_DONE` |
 | `RECOVERY_DONE` | 用户发起新的普通导入 | `IMPORTING` | 旧恢复结果退场 |
 | `IMPORT_DONE` | 用户发起新的普通导入 | `IMPORTING` | 新导入覆盖旧结果 |
@@ -74,10 +74,10 @@
 | `RECOVERY_PENDING` | `继续导入` |
 | `RECOVERY_PENDING` | 次动作：`放弃剩余图片` |
 | `RECOVERY_DONE` 且有失败 | `查看失败项` |
-| `RECOVERY_DONE` 仅新增成功 | `查看最近新增` |
+| `RECOVERY_DONE` 仅新增成功 | `查看本次新增` |
 | `RECOVERY_DONE` 仅重复 | 无强制主动作 |
 | `IMPORT_DONE` 且有失败 | `查看失败项` |
-| `IMPORT_DONE` 仅新增成功 | `查看最近新增` |
+| `IMPORT_DONE` 仅新增成功 | `查看本次新增` |
 
 ## 导入过程中操作权限
 
@@ -195,7 +195,7 @@
 - `RECOVERY_DONE` 不是长期公告，也不是必须处理的阻断任务
 - 当用户完成下面任一动作后，恢复结果退出主位：
   - 查看失败项
-  - 查看最近新增
+  - 查看本次新增
   - 明确关闭或忽略本次恢复结果
   - 发起新的普通导入
   - 产生新的恢复结果
