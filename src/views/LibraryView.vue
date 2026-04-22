@@ -95,7 +95,7 @@
       </button>
     </section>
     <div
-      v-if="recoveryStore.pendingCount > 0"
+      v-if="showRecoveryBanner"
       class="recovery-banner"
     >
       <div class="recovery-banner__copy">
@@ -124,31 +124,31 @@
       </div>
     </div>
     <section
-      v-else-if="latestImportSummary"
+      v-else-if="displayedSummary"
       class="import-summary"
       data-section="latest-import-summary"
     >
       <div class="import-summary__copy">
         <p class="import-summary__eyebrow">
-          最近一次导入
+          {{ summaryEyebrow }}
         </p>
-        <h3>共处理 {{ latestImportSummary.totalCount }} 张</h3>
+        <h3>{{ summaryTitle }}</h3>
         <p class="import-summary__stats">
-          <span>新增 {{ latestImportSummary.importedCount }}</span>
-          <span>已存在 {{ latestImportSummary.duplicatedCount }}</span>
-          <span>失败 {{ latestImportSummary.failedCount }}</span>
+          <span>新增 {{ displayedSummary.importedCount }}</span>
+          <span>已存在 {{ displayedSummary.duplicatedCount }}</span>
+          <span>失败 {{ displayedSummary.failedCount }}</span>
         </p>
       </div>
       <div class="import-summary__actions">
         <button
-          v-if="latestImportSummary.failedCount > 0"
+          v-if="displayedSummary.failedCount > 0"
           data-action="show-import-failures"
           @click="showImportFailures = !showImportFailures"
         >
           {{ showImportFailures ? "收起失败项" : "查看失败项" }}
         </button>
         <button
-          v-if="latestImportSummary.importedCount > 0"
+          v-if="displayedSummary.importedCount > 0"
           data-action="view-latest-imported"
           @click="switchToRecentView"
         >
@@ -156,11 +156,11 @@
         </button>
       </div>
       <ul
-        v-if="showImportFailures && importFailures.length > 0"
+        v-if="showImportFailures && displayedFailures.length > 0"
         class="import-summary__failures"
       >
         <li
-          v-for="failure in importFailures"
+          v-for="failure in displayedFailures"
           :key="failure.taskId"
           class="import-summary__failure-item"
         >
@@ -301,7 +301,6 @@ interface LatestImportSummary {
 
 interface ImportFailure {
   taskId: string;
-  filePath: string;
   errorMessage?: string;
   fileName: string;
 }
@@ -309,6 +308,31 @@ interface ImportFailure {
 const progressPercent = computed(() =>
   store.indexTotal > 0 ? (store.indexCurrent / store.indexTotal) * 100 : 0
 );
+
+const showRecoveryBanner = computed(() =>
+  recoveryStore.pendingCount > 0 && !recoveryStore.activeRecovery && !store.indexing
+);
+
+const displayedSummary = computed(() =>
+  recoveryStore.completedRecoverySummary ?? latestImportSummary.value
+);
+
+const displayedFailures = computed(() =>
+  recoveryStore.completedRecoverySummary?.failures ?? importFailures.value
+);
+
+const summaryEyebrow = computed(() =>
+  recoveryStore.completedRecoverySummary ? "刚刚继续处理" : "最近一次导入"
+);
+
+const summaryTitle = computed(() => {
+  const summary = displayedSummary.value;
+  if (!summary) return "";
+  if (recoveryStore.completedRecoverySummary) {
+    return `刚处理完剩余 ${summary.totalCount} 张`;
+  }
+  return `共处理 ${summary.totalCount} 张`;
+});
 
 const hasMore = computed(() => store.images.length < store.total);
 
@@ -363,7 +387,7 @@ watch(
 
 onMounted(() => {
   void reloadGallery();
-  void recoveryStore.fetchPendingTasks();
+  void recoveryStore.fetchPendingTasks(true);
 });
 
 async function handleResumePendingTasks() {
@@ -414,7 +438,7 @@ async function fetchLatestImportSummary() {
     }
 
     const failures =
-      (await invoke<Omit<ImportFailure, "fileName">[]>("get_import_batch_failures", {
+      (await invoke<Array<{ taskId: string; filePath: string; errorMessage?: string }>>("get_import_batch_failures", {
         batchId: summary.batchId,
       })) ?? [];
     importFailures.value = failures.map((item) => ({

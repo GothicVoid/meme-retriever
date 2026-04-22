@@ -5,7 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use meme_retriever_lib::{
-    db::repo, indexer::pipeline, kb::local::LocalKBProvider, search::engine::SearchEngine,
+    db::{repo, task_repo},
+    indexer::pipeline,
+    kb::local::LocalKBProvider,
+    search::engine::SearchEngine,
 };
 use sqlx::Row;
 
@@ -257,6 +260,156 @@ async fn test_clear_all_images_integration(pool: sqlx::SqlitePool) {
 
     let hits = engine.search("test", 10, 0.3, 0.4, 0.3).await.unwrap();
     assert!(hits.is_empty());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_import_batch_summary_with_imported_duplicated_and_failed_results(
+    pool: sqlx::SqlitePool,
+) {
+    let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
+
+    let seed_rx = pipeline::index_images_with_batch(
+        pool.clone(),
+        vec![fixture("sample.jpg")],
+        lib.path().to_path_buf(),
+        engine.clone(),
+        Some("batch-seed".into()),
+    );
+    let seed_results = collect(seed_rx).await;
+    assert_eq!(seed_results.len(), 1);
+    assert_eq!(seed_results[0].result_kind, "imported");
+
+    let mixed_rx = pipeline::index_images_with_batch(
+        pool.clone(),
+        vec![
+            fixture("sample.jpg"),
+            fixture("sample_blank.jpg"),
+            "/nonexistent/image.jpg".into(),
+        ],
+        lib.path().to_path_buf(),
+        engine,
+        Some("batch-mixed".into()),
+    );
+    let mixed_results = collect(mixed_rx).await;
+
+    assert_eq!(mixed_results.len(), 3);
+    assert!(mixed_results.iter().any(|item| item.result_kind == "duplicated"));
+    assert!(mixed_results.iter().any(|item| item.result_kind == "imported"));
+    assert!(mixed_results.iter().any(|item| item.result_kind == "failed"));
+
+    let summary = task_repo::get_latest_import_batch_summary(&pool)
+        .await
+        .unwrap()
+        .expect("should have latest import batch");
+    assert_eq!(summary.batch_id, "batch-mixed");
+    assert_eq!(summary.imported_count, 1);
+    assert_eq!(summary.duplicated_count, 1);
+    assert_eq!(summary.failed_count, 1);
+
+    let failures = task_repo::get_import_batch_failures(&pool, "batch-mixed")
+        .await
+        .unwrap();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].file_path, "/nonexistent/image.jpg");
+    assert!(
+        failures[0]
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("file not found"))
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_resume_unfinished_import_after_app_restart(pool: sqlx::SqlitePool) {
+    let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
+
+    task_repo::insert_task_with_batch(&pool, "resume-task-1", &fixture("sample.jpg"), "batch-r")
+        .await
+        .unwrap();
+    task_repo::insert_task_with_batch(
+        &pool,
+        "resume-task-2",
+        &fixture("sample_blank.jpg"),
+        "batch-r",
+    )
+    .await
+    .unwrap();
+    task_repo::update_task_status(&pool, "resume-task-1", "processing", None)
+        .await
+        .unwrap();
+
+    task_repo::reset_stale_tasks(&pool).await.unwrap();
+    let pending_before_resume = task_repo::get_pending_tasks(&pool).await.unwrap();
+    assert_eq!(pending_before_resume.len(), 2);
+    assert!(pending_before_resume.iter().all(|task| task.status == "pending"));
+
+    let resume_tasks = pending_before_resume
+        .into_iter()
+        .map(|task| pipeline::ResumeIndexTask {
+            id: task.id,
+            file_path: task.file_path,
+        })
+        .collect();
+
+    let rx = pipeline::resume_index_images(
+        pool.clone(),
+        resume_tasks,
+        lib.path().to_path_buf(),
+        engine,
+    );
+    let resumed = collect(rx).await;
+
+    assert_eq!(resumed.len(), 2);
+    assert!(resumed.iter().all(|item| item.status == "completed"));
+    assert!(resumed.iter().all(|item| item.result_kind == "imported"));
+
+    let pending_after_resume = task_repo::get_pending_tasks(&pool).await.unwrap();
+    assert!(pending_after_resume.is_empty());
+
+    let task_rows = sqlx::query("SELECT id, status FROM task_queue ORDER BY id ASC")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(task_rows.len(), 2);
+    assert_eq!(task_rows[0].get::<String, _>("id"), "resume-task-1");
+    assert_eq!(task_rows[0].get::<String, _>("status"), "completed");
+    assert_eq!(task_rows[1].get::<String, _>("id"), "resume-task-2");
+    assert_eq!(task_rows[1].get::<String, _>("status"), "completed");
+
+    let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
+    assert_eq!(images.len(), 2);
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_interrupted_import_keeps_all_remaining_tasks_in_queue(pool: sqlx::SqlitePool) {
+    let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
+    let tasks = pipeline::create_index_tasks(
+        &pool,
+        vec![
+            fixture("sample.jpg"),
+            fixture("sample_blank.jpg"),
+            fixture("sample_wide.jpg"),
+        ],
+        Some("batch-interrupted"),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(task_repo::get_pending_task_count(&pool).await.unwrap(), 3);
+
+    let first_task = vec![tasks[0].clone()];
+    let rx = pipeline::resume_index_images(pool.clone(), first_task, lib.path().to_path_buf(), engine);
+    let resumed = collect(rx).await;
+
+    assert_eq!(resumed.len(), 1);
+    assert_eq!(resumed[0].status, "completed");
+
+    let pending = task_repo::get_pending_tasks(&pool).await.unwrap();
+    assert_eq!(pending.len(), 2);
+    assert!(pending.iter().all(|task| task.status == "pending"));
 }
 
 #[sqlx::test(migrations = "./migrations")]

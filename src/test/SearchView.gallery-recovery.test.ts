@@ -221,4 +221,39 @@ describe("SearchView 搜索失败修复闭环", () => {
 
     wrapper.unmount();
   });
+
+  it("角色名搜不到时不会误导去图库治理", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const router = createTestRouter();
+    await router.push("/");
+    await router.isReady();
+
+    const wrapper = mount(SearchView, {
+      attachTo: document.body,
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    const action = wrapper.find('[data-action="primary-recovery-action"]');
+    expect(action.exists()).toBe(true);
+    expect(action.text()).toContain("维护角色示例图");
+    expect(wrapper.text()).not.toContain("查看最近新增");
+    expect(wrapper.text()).not.toContain("查看异常图片");
+
+    wrapper.unmount();
+  });
 });

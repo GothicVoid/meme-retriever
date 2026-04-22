@@ -765,20 +765,43 @@ async fn relocate_image_impl(
 
 /// 后台启动入库流水线，每张图完成后发送 `index-progress` 事件，并更新内存向量索引。
 fn spawn_index_task(
-    paths: Vec<String>,
+    tasks: Vec<crate::indexer::pipeline::ResumeIndexTask>,
     library_dir: PathBuf,
     pool: crate::db::DbPool,
     engine: Arc<crate::search::engine::SearchEngine>,
     app_handle: tauri::AppHandle,
-    batch_id: Option<String>,
 ) {
     tokio::spawn(async move {
-        let mut rx = crate::indexer::pipeline::index_images_with_batch(
+        let mut rx = crate::indexer::pipeline::resume_index_images(
             pool,
-            paths,
+            tasks,
             library_dir,
             Arc::clone(&engine),
-            batch_id,
+        );
+        while let Some(progress) = rx.recv().await {
+            if progress.status == "completed" && !progress.id.is_empty() {
+                if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
+                    engine.insert_vector(progress.id.clone(), vec);
+                }
+            }
+            let _ = app_handle.emit("index-progress", &progress);
+        }
+    });
+}
+
+fn spawn_resume_index_task(
+    tasks: Vec<crate::indexer::pipeline::ResumeIndexTask>,
+    library_dir: PathBuf,
+    pool: crate::db::DbPool,
+    engine: Arc<crate::search::engine::SearchEngine>,
+    app_handle: tauri::AppHandle,
+) {
+    tokio::spawn(async move {
+        let mut rx = crate::indexer::pipeline::resume_index_images(
+            pool,
+            tasks,
+            library_dir,
+            Arc::clone(&engine),
         );
         while let Some(progress) = rx.recv().await {
             if progress.status == "completed" && !progress.id.is_empty() {
@@ -917,14 +940,20 @@ pub async fn import_entries(
         .map_err(|e| e.to_string())?
         .join("library");
     let batch_id = Uuid::new_v4().to_string();
+    let tasks = crate::indexer::pipeline::create_index_tasks(
+        db.inner(),
+        paths,
+        Some(batch_id.as_str()),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     spawn_index_task(
-        paths,
+        tasks,
         library_dir,
         db.inner().clone(),
         Arc::clone(engine.inner()),
         app,
-        Some(batch_id),
     );
 
     Ok(total)
@@ -1533,19 +1562,24 @@ pub async fn resume_pending_tasks(
         .map_err(|e| e.to_string())?;
     let count = pending.len();
     if count > 0 {
-        let paths: Vec<String> = pending.into_iter().map(|t| t.file_path).collect();
+        let tasks: Vec<crate::indexer::pipeline::ResumeIndexTask> = pending
+            .into_iter()
+            .map(|task| crate::indexer::pipeline::ResumeIndexTask {
+                id: task.id,
+                file_path: task.file_path,
+            })
+            .collect();
         let library_dir = app
             .path()
             .app_data_dir()
             .map_err(|e| e.to_string())?
             .join("library");
-        spawn_index_task(
-            paths,
+        spawn_resume_index_task(
+            tasks,
             library_dir,
             db.inner().clone(),
             Arc::clone(engine.inner()),
             app,
-            None,
         );
     }
     Ok(count)

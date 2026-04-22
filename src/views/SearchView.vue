@@ -567,6 +567,7 @@ import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
 import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
+import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import { getRelevanceLevel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
 import { isDevelopmentMode } from "@/utils/runtime";
@@ -579,6 +580,7 @@ const { store, debouncedSearch } = useSearch();
 const { copyImage } = useClipboard();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
+const recoveryStore = useTaskRecoveryStore();
 const router = inject<Router | undefined>(routerKey, undefined);
 const cancelDebouncedSearch = debouncedSearch as typeof debouncedSearch & { cancel?: () => void };
 
@@ -664,7 +666,11 @@ const showColdStart = computed(() =>
 );
 
 const recentSearches = computed(() => homeState.value?.recentSearches ?? []);
-const pendingTaskCount = computed(() => homeState.value?.pendingTaskCount ?? 0);
+const pendingTaskCount = computed(() =>
+  libraryStore.indexing
+    ? 0
+    : recoveryStore.loaded ? recoveryStore.pendingCount : (homeState.value?.pendingTaskCount ?? 0)
+);
 const showSearchAssistPanel = computed(() =>
   searchFocused.value && isHomeMode.value && (recentSearches.value.length > 0 || exampleQueries.length > 0)
 );

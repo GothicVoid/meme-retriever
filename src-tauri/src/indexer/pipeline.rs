@@ -18,6 +18,12 @@ pub struct IndexProgress {
     pub elapsed_ms: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct ResumeIndexTask {
+    pub id: String,
+    pub file_path: String,
+}
+
 enum IndexResult {
     Imported(String),
     Duplicated(String),
@@ -34,6 +40,24 @@ pub fn index_images(
     index_images_with_batch(pool, paths, library_dir, engine, None)
 }
 
+pub async fn create_index_tasks(
+    pool: &DbPool,
+    paths: Vec<String>,
+    batch_id: Option<&str>,
+) -> anyhow::Result<Vec<ResumeIndexTask>> {
+    let mut tasks = Vec::with_capacity(paths.len());
+    for path in paths {
+        let id = Uuid::new_v4().to_string();
+        crate::db::task_repo::insert_task_with_batch(pool, &id, &path, batch_id.unwrap_or(""))
+            .await?;
+        tasks.push(ResumeIndexTask {
+            id,
+            file_path: path,
+        });
+    }
+    Ok(tasks)
+}
+
 pub fn index_images_with_batch(
     pool: DbPool,
     paths: Vec<String>,
@@ -43,11 +67,48 @@ pub fn index_images_with_batch(
 ) -> mpsc::Receiver<IndexProgress> {
     let (tx, rx) = mpsc::channel(64);
     tokio::spawn(async move {
-        for path in paths {
-            let progress =
-                process_one(&pool, &path, &library_dir, &engine, batch_id.as_deref()).await;
+        let Ok(tasks) = create_index_tasks(&pool, paths, batch_id.as_deref()).await else {
+            tracing::error!("index_images_with_batch: failed to create task queue");
+            return;
+        };
+        for task in tasks {
+            let progress = process_one(
+                &pool,
+                &task.file_path,
+                &library_dir,
+                &engine,
+                None,
+                Some(&task.id),
+            )
+            .await;
             if tx.send(progress).await.is_err() {
                 break; // 接收端已关闭
+            }
+        }
+    });
+    rx
+}
+
+pub fn resume_index_images(
+    pool: DbPool,
+    tasks: Vec<ResumeIndexTask>,
+    library_dir: PathBuf,
+    engine: std::sync::Arc<SearchEngine>,
+) -> mpsc::Receiver<IndexProgress> {
+    let (tx, rx) = mpsc::channel(64);
+    tokio::spawn(async move {
+        for task in tasks {
+            let progress = process_one(
+                &pool,
+                &task.file_path,
+                &library_dir,
+                &engine,
+                None,
+                Some(&task.id),
+            )
+            .await;
+            if tx.send(progress).await.is_err() {
+                break;
             }
         }
     });
@@ -60,6 +121,7 @@ async fn process_one(
     library_dir: &Path,
     engine: &SearchEngine,
     batch_id: Option<&str>,
+    existing_task_id: Option<&str>,
 ) -> IndexProgress {
     let start = Instant::now();
     let src = Path::new(src_path);
@@ -68,7 +130,7 @@ async fn process_one(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| src_path.to_string());
 
-    match do_index(pool, src, library_dir, engine, batch_id).await {
+    match do_index(pool, src, library_dir, engine, batch_id, existing_task_id).await {
         Ok(result) => {
             let (id, result_kind) = match result {
                 IndexResult::Imported(id) => (id, "imported"),
@@ -103,16 +165,22 @@ async fn do_index(
     library_dir: &Path,
     engine: &SearchEngine,
     batch_id: Option<&str>,
+    existing_task_id: Option<&str>,
 ) -> anyhow::Result<IndexResult> {
     // 2.3 任务队列：记录任务进度，支持断点续传
-    let task_id = Uuid::new_v4().to_string();
-    crate::db::task_repo::insert_task_with_batch(
-        pool,
-        &task_id,
-        &src.to_string_lossy(),
-        batch_id.unwrap_or(""),
-    )
-    .await?;
+    let task_id = if let Some(task_id) = existing_task_id {
+        task_id.to_string()
+    } else {
+        let task_id = Uuid::new_v4().to_string();
+        crate::db::task_repo::insert_task_with_batch(
+            pool,
+            &task_id,
+            &src.to_string_lossy(),
+            batch_id.unwrap_or(""),
+        )
+        .await?;
+        task_id
+    };
     crate::db::task_repo::update_task_status(pool, &task_id, "processing", None).await?;
 
     let result = do_index_inner(pool, src, library_dir, engine).await;

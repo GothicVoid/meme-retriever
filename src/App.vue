@@ -45,7 +45,7 @@
     </main>
 
     <div
-      v-if="recoveryStore.pendingCount > 0"
+      v-if="showRecoveryDialog"
       class="resume-backdrop ui-dialog-backdrop"
     >
       <div class="resume-dialog ui-dialog">
@@ -78,11 +78,13 @@ import { computed, nextTick, onMounted, watch } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import GlobalProgressBar from "@/components/GlobalProgressBar.vue";
 import Toast from "@/components/Toast.vue";
+import { useLibraryStore } from "@/stores/library";
 import { useSettingsStore, type WindowMode } from "@/stores/settings";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 
 const recoveryStore = useTaskRecoveryStore();
+const libraryStore = useLibraryStore();
 const settings = useSettingsStore();
 const route = useRoute();
 const router = useRouter();
@@ -93,6 +95,10 @@ const isSidebarMode = computed(() =>
 
 const effectiveWindowMode = computed<WindowMode>(() =>
   isSidebarMode.value ? "sidebar" : "expanded"
+);
+
+const showRecoveryDialog = computed(() =>
+  recoveryStore.pendingCount > 0 && !recoveryStore.activeRecovery && !libraryStore.indexing
 );
 
 const expandedTitle = computed(() => {
@@ -125,7 +131,7 @@ async function openGalleryManagement() {
 
 onMounted(async () => {
   try {
-    await recoveryStore.fetchPendingTasks();
+    await recoveryStore.fetchPendingTasks(true);
   } catch {
     console.warn("尝试获取未完成任务时失败");
   }

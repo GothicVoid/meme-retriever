@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { invoke } from "@tauri-apps/api/core";
 import LibraryView from "@/views/LibraryView.vue";
 import type { ImageMeta } from "@/stores/library";
+import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -259,6 +260,61 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.text()).toContain("上次有 1 张图片还没整理完");
     expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("恢复完成后优先展示本次恢复结果，而不是整批历史导入汇总", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImages;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-history",
+          totalCount: 14,
+          importedCount: 11,
+          duplicatedCount: 1,
+          failedCount: 2,
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-history-2",
+          filePath: "/tmp/imports/history-2.jpg",
+          errorMessage: "历史失败项",
+        }];
+      }
+      return [];
+    });
+
+    const recoveryStore = useTaskRecoveryStore();
+    recoveryStore.completedRecoverySummary = {
+      totalCount: 3,
+      importedCount: 2,
+      duplicatedCount: 0,
+      failedCount: 1,
+      failures: [{
+        taskId: "task-recovery-3",
+        fileName: "recovery-3.jpg",
+        errorMessage: "恢复后仍失败",
+      }],
+    };
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("刚刚继续处理");
+    expect(wrapper.text()).toContain("刚处理完剩余 3 张");
+    expect(wrapper.text()).toContain("新增 2");
+    expect(wrapper.text()).toContain("失败 1");
+    expect(wrapper.text()).not.toContain("共处理 14 张");
+
+    await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("recovery-3.jpg");
+    expect(wrapper.text()).toContain("恢复后仍失败");
 
     wrapper.unmount();
   });
