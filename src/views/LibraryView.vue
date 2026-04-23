@@ -5,6 +5,9 @@
         <h2>图库管理</h2>
       </div>
       <div class="page-head__meta">
+        <div class="gallery-total">
+          共 {{ store.total }} 张
+        </div>
         <button
           v-if="showBackToSearch"
           type="button"
@@ -14,9 +17,6 @@
         >
           返回搜索
         </button>
-        <div class="gallery-total">
-          共 {{ store.total }} 张
-        </div>
       </div>
     </div>
 
@@ -257,74 +257,74 @@
       </div>
     </section>
 
-    <div class="toolbar">
-      <div class="toolbar__row">
-        <div class="toolbar-actions">
-          <button
-            class="ui-button ui-button--primary"
-            data-action="add-images"
-            :disabled="store.indexing"
-            @click="handleAdd"
-          >
-            导入图片
-          </button>
-          <button
-            class="ui-button ui-button--secondary"
-            data-action="add-folder"
-            :disabled="store.indexing"
-            @click="handleAddFolder"
-          >
-            导入文件夹
-          </button>
-          <template v-if="store.selectedIds.size > 0">
-            <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
+    <section class="library-workbench">
+      <div class="toolbar">
+        <div class="toolbar__row">
+          <div class="toolbar-actions">
             <button
-              class="ui-button ui-button--danger"
-              data-action="delete-selected"
-              :disabled="managementActionsDisabled"
-              @click="handleDeleteSelected"
+              class="ui-button ui-button--primary"
+              data-action="add-images"
+              :disabled="store.indexing"
+              @click="handleAdd"
             >
-              删除选中
+              导入图片
             </button>
-          </template>
+            <button
+              class="ui-button ui-button--secondary"
+              data-action="add-folder"
+              :disabled="store.indexing"
+              @click="handleAddFolder"
+            >
+              导入文件夹
+            </button>
+            <template v-if="store.selectedIds.size > 0">
+              <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
+              <button
+                class="ui-button ui-button--danger"
+                data-action="delete-selected"
+                :disabled="managementActionsDisabled"
+                @click="handleDeleteSelected"
+              >
+                删除选中
+              </button>
+            </template>
+          </div>
+          <button
+            v-if="showAdvancedCapabilities"
+            type="button"
+            class="advanced-capabilities__action ui-button ui-button--secondary ui-button--compact"
+            data-action="open-private-role-library"
+            @click="openPrivateRoleLibrary"
+          >
+            角色维护
+          </button>
         </div>
-        <button
-          v-if="showAdvancedCapabilities"
-          type="button"
-          class="advanced-capabilities__action ui-button ui-button--secondary ui-button--compact"
-          data-action="open-private-role-library"
-          @click="openPrivateRoleLibrary"
+        <p
+          v-if="managementActionsDisabled"
+          class="toolbar-lock-reason"
         >
-          角色维护
-        </button>
+          导入处理中，完成后再整理图库。
+        </p>
       </div>
-      <p
-        v-if="managementActionsDisabled"
-        class="toolbar-lock-reason"
+      <section
+        v-if="showLatestImportedTip"
+        class="latest-import-position-tip"
+        data-section="latest-import-position-tip"
       >
-        导入处理中，完成后再整理图库。
-      </p>
-    </div>
-    <section
-      v-if="showLatestImportedTip"
-      class="latest-import-position-tip"
-      data-section="latest-import-position-tip"
-    >
-      已定位到本次新增图片，共 {{ latestImportedState?.count }} 张
-    </section>
-    <section class="gallery-panel">
+        已定位到本次新增图片，共 {{ latestImportedState?.count }} 张
+      </section>
       <div class="gallery-panel__head">
-        <div class="gallery-panel__view">
+        <div class="gallery-panel__title-group">
           <span
             class="view-switch active"
             data-view="all"
           >
             全部图片
           </span>
+          <p class="usage-notice">
+            图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
+          </p>
         </div>
-        <p class="usage-notice">
-          图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
-        </p>
       </div>
       <div
         ref="scrollContainer"
@@ -349,6 +349,7 @@
           :images="visibleImages as unknown as SearchResult[]"
           :loading="store.loading && store.images.length === 0"
           :show-debug-info="false"
+          layout="library"
           :selectable="true"
           :selected-ids="store.selectedIds"
           :focused-ids="latestImportedHighlightIds"
@@ -409,7 +410,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed, ref, inject, watch } from "vue";
+import { onMounted, computed, ref, inject, watch, nextTick } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open, confirm } from "@tauri-apps/plugin-dialog";
 import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from "vue-router";
@@ -768,11 +769,39 @@ async function reloadGallery() {
   if (typeof container?.scrollTo === "function") {
     container.scrollTo({ top: 0 });
   }
+
+  await ensureScrollableContent();
 }
 
 async function loadNextPage() {
   if (!hasMore.value || isPaging.value || store.loading) return;
   await loadPage(currentPage.value + 1, true);
+  if (!pagingError.value) {
+    await ensureScrollableContent();
+  }
+}
+
+async function ensureScrollableContent() {
+  await nextTick();
+
+  const container = scrollContainer.value;
+  if (!container) {
+    return;
+  }
+
+  let attempts = 0;
+  while (
+    hasMore.value
+    && !store.loading
+    && !isPaging.value
+    && !pagingError.value
+    && container.scrollHeight <= container.clientHeight + 24
+    && attempts < 10
+  ) {
+    attempts += 1;
+    await loadPage(currentPage.value + 1, true);
+    await nextTick();
+  }
 }
 
 function handleScroll() {
@@ -843,12 +872,13 @@ function handleShowFailures() {
   showImportFailures.value = true;
 }
 
-function handleViewLatestImported() {
+async function handleViewLatestImported() {
   const sourceKey = displayedSummarySourceKey.value;
   const importedCount = displayedSummary.value?.importedCount ?? 0;
   if (!sourceKey || importedCount <= 0) {
     return;
   }
+  await reloadGallery();
 
   latestImportedState.value = {
     sourceKey,
@@ -976,31 +1006,42 @@ async function handleBackToSearch() {
 
 <style scoped>
 .library-view {
-  padding: 1.25rem;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.12rem 0.18rem 0.22rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.28rem;
   background:
     radial-gradient(circle at top left, color-mix(in srgb, #fde7cf 42%, transparent), transparent 32%),
     linear-gradient(180deg, color-mix(in srgb, var(--ui-bg-surface-strong) 96%, #fffaf2), var(--ui-bg-app));
 }
 .page-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
+  padding: 0.14rem 0.06rem 0.02rem;
 }
 .page-head__copy {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.1rem;
 }
-.page-head__copy h2 { margin: 0; font-size: 1.4rem; }
+.page-head__copy h2 {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ui-text-primary);
+}
 .page-head__meta {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 .page-head__back {
@@ -1011,11 +1052,11 @@ async function handleBackToSearch() {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1.1rem 1.2rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: calc(var(--ui-radius-md) + 2px);
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+  gap: 0.75rem;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 18%, var(--ui-border-subtle));
+  border-radius: 0.95rem;
+  box-shadow: none;
 }
 .main-task-card--recovery {
   background: linear-gradient(135deg, color-mix(in srgb, #fff7e6 88%, white), color-mix(in srgb, #fff1cc 72%, white));
@@ -1035,7 +1076,7 @@ async function handleBackToSearch() {
 .main-task-card__copy {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
   min-width: 0;
 }
 .main-task-card__copy h3,
@@ -1044,11 +1085,11 @@ async function handleBackToSearch() {
   margin: 0;
 }
 .main-task-card__copy h3 {
-  font-size: 1.05rem;
-  line-height: 1.35;
+  font-size: 0.84rem;
+  line-height: 1.3;
 }
 .main-task-card__eyebrow {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #8a5a14;
@@ -1056,14 +1097,15 @@ async function handleBackToSearch() {
 .main-task-card__description,
 .main-task-card__copy p:not(.main-task-card__eyebrow) {
   color: var(--ui-text-secondary);
-  line-height: 1.5;
+  line-height: 1.4;
+  font-size: 0.76rem;
 }
 .main-task-card__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.8rem;
+  gap: 0.7rem;
   color: var(--ui-text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.78rem;
 }
 .main-task-card__stat {
   display: inline-flex;
@@ -1074,22 +1116,23 @@ async function handleBackToSearch() {
   font-weight: 700;
   background: color-mix(in srgb, #f2c98c 20%, transparent);
   border-radius: 999px;
-  padding: 0.05rem 0.5rem;
+  padding: 0.04rem 0.45rem;
 }
 .main-task-card__actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.625rem;
   flex-wrap: wrap;
   flex-shrink: 0;
 }
 .ui-button {
   font: inherit;
   font-weight: 600;
+  border-radius: 999px;
 }
 .ui-button--compact {
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 32px;
+  padding: 0 12px;
 }
 .ui-button--danger {
   background: color-mix(in srgb, #fff1f1 90%, white);
@@ -1116,17 +1159,18 @@ async function handleBackToSearch() {
   cursor: not-allowed;
 }
 .view-switch {
-  border: 1px solid #d9d9d9;
-  background: #fff;
-  color: #444;
+  border: 1px solid var(--ui-border-subtle);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
+  color: var(--ui-text-secondary);
   border-radius: 999px;
-  padding: 0.45rem 0.9rem;
+  padding: 0.34rem 0.72rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 .view-switch.active {
-  border-color: #111827;
-  background: #111827;
+  border-color: #1f2d4d;
+  background: #1f2d4d;
   color: #fff;
 }
 .main-task-card__failures {
@@ -1134,7 +1178,7 @@ async function handleBackToSearch() {
   padding-left: 1.1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
   flex: 1;
   min-width: 0;
 }
@@ -1147,10 +1191,12 @@ async function handleBackToSearch() {
 }
 .main-task-card__failure-name {
   font-weight: 600;
+  font-size: 0.78rem;
 }
 .main-task-card__failure-reason {
   color: var(--ui-text-secondary);
   line-height: 1.45;
+  font-size: 0.74rem;
 }
 .main-task-card--summary-expanded .main-task-card__actions {
   flex-direction: column;
@@ -1160,84 +1206,96 @@ async function handleBackToSearch() {
 }
 .usage-notice {
   margin: 0;
-  max-width: 560px;
-  color: #8a6a2f;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  text-align: right;
+  max-width: none;
+  color: var(--ui-text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  text-align: left;
 }
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 96%, #fff8ef);
+  gap: 0.28rem;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.library-workbench {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  padding: 0.14rem 0.06rem 0;
 }
 .toolbar__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 0.7rem;
   flex-wrap: wrap;
 }
-.toolbar-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.toolbar-actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
 .toolbar-lock-reason {
   margin: 0;
-  font-size: 0.84rem;
+  font-size: 0.74rem;
   color: #8a5a14;
 }
 .latest-import-position-tip {
-  padding: 0.75rem 1rem;
-  border-radius: var(--ui-radius-md);
+  padding: 0.52rem 0.74rem;
+  border-radius: 0.95rem;
   border: 1px solid color-mix(in srgb, #b7791f 28%, var(--ui-border-subtle));
   background: color-mix(in srgb, #fff7eb 88%, white);
   color: #8a5a14;
-  font-size: 0.9rem;
+  font-size: 0.76rem;
 }
 .advanced-capabilities__action {
   flex-shrink: 0;
 }
-.gallery-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--ui-radius-md);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 98%, #fffdf9);
-}
 .gallery-panel__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.32rem;
+  flex-wrap: wrap;
+  padding: 0.04rem 0 0;
+}
+.gallery-panel__title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
   flex-wrap: wrap;
 }
-.gallery-panel__view {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.selection-count { font-size: 0.875rem; color: #666; }
-.gallery-total { font-size: 0.95rem; color: #444; font-weight: 600; }
+.selection-count { font-size: 0.76rem; color: var(--ui-text-secondary); }
+.gallery-total { font-size: 0.8rem; color: var(--ui-text-primary); font-weight: 600; }
 .progress-bar { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: #646cff; transition: width 0.3s; }
 .gallery-scroll {
-  height: calc(100vh - 170px);
-  min-height: 320px;
+  flex: 1;
+  min-height: 240px;
   overflow-y: auto;
-  padding-right: 0.25rem;
+  padding: 0.18rem 0.18rem 0.24rem 0.02rem;
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 251, 245, 0.18)),
+    repeating-linear-gradient(
+      180deg,
+      transparent,
+      transparent 88px,
+      rgba(196, 171, 134, 0.035) 88px,
+      rgba(196, 171, 134, 0.035) 89px
+    );
+  scrollbar-gutter: stable;
 }
 .gallery-footer {
   display: flex;
   justify-content: center;
-  padding: 1rem 0 0.25rem;
+  padding: 0.75rem 0 0.125rem;
 }
 .gallery-feedback {
-  color: #666;
-  font-size: 0.9rem;
+  color: var(--ui-text-secondary);
+  font-size: 0.76rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1251,6 +1309,9 @@ async function handleBackToSearch() {
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.18);
 }
 @media (max-width: 799px) {
+  .library-view {
+    padding: 0.08rem 0.14rem 0.2rem;
+  }
   .page-head__meta {
     align-items: flex-start;
   }
@@ -1259,6 +1320,10 @@ async function handleBackToSearch() {
   .toolbar__row {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .gallery-panel__title-group {
+    align-items: flex-start;
+    gap: 0.32rem;
   }
   .main-task-card__actions {
     width: 100%;
@@ -1269,7 +1334,6 @@ async function handleBackToSearch() {
   .usage-notice {
     text-align: left;
   }
-  .gallery-scroll { height: calc(100vh - 210px); }
   .back-to-top { right: 1rem; bottom: 1rem; }
 }
 </style>
