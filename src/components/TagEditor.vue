@@ -1,135 +1,111 @@
 <template>
   <div class="tag-editor">
-    <section
-      v-for="group in groups"
-      :key="group.category"
-      class="tag-group"
-      :class="`tag-group--${group.category}`"
-    >
-      <header class="tag-group-header">
-        <div class="tag-group-title">
-          <span class="tag-group-dot" />
-          {{ group.label }}
+    <div class="tag-list">
+      <template
+        v-for="tag in tags"
+        :key="tag.text"
+      >
+        <div
+          v-if="editingTextFor !== tag.text"
+          class="tag-chip"
+        >
+          <button
+            class="tag-chip-text"
+            @click="startEditing(tag)"
+          >
+            {{ tag.text }}
+          </button>
+          <button
+            class="tag-chip-remove"
+            aria-label="删除标签"
+            @click="removeTag(tag)"
+          >
+            ×
+          </button>
         </div>
-      </header>
-
-      <div class="tag-group-body">
-        <template v-for="tag in tagsByCategory[group.category]" :key="`${group.category}-${tag.text}`">
-          <div
-            v-if="editingKey !== tagKey(tag)"
-            class="tag-chip"
-            :class="{ auto: tag.isAuto }"
-          >
-            <button class="tag-chip-text" @click="startEditing(tag)">
-              {{ tag.text }}
-            </button>
-            <span v-if="tag.isAuto" class="tag-chip-badge">
-              自动
-            </span>
-            <button class="tag-chip-remove" @click="removeTag(tag)">
-              ×
-            </button>
-          </div>
-
-          <div
-            v-else
-            class="tag-chip tag-chip--editing"
-          >
-            <input
-              ref="editInputRef"
-              v-model="editingText"
-              class="tag-inline-input"
-              @keydown.enter.prevent="confirmEditing"
-              @keydown.esc.prevent="cancelEditing"
-              @blur="confirmEditing"
-            >
-          </div>
-        </template>
 
         <div
-          v-if="addingCategory === group.category"
-          class="tag-chip tag-chip--adding"
+          v-else
+          class="tag-chip tag-chip--editing"
         >
           <input
-            ref="addInputRef"
-            v-model="addInput"
+            ref="editInputRef"
+            v-model="editingText"
             class="tag-inline-input"
-            :placeholder="`添加${group.label}标签`"
-            @keydown.enter.prevent="confirmAdd"
-            @keydown.esc.prevent="cancelAdd"
-            @blur="confirmAdd"
+            @keydown.enter.prevent="confirmEditing"
+            @keydown.esc.prevent="cancelEditing"
+            @blur="confirmEditing"
           >
         </div>
+      </template>
 
-        <button
-          v-else
-          class="tag-add-btn"
-          @click="startAdd(group.category)"
+      <div
+        v-if="adding"
+        class="tag-chip tag-chip--adding"
+      >
+        <input
+          ref="addInputRef"
+          v-model="addInput"
+          class="tag-inline-input"
+          placeholder="例如：猫猫疑惑、老板阴阳怪气"
+          @keydown.enter.prevent="confirmAdd"
+          @keydown.esc.prevent="cancelAdd"
+          @blur="confirmAdd"
         >
-          + 添加
-        </button>
-
-        <div
-          v-if="tagsByCategory[group.category].length === 0 && addingCategory !== group.category"
-          class="tag-empty"
-        >
-          暂无标签
-        </div>
       </div>
-    </section>
+
+      <button
+        v-else
+        class="tag-add-btn"
+        @click="startAdd"
+      >
+        + 添加标签
+      </button>
+
+      <div
+        v-if="tags.length === 0 && !adding"
+        class="tag-empty"
+      >
+        还没有标签
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
-import type { StructuredTag, TagCategory } from "@/types/tags";
+import type { StructuredTag } from "@/types/tags";
 import { createManualTag } from "@/types/tags";
 
 const props = defineProps<{ tags: StructuredTag[] }>();
 const emit = defineEmits<{ "update:tags": [tags: StructuredTag[]] }>();
 
-const groups: Array<{ category: TagCategory; label: string }> = [
-  { category: "custom", label: "自定义" },
-  { category: "meme", label: "梗" },
-  { category: "person", label: "人物" },
-  { category: "source", label: "出处" },
-];
-
 const addInputRef = ref<HTMLInputElement | null>(null);
 const editInputRef = ref<HTMLInputElement | null>(null);
 
-const addingCategory = ref<TagCategory | null>(null);
+const adding = ref(false);
 const addInput = ref("");
 
-const editingKey = ref<string | null>(null);
+const editingTextFor = ref<string | null>(null);
 const editingText = ref("");
 
-const tagsByCategory = computed<Record<TagCategory, StructuredTag[]>>(() => ({
-  custom: props.tags.filter((tag) => tag.category === "custom"),
-  meme: props.tags.filter((tag) => tag.category === "meme"),
-  person: props.tags.filter((tag) => tag.category === "person"),
-  source: props.tags.filter((tag) => tag.category === "source"),
-}));
-
-function tagKey(tag: StructuredTag) {
-  return `${tag.category}:${tag.text}`;
-}
+const normalizedTagTexts = computed(() => new Set(props.tags.map((tag) => tag.text.trim()).filter(Boolean)));
 
 function replaceTag(target: StructuredTag, next: StructuredTag) {
   emit("update:tags", props.tags.map((tag) => (tag === target ? next : tag)));
 }
 
 function removeTag(target: StructuredTag) {
-  if (editingKey.value === tagKey(target)) {
-    editingKey.value = null;
+  if (editingTextFor.value === target.text) {
+    editingTextFor.value = null;
     editingText.value = "";
   }
   emit("update:tags", props.tags.filter((tag) => tag !== target));
 }
 
-function startAdd(category: TagCategory) {
+function startAdd() {
   flushPendingInput();
-  addingCategory.value = category;
+  adding.value = true;
   void nextTick(() => {
     if (addInputRef.value && typeof addInputRef.value.focus === "function") {
       addInputRef.value.focus();
@@ -139,37 +115,33 @@ function startAdd(category: TagCategory) {
 
 function confirmAdd() {
   const text = addInput.value.trim();
-  if (!addingCategory.value) {
+  if (!adding.value) {
     addInput.value = "";
     return;
   }
   if (!text) {
-    addingCategory.value = null;
+    adding.value = false;
     addInput.value = "";
     return;
   }
-  if (props.tags.some((tag) => tag.text === text)) {
+  if (normalizedTagTexts.value.has(text)) {
     addInput.value = "";
-    addingCategory.value = null;
+    adding.value = false;
     return;
   }
-  const nextTag = {
-    ...createManualTag(text),
-    category: addingCategory.value,
-  };
-  emit("update:tags", [...props.tags, nextTag]);
+  emit("update:tags", [...props.tags, createManualTag(text)]);
   addInput.value = "";
-  addingCategory.value = null;
+  adding.value = false;
 }
 
 function cancelAdd() {
   addInput.value = "";
-  addingCategory.value = null;
+  adding.value = false;
 }
 
 function startEditing(tag: StructuredTag) {
   flushPendingInput();
-  editingKey.value = tagKey(tag);
+  editingTextFor.value = tag.text;
   editingText.value = tag.text;
   void nextTick(() => {
     if (editInputRef.value && typeof editInputRef.value.focus === "function") {
@@ -179,36 +151,36 @@ function startEditing(tag: StructuredTag) {
 }
 
 function confirmEditing() {
-  const key = editingKey.value;
-  if (!key) {
+  const originalText = editingTextFor.value;
+  if (!originalText) {
     return;
   }
   const nextText = editingText.value.trim();
-  const target = props.tags.find((tag) => tagKey(tag) === key);
+  const target = props.tags.find((tag) => tag.text === originalText);
   if (!target) {
     cancelEditing();
     return;
   }
-  if (!nextText || (nextText !== target.text && props.tags.some((tag) => tag.text === nextText))) {
+  if (!nextText || (nextText !== target.text && normalizedTagTexts.value.has(nextText))) {
     editingText.value = target.text;
-    editingKey.value = null;
+    editingTextFor.value = null;
     return;
   }
-  replaceTag(target, { ...target, text: nextText });
-  editingKey.value = null;
+  replaceTag(target, { ...createManualTag(nextText), category: target.category });
+  editingTextFor.value = null;
   editingText.value = "";
 }
 
 function cancelEditing() {
-  editingKey.value = null;
+  editingTextFor.value = null;
   editingText.value = "";
 }
 
 function flushPendingInput() {
-  if (editingKey.value) {
+  if (editingTextFor.value) {
     confirmEditing();
   }
-  if (addingCategory.value && addInput.value.trim()) {
+  if (adding.value && addInput.value.trim()) {
     confirmAdd();
   }
 }
@@ -222,67 +194,10 @@ defineExpose({
 .tag-editor {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.65rem;
 }
 
-.tag-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.85rem 0.9rem;
-  border-radius: 14px;
-  border: 1px solid #e7e7e7;
-  background: linear-gradient(180deg, #fff, #fbfbfb);
-}
-
-.tag-group--custom {
-  border-color: #dbe0ea;
-  background: linear-gradient(180deg, #f9fbff, #f3f6fb);
-}
-
-.tag-group--meme {
-  border-color: #f1d1aa;
-  background: linear-gradient(180deg, #fff8ef, #fff3e2);
-}
-
-.tag-group--person {
-  border-color: #c7e0cf;
-  background: linear-gradient(180deg, #f3fbf5, #eaf7ee);
-}
-
-.tag-group--source {
-  border-color: #e4c6cf;
-  background: linear-gradient(180deg, #fff7f8, #fff0f2);
-}
-
-.tag-group-header {
-  display: flex;
-  align-items: center;
-}
-
-.tag-group-title {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #334155;
-}
-
-.tag-group-dot {
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.65;
-}
-
-.tag-group--custom .tag-group-title { color: #556277; }
-.tag-group--meme .tag-group-title { color: #a55a16; }
-.tag-group--person .tag-group-title { color: #2f7a48; }
-.tag-group--source .tag-group-title { color: #a04059; }
-
-.tag-group-body {
+.tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
@@ -300,12 +215,8 @@ defineExpose({
 .tag-chip {
   gap: 0.4rem;
   padding: 0.2rem 0.2rem 0.2rem 0.7rem;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.86);
-}
-
-.tag-chip.auto {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+  border: 1px solid #d6c8b4;
+  background: #fff9ef;
 }
 
 .tag-chip-text,
@@ -334,20 +245,11 @@ defineExpose({
   color: #111827;
 }
 
-.tag-chip-badge {
-  font-size: 0.7rem;
-  line-height: 1;
-  color: #476355;
-  background: rgba(90, 132, 104, 0.12);
-  padding: 0.25rem 0.45rem;
-  border-radius: 999px;
-}
-
 .tag-add-btn {
   padding: 0 0.9rem;
-  border: 1px dashed rgba(0, 0, 0, 0.18);
+  border: 1px dashed #c7b291;
   background: rgba(255, 255, 255, 0.6);
-  color: #475569;
+  color: #6c4a1b;
   cursor: pointer;
   font-size: 0.88rem;
 }

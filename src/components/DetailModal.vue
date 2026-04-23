@@ -120,14 +120,14 @@
                   >{{ displayFilePath }}</span>
                 </div>
                 <div
-                  v-if="displayTags.length"
+                  v-if="manualDisplayTags.length"
                   class="missing-clue"
                 >
                   <span class="missing-clue__label">已有标签</span>
                   <div class="missing-tag-list">
                     <span
-                      v-for="tag in displayTags"
-                      :key="`${tag.category}:${tag.text}`"
+                      v-for="tag in manualDisplayTags"
+                      :key="tag.text"
                       class="missing-tag"
                     >
                       {{ tag.text }}
@@ -172,7 +172,7 @@
                   标签
                 </div>
                 <div class="tags-hint">
-                  按分类分组管理，点击各行“+ 添加”可直接加入对应类型。
+                  添加你以后会用来搜索这张图的词
                 </div>
               </div>
             </div>
@@ -226,6 +226,7 @@ const hasNext = computed(() => currentIndex.value < props.images.length - 1);
 
 const meta = ref<ImageMeta | null>(null);
 const editTags = ref<StructuredTag[]>([]);
+const hiddenTags = ref<StructuredTag[]>([]);
 const tagEditorRef = ref<{ flushPendingInput: () => void } | null>(null);
 const saving = ref(false);
 const relocating = ref(false);
@@ -238,7 +239,7 @@ const isGif = computed(() => {
 // >10MB 大文件 GIF 默认不播放
 const isLargeGif = computed(() => isGif.value && (meta.value?.fileSize ?? 0) > 10 * 1024 * 1024);
 const gifPlaying = ref(false);
-const persistedTagSnapshot = computed(() => snapshotTags(meta.value?.tags ?? currentImage.value?.tags ?? []));
+const persistedTagSnapshot = computed(() => snapshotTags(manualTagsFrom(meta.value?.tags ?? currentImage.value?.tags ?? [])));
 const editingTagSnapshot = computed(() => snapshotTags(editTags.value));
 const hasUnsavedChanges = computed(() => editingTagSnapshot.value !== persistedTagSnapshot.value);
 const displayFilePath = computed(() => meta.value?.filePath ?? currentImage.value?.filePath ?? "—");
@@ -251,7 +252,7 @@ const displayFileName = computed(() => {
   const normalizedPath = path.replace(/\\/g, "/");
   return normalizedPath.split("/").pop() || normalizedPath;
 });
-const displayTags = computed(() => meta.value?.tags ?? currentImage.value?.tags ?? []);
+const manualDisplayTags = computed(() => manualTagsFrom(meta.value?.tags ?? currentImage.value?.tags ?? []));
 const imagePreviewSrc = computed(() => {
   if (isMissing.value) {
     return convertFileSrc(meta.value?.thumbnailPath || currentImage.value?.thumbnailPath || "");
@@ -279,11 +280,11 @@ async function loadMeta(id: string) {
   meta.value = null;
   try {
     meta.value = await invoke<ImageMeta | null>("get_image_meta", { id });
-    editTags.value = [...(meta.value?.tags ?? currentImage.value?.tags ?? [])];
+    setEditableTags(meta.value?.tags ?? currentImage.value?.tags ?? []);
     // GIF 自动播放（小文件）
     gifPlaying.value = isGif.value && !isLargeGif.value;
   } catch {
-    editTags.value = [...(currentImage.value?.tags ?? [])];
+    setEditableTags(currentImage.value?.tags ?? []);
   }
 }
 
@@ -303,13 +304,22 @@ function snapshotTags(tags: StructuredTag[]) {
     [...tags]
       .map((tag) => ({
         text: tag.text.trim(),
-        category: tag.category,
-        isAuto: tag.isAuto,
-        sourceStrategy: tag.sourceStrategy,
-        confidence: tag.confidence,
       }))
-      .sort((a, b) => `${a.category}:${a.text}`.localeCompare(`${b.category}:${b.text}`)),
+      .sort((a, b) => a.text.localeCompare(b.text)),
   );
+}
+
+function isManualUserTag(tag: StructuredTag) {
+  return !tag.isAuto && tag.sourceStrategy === "manual";
+}
+
+function manualTagsFrom(tags: StructuredTag[]) {
+  return tags.filter(isManualUserTag);
+}
+
+function setEditableTags(tags: StructuredTag[]) {
+  editTags.value = manualTagsFrom(tags);
+  hiddenTags.value = tags.filter((tag) => !isManualUserTag(tag));
 }
 
 async function saveTags() {
@@ -317,15 +327,17 @@ async function saveTags() {
   try {
     tagEditorRef.value?.flushPendingInput?.();
     await nextTick();
-    await invoke("update_tags", { imageId: currentImage.value.id, tags: editTags.value });
+    const nextTags = [...hiddenTags.value, ...editTags.value];
+    await invoke("update_tags", { imageId: currentImage.value.id, tags: nextTags });
     const refreshedMeta = await invoke<ImageMeta | null>("get_image_meta", { id: currentImage.value.id });
     if (refreshedMeta) {
       meta.value = refreshedMeta;
-      editTags.value = [...refreshedMeta.tags];
+      setEditableTags(refreshedMeta.tags);
       if (currentImage.value) currentImage.value.tags = [...refreshedMeta.tags];
     } else {
-      if (meta.value) meta.value.tags = [...editTags.value];
-      if (currentImage.value) currentImage.value.tags = [...editTags.value];
+      if (meta.value) meta.value.tags = [...nextTags];
+      if (currentImage.value) currentImage.value.tags = [...nextTags];
+      setEditableTags(nextTags);
     }
     showToast("标签已保存", "info", 1500);
   } catch (error) {

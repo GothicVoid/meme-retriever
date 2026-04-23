@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import DetailModal from "@/components/DetailModal.vue";
 import type { SearchResult } from "@/stores/search";
-import { createManualTag } from "@/types/tags";
+import { createManualTag, type StructuredTag } from "@/types/tags";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -61,6 +61,14 @@ const mockMeta = {
   addedAt: 1700000000,
   useCount: 3,
   tags: [createManualTag("tag0")],
+};
+
+const autoTag: StructuredTag = {
+  text: "自动猫",
+  category: "meme",
+  isAuto: true,
+  sourceStrategy: "clip_text",
+  confidence: 0.6,
 };
 
 describe("DetailModal — 渲染", () => {
@@ -212,7 +220,27 @@ describe("DetailModal — 标签保存", () => {
     expect(wrapper.find(".save-btn").exists()).toBe(true);
   });
 
-  it("点击保存标签调用 update_tags", async () => {
+  it("详情页只把用户标签传给标签编辑器", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      ...mockMeta,
+      tags: [createManualTag("tag0"), autoTag],
+    });
+    const images = makeImages();
+    const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("标签");
+    expect(wrapper.text()).toContain("添加你以后会用来搜索这张图的词");
+    expect(wrapper.text()).toContain("tag0");
+    expect(wrapper.text()).not.toContain("自动猫");
+    expect(wrapper.text()).not.toContain("按分类分组管理");
+  });
+
+  it("点击保存标签调用 update_tags，并保留隐藏的内部标签", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      ...mockMeta,
+      tags: [createManualTag("tag0"), autoTag],
+    });
     const images = makeImages();
     const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
     await flushPromises();
@@ -222,7 +250,7 @@ describe("DetailModal — 标签保存", () => {
     await flushPromises();
     expect(mockInvoke).toHaveBeenCalledWith("update_tags", {
       imageId: "img-0",
-      tags: expect.any(Array),
+      tags: [autoTag, createManualTag("tag0"), createManualTag("新增")],
     });
   });
 });
@@ -290,13 +318,13 @@ describe("DetailModal — 文件丢失", () => {
       fileStatus: "missing",
       filePath: "/archive/memes/img-0.jpg",
       fileName: "img-0.jpg",
-      tags: [createManualTag("tag0"), createManualTag("reaction")],
+      tags: [createManualTag("tag0"), createManualTag("reaction"), autoTag],
     });
     const images = [{
       ...makeImages(1)[0],
       fileStatus: "missing",
       filePath: "/archive/memes/img-0.jpg",
-      tags: [createManualTag("tag0"), createManualTag("reaction")],
+      tags: [createManualTag("tag0"), createManualTag("reaction"), autoTag],
     }];
     const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
     await flushPromises();
@@ -308,6 +336,7 @@ describe("DetailModal — 文件丢失", () => {
     expect(wrapper.text()).toContain("/archive/memes/img-0.jpg");
     expect(wrapper.text()).toContain("已有标签");
     expect(wrapper.text()).toContain("reaction");
+    expect(wrapper.text()).not.toContain("自动猫");
   });
 
   it("文件已丢失时显示删除按钮并触发 delete 事件", async () => {

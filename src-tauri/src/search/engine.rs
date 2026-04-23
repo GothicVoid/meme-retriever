@@ -119,6 +119,7 @@ enum MainRoute {
     Ocr,
     Semantic,
     PrivateRole,
+    Tag,
 }
 
 impl MainRoute {
@@ -127,6 +128,7 @@ impl MainRoute {
             MainRoute::Ocr => "ocr",
             MainRoute::Semantic => "semantic",
             MainRoute::PrivateRole => "privateRole",
+            MainRoute::Tag => "tag",
         }
     }
 }
@@ -412,10 +414,17 @@ impl SearchEngine {
             } else {
                 ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
             };
-            let (main_score, aux_score) = match main_route {
+            let effective_route = if s_kw >= 0.8 && s_kw >= text_score && s_kw >= s_role {
+                MainRoute::Tag
+            } else {
+                main_route
+            };
+
+            let (main_score, aux_score) = match effective_route {
                 MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
                 MainRoute::Semantic => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
                 MainRoute::PrivateRole => (0.7 * s_role, 0.15 * s_clip + 0.1 * text_score + 0.05 * s_kw),
+                MainRoute::Tag => (0.75 * s_kw, 0.1 * s_clip + 0.1 * text_score),
             };
             let relevance_score = main_score + aux_score;
             let popularity_boost = 0.1 * popularity * popularity_gate(relevance_score);
@@ -428,7 +437,7 @@ impl SearchEngine {
             };
 
             let dbg = ScoreDebugInfo {
-                main_route: main_route.as_str().to_string(),
+                main_route: effective_route.as_str().to_string(),
                 main_score,
                 aux_score,
                 sem_score: s_clip,
@@ -1007,9 +1016,52 @@ mod tests {
 
         let engine = make_engine(pool).await;
         let results = engine.search("测试人物", 10, 0.3, 0.4, 0.3).await.unwrap();
+        let result = results
+            .iter()
+            .find(|result| result.id == "tag-only")
+            .expect("manual tag-only match should be searchable");
         assert!(
-            results.iter().any(|result| result.id == "tag-only"),
-            "manual tag-only match should be searchable"
+            result.score >= 0.75,
+            "exact manual tag match should be a visible high-relevance result, got {}",
+            result.score
+        );
+        assert_eq!(
+            result.debug_info.as_ref().map(|debug| debug.main_route.as_str()),
+            Some("tag")
+        );
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_manual_partial_tag_match_is_medium_relevance(pool: SqlitePool) {
+        insert_test_image(&pool, "tag-partial", "", vec![0.0; 512]).await;
+        repo::insert_tags(
+            &pool,
+            "tag-partial",
+            &[repo::TagRecord {
+                tag_text: "让我看看".into(),
+                category: repo::TagCategory::Custom,
+                is_auto: false,
+                source_strategy: repo::TagSourceStrategy::Manual,
+                confidence: 1.0,
+            }],
+        )
+        .await
+        .unwrap();
+
+        let engine = make_engine(pool).await;
+        let results = engine.search("让我看", 10, 0.3, 0.4, 0.3).await.unwrap();
+        let result = results
+            .iter()
+            .find(|result| result.id == "tag-partial")
+            .expect("manual partial tag match should be searchable");
+        assert!(
+            result.score >= 0.55,
+            "partial manual tag match should be visible before expanding low results, got {}",
+            result.score
+        );
+        assert_eq!(
+            result.debug_info.as_ref().map(|debug| debug.main_route.as_str()),
+            Some("tag")
         );
     }
 
