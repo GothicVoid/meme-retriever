@@ -134,18 +134,18 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 16px;
   background: rgba(31, 35, 41, 0.52);
 }
 
 .quick-preview {
   position: relative;
-  width: min(680px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--ui-border-subtle);
   border-radius: var(--ui-radius-lg);
   background: color-mix(in srgb, var(--ui-bg-surface-strong) 96%, white);
@@ -169,7 +169,8 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 280px;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
   border-radius: var(--ui-radius-md);
   background: linear-gradient(180deg, #ece7dd, #e5ded0);
@@ -177,7 +178,7 @@ defineEmits<{
 
 .quick-preview__image {
   max-width: 100%;
-  max-height: 60vh;
+  max-height: min(56vh, 100%);
   object-fit: contain;
 }
 
@@ -226,8 +227,8 @@ defineEmits<{
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border: none;
   border-radius: 999px;
   background: rgba(31, 35, 41, 0.68);
@@ -241,22 +242,23 @@ defineEmits<{
 }
 
 .quick-preview__nav--prev {
-  left: 12px;
+  left: 10px;
 }
 
 .quick-preview__nav--next {
-  right: 12px;
+  right: 10px;
 }
 
 .quick-preview__actions {
   display: flex;
-  gap: 12px;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
 }
 
 .quick-preview__action {
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 14px;
   border: 1px solid var(--ui-border-subtle);
   border-radius: 999px;
   background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
@@ -273,6 +275,70 @@ defineEmits<{
   margin: 0;
   font-size: 0.82rem;
   color: var(--ui-text-secondary);
-  text-align: right;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .quick-preview-backdrop {
+    padding: 10px;
+  }
+
+  .quick-preview {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    gap: 10px;
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .quick-preview__close {
+    top: 6px;
+    right: 6px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .quick-preview__media {
+    border-radius: 16px;
+  }
+
+  .quick-preview__image {
+    max-height: min(50vh, 100%);
+  }
+
+  .quick-preview__nav {
+    width: 30px;
+    height: 30px;
+  }
+
+  .quick-preview__nav--prev {
+    left: 8px;
+  }
+
+  .quick-preview__nav--next {
+    right: 8px;
+  }
+
+  .quick-preview__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-preview__action {
+    min-height: 38px;
+    padding: 0 12px;
+  }
+
+  .quick-preview__missing {
+    padding: 1.25rem 1rem;
+  }
+
+  .quick-preview__missing-title {
+    font-size: 1rem;
+  }
+
+  .quick-preview__shortcuts {
+    font-size: 0.76rem;
+  }
 }
 </style>

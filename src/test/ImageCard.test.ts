@@ -90,6 +90,31 @@ describe("ImageCard", () => {
     vi.useRealTimers();
   });
 
+  it("鼠标从卡片移入轻预览时不会因为间隙立即收起", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false },
+      attachTo: document.body,
+    });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(true);
+
+    await wrapper.get(".image-card-shell").trigger("mouseleave");
+    await vi.advanceTimersByTimeAsync(60);
+    await wrapper.get('[data-testid="hover-preview"]').trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(120);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(true);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("渲染缩略图", () => {
     const wrapper = mount(ImageCard, { props: { image: mockImage, showDebugInfo: false } });
     const img = wrapper.find("img");

@@ -109,6 +109,8 @@
       class="hover-preview ui-floating-panel"
       :style="hoverPreviewStyle"
       data-testid="hover-preview"
+      @mouseenter="handleHoverPreviewEnter"
+      @mouseleave="handleHoverPreviewLeave"
     >
       <img
         v-if="hoverPreviewVisibleImage"
@@ -209,6 +211,7 @@ const hoverPreviewRef = ref<HTMLElement | null>(null);
 const hoverPreviewX = ref(0);
 const hoverPreviewY = ref(0);
 let hoverPreviewTimer: number | null = null;
+let hoverPreviewCloseTimer: number | null = null;
 const previewState = ref<"normal" | "load-failed" | "gif-damaged">("normal");
 const isMissingRecord = computed(() => props.image.fileStatus === "missing");
 const thumbnailSrc = computed(() => convertFileSrc(props.image.thumbnailPath || props.image.filePath));
@@ -382,8 +385,24 @@ function clearHoverPreviewTimer() {
   }
 }
 
+function clearHoverPreviewCloseTimer() {
+  if (hoverPreviewCloseTimer !== null) {
+    window.clearTimeout(hoverPreviewCloseTimer);
+    hoverPreviewCloseTimer = null;
+  }
+}
+
+function scheduleHoverPreviewClose() {
+  clearHoverPreviewCloseTimer();
+  hoverPreviewCloseTimer = window.setTimeout(() => {
+    hoverPreviewVisible.value = false;
+    hoverPreviewCloseTimer = null;
+  }, 120);
+}
+
 function handleMouseEnter() {
   clearHoverPreviewTimer();
+  clearHoverPreviewCloseTimer();
   hoverPreviewTimer = window.setTimeout(() => {
     hoverPreviewVisible.value = true;
     void nextTick(() => updateHoverPreviewPosition());
@@ -393,7 +412,15 @@ function handleMouseEnter() {
 
 function handleMouseLeave() {
   clearHoverPreviewTimer();
-  hoverPreviewVisible.value = false;
+  scheduleHoverPreviewClose();
+}
+
+function handleHoverPreviewEnter() {
+  clearHoverPreviewCloseTimer();
+}
+
+function handleHoverPreviewLeave() {
+  scheduleHoverPreviewClose();
 }
 
 function handleDelete() {
@@ -441,6 +468,7 @@ onMounted(() => document.addEventListener("click", closeMenu));
 onMounted(() => document.addEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu));
 onUnmounted(() => {
   clearHoverPreviewTimer();
+  clearHoverPreviewCloseTimer();
   document.removeEventListener("click", closeMenu);
   document.removeEventListener(CLOSE_CONTEXT_MENU_EVENT, closeMenu);
 });
@@ -482,6 +510,15 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.hover-preview::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -10px;
+  height: 10px;
 }
 
 .hover-preview__image,
