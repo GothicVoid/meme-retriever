@@ -66,7 +66,9 @@ describe("LibraryView 高级能力入口", () => {
 
     const { wrapper } = await mountLibraryView();
 
-    expect(wrapper.text()).toContain("角色维护");
+    expect(wrapper.text()).toContain("打开角色维护");
+    expect(wrapper.text()).toContain("搜不到角色时，可补几张示例图帮助识别。");
+    expect(wrapper.find("[data-section='private-role-library-entry']").exists()).toBe(true);
     expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(true);
   });
 
@@ -78,7 +80,8 @@ describe("LibraryView 高级能力入口", () => {
 
     const { wrapper } = await mountLibraryView();
 
-    expect(wrapper.text()).toContain("角色维护");
+    expect(wrapper.text()).toContain("打开角色维护");
+    expect(wrapper.text()).toContain("搜不到角色时，可补几张示例图帮助识别。");
     expect(wrapper.find("[data-action='open-private-role-library']").exists()).toBe(true);
   });
 

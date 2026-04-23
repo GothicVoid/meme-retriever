@@ -289,15 +289,6 @@
               </button>
             </template>
           </div>
-          <button
-            v-if="showAdvancedCapabilities"
-            type="button"
-            class="advanced-capabilities__action ui-button ui-button--secondary ui-button--compact"
-            data-action="open-private-role-library"
-            @click="openPrivateRoleLibrary"
-          >
-            角色维护
-          </button>
         </div>
         <p
           v-if="managementActionsDisabled"
@@ -324,6 +315,23 @@
           <p class="usage-notice">
             图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
           </p>
+        </div>
+        <div
+          v-if="showAdvancedCapabilities"
+          class="advanced-capabilities"
+          data-section="private-role-library-entry"
+        >
+          <p class="advanced-capabilities__description">
+            搜不到角色时，可补几张示例图帮助识别。
+          </p>
+          <button
+            type="button"
+            class="advanced-capabilities__action ui-button ui-button--text"
+            data-action="open-private-role-library"
+            @click="openPrivateRoleLibrary"
+          >
+            打开角色维护
+          </button>
         </div>
       </div>
       <div
@@ -1237,6 +1245,19 @@ async function handleBackToSearch() {
   flex-wrap: wrap;
 }
 .toolbar-actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.advanced-capabilities {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.18rem;
+  flex-wrap: wrap;
+}
+.advanced-capabilities__description {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--ui-text-secondary);
+}
 .toolbar-lock-reason {
   margin: 0;
   font-size: 0.74rem;
@@ -1252,10 +1273,12 @@ async function handleBackToSearch() {
 }
 .advanced-capabilities__action {
   flex-shrink: 0;
+  min-height: auto;
+  padding: 0;
 }
 .gallery-panel__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.32rem;
   flex-wrap: wrap;
@@ -1263,7 +1286,7 @@ async function handleBackToSearch() {
 }
 .gallery-panel__title-group {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.55rem;
   flex-wrap: wrap;
 }
@@ -1320,6 +1343,11 @@ async function handleBackToSearch() {
   .toolbar__row {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .advanced-capabilities {
+    width: 100%;
+    justify-content: flex-start;
+    align-items: flex-start;
   }
   .gallery-panel__title-group {
     align-items: flex-start;
