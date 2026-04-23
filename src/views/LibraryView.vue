@@ -419,6 +419,7 @@ import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
 import { useSettingsStore } from "@/stores/settings";
+import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
@@ -961,6 +962,8 @@ async function openPrivateRoleLibrary() {
 
 async function handleBackToSearch() {
   settingsStore.currentWindowMode = "sidebar";
+  await saveWindowPreferences("sidebar");
+  await applyWindowLayout("sidebar");
 
   if (router) {
     await router.push("/");

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
+import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "@/stores/settings";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -110,5 +111,11 @@ describe("LibraryView 高级能力入口", () => {
 
     expect(router.currentRoute.value.path).toBe("/");
     expect(settingsStore.currentWindowMode).toBe("sidebar");
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("save_window_preferences", {
+      mode: "sidebar",
+    });
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("apply_window_layout", {
+      mode: "sidebar",
+    });
   });
 });

@@ -341,7 +341,7 @@ pub fn update_window_snapshot_in_dir(
     save_window_preferences_to_dir(app_data_dir, &prefs)
 }
 
-fn save_window_mode_to_dir(app_data_dir: &Path, mode: &str) -> Result<(), String> {
+pub fn save_window_mode_to_dir(app_data_dir: &Path, mode: &str) -> Result<(), String> {
     let mut prefs = load_window_preferences_from_dir(app_data_dir);
     prefs.mode = mode.to_string();
     save_window_preferences_to_dir(app_data_dir, &prefs)
@@ -360,8 +360,8 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
 
     if mode == "sidebar" {
         window.unmaximize().ok();
-        window.set_maximizable(false).map_err(|e| e.to_string())?;
     } else {
+        window.set_max_size::<Size>(None).map_err(|e| e.to_string())?;
         window.set_maximizable(true).map_err(|e| e.to_string())?;
     }
 
@@ -378,6 +378,12 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     window
         .set_min_size(Some(Size::Logical(LogicalSize::new(min_width, min_height))))
         .map_err(|e| e.to_string())?;
+    if mode == "sidebar" {
+        window
+            .set_max_size(Some(Size::Logical(LogicalSize::new(460.0, 860.0))))
+            .map_err(|e| e.to_string())?;
+        window.set_maximizable(false).map_err(|e| e.to_string())?;
+    }
     window
         .set_size(Size::Logical(LogicalSize::new(width, height)))
         .map_err(|e| e.to_string())?;

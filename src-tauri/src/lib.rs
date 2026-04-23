@@ -51,11 +51,22 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 let prefs = commands::load_window_preferences_from_dir(&app_data);
-                commands::apply_window_layout_to_window(&window, &prefs.mode, &prefs)?;
+                commands::save_window_mode_to_dir(&app_data, "sidebar")?;
+                commands::apply_window_layout_to_window(&window, "sidebar", &prefs)?;
 
                 let app_data_for_events = app_data.clone();
                 let event_window = window.clone();
                 window.on_window_event(move |event| {
+                    if matches!(event, WindowEvent::Focused(true)) {
+                        let prefs = commands::load_window_preferences_from_dir(&app_data_for_events);
+                        let _ = commands::apply_window_layout_to_window(
+                            &event_window,
+                            &prefs.mode,
+                            &prefs,
+                        );
+                        return;
+                    }
+
                     let snapshot = match event {
                         WindowEvent::Moved(position) => Some(commands::WindowSnapshot {
                             x: position.x as f64,

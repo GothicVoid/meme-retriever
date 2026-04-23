@@ -79,10 +79,8 @@ watch(
   [effectiveWindowMode, () => route.fullPath],
   async ([mode]) => {
     await nextTick();
-    await Promise.all([
-      applyWindowLayout(mode),
-      saveWindowPreferences(mode),
-    ]);
+    await saveWindowPreferences(mode);
+    await applyWindowLayout(mode);
   },
   { immediate: true }
 );

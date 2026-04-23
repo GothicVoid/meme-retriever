@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
 import { invoke } from "@tauri-apps/api/core";
 import App from "@/App.vue";
+import { useSettingsStore } from "@/stores/settings";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
@@ -79,6 +80,40 @@ describe("App 工作台壳层", () => {
     expect(mockInvoke).toHaveBeenCalledWith("apply_window_layout", {
       mode: "sidebar",
     });
+  });
+
+  it("从图库返回首页时先保存 sidebar 模式再应用窗口布局", async () => {
+    const router = createTestRouter();
+    await router.push("/library");
+    await router.isReady();
+
+    mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    const settings = useSettingsStore();
+    settings.currentWindowMode = "sidebar";
+    await router.push("/");
+    await flushPromises();
+
+    const saveCallIndex = mockInvoke.mock.calls.findIndex(
+      ([cmd, payload]) =>
+        cmd === "save_window_preferences" &&
+        (payload as { mode?: string } | undefined)?.mode === "sidebar"
+    );
+    const applyCallIndex = mockInvoke.mock.calls.findIndex(
+      ([cmd, payload]) =>
+        cmd === "apply_window_layout" &&
+        (payload as { mode?: string } | undefined)?.mode === "sidebar"
+    );
+
+    expect(saveCallIndex).toBeGreaterThanOrEqual(0);
+    expect(applyCallIndex).toBeGreaterThanOrEqual(0);
+    expect(saveCallIndex).toBeLessThan(applyCallIndex);
   });
 
   it("启动时存在 3 条及以上未完成入库任务时显示恢复对话框", async () => {
