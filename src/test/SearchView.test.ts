@@ -1048,7 +1048,8 @@ describe("SearchView", () => {
 
     expect(wrapper.text()).toContain("原文件已丢失");
     expect(wrapper.text()).toContain("可查看详情重新定位，或删除这条记录。");
-    expect(wrapper.find(".quick-preview__image").exists()).toBe(false);
+    expect(wrapper.find(".quick-preview__image").exists()).toBe(true);
+    expect(wrapper.find(".quick-preview__image").attributes("src")).toContain("/missing_t.jpg");
     expect(wrapper.find('[data-testid="quick-preview-reveal"]').exists()).toBe(false);
 
     wrapper.unmount();

@@ -279,7 +279,35 @@ describe("DetailModal — 文件丢失", () => {
     expect(wrapper.find(".relocate-btn").exists()).toBe(true);
     expect(wrapper.find(".save-btn").exists()).toBe(false);
     expect(wrapper.find(".tag-editor").exists()).toBe(false);
-    expect(wrapper.find(".main-img").exists()).toBe(false);
+    expect(wrapper.find(".main-img").exists()).toBe(true);
+    expect(wrapper.find(".main-img").classes()).toContain("main-img--missing");
+    expect(wrapper.find(".missing-state--overlay").exists()).toBe(true);
+  });
+
+  it("文件已丢失时展示重新定位所需的识别线索", async () => {
+    mockInvoke.mockResolvedValue({
+      ...mockMeta,
+      fileStatus: "missing",
+      filePath: "/archive/memes/img-0.jpg",
+      fileName: "img-0.jpg",
+      tags: [createManualTag("tag0"), createManualTag("reaction")],
+    });
+    const images = [{
+      ...makeImages(1)[0],
+      fileStatus: "missing",
+      filePath: "/archive/memes/img-0.jpg",
+      tags: [createManualTag("tag0"), createManualTag("reaction")],
+    }];
+    const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("识别线索");
+    expect(wrapper.text()).toContain("文件名");
+    expect(wrapper.text()).toContain("img-0.jpg");
+    expect(wrapper.text()).toContain("原路径");
+    expect(wrapper.text()).toContain("/archive/memes/img-0.jpg");
+    expect(wrapper.text()).toContain("已有标签");
+    expect(wrapper.text()).toContain("reaction");
   });
 
   it("文件已丢失时显示删除按钮并触发 delete 事件", async () => {
@@ -320,5 +348,20 @@ describe("DetailModal — 文件丢失", () => {
       id: "img-0",
       newPath: "/new.jpg",
     });
+  });
+
+  it("文件已丢失且没有缩略图时显示纯文字失效态", async () => {
+    mockInvoke.mockResolvedValue({
+      ...mockMeta,
+      fileStatus: "missing",
+      thumbnailPath: "",
+    });
+    const images = [{ ...makeImages(1)[0], fileStatus: "missing", thumbnailPath: "" }];
+    const wrapper = mount(DetailModal, { props: { imageId: "img-0", images } });
+    await flushPromises();
+
+    expect(wrapper.find(".main-img").exists()).toBe(false);
+    expect(wrapper.find(".missing-state--overlay").exists()).toBe(false);
+    expect(wrapper.find(".missing-state").exists()).toBe(true);
   });
 });

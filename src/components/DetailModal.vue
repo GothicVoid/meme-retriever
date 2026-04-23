@@ -30,15 +30,42 @@
       <div class="modal-body">
         <!-- 图片区 -->
         <div class="img-area">
-          <template v-if="!isMissing">
+          <template v-if="imagePreviewVisible">
             <img
-              :src="imgSrc"
+              :src="imagePreviewSrc"
               :alt="currentImage.id"
               class="main-img"
+              :class="{ 'main-img--missing': isMissing }"
             >
           </template>
           <div
-            v-else
+            v-if="showMissingOverlay"
+            class="missing-state missing-state--overlay"
+          >
+            <p class="missing-title">
+              原文件已丢失
+            </p>
+            <p class="missing-desc">
+              你可以重新定位图片文件以恢复详情和复制能力。
+            </p>
+            <div class="missing-actions">
+              <button
+                class="relocate-btn ui-button ui-button--secondary"
+                :disabled="relocating"
+                @click="handleRelocate"
+              >
+                {{ relocating ? "重新定位中..." : "重新定位" }}
+              </button>
+              <button
+                class="delete-btn ui-button ui-button--danger"
+                @click="emit('delete', currentImage.id)"
+              >
+                删除图片
+              </button>
+            </div>
+          </div>
+          <div
+            v-else-if="showMissingFallback"
             class="missing-state"
           >
             <p class="missing-title">
@@ -75,6 +102,40 @@
         <!-- 元数据区 -->
         <div class="meta-area">
           <div class="meta-summary">
+            <div
+              v-if="isMissing"
+              class="meta-row meta-row--wide"
+            >
+              <span class="meta-label">识别线索</span>
+              <div class="missing-clues">
+                <div class="missing-clue">
+                  <span class="missing-clue__label">文件名</span>
+                  <span class="missing-clue__value">{{ displayFileName }}</span>
+                </div>
+                <div class="missing-clue">
+                  <span class="missing-clue__label">原路径</span>
+                  <span
+                    class="missing-clue__value missing-clue__value--path"
+                    :title="displayFilePath"
+                  >{{ displayFilePath }}</span>
+                </div>
+                <div
+                  v-if="displayTags.length"
+                  class="missing-clue"
+                >
+                  <span class="missing-clue__label">已有标签</span>
+                  <div class="missing-tag-list">
+                    <span
+                      v-for="tag in displayTags"
+                      :key="`${tag.category}:${tag.text}`"
+                      class="missing-tag"
+                    >
+                      {{ tag.text }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="meta-row">
               <span class="meta-label">格式</span>
               <span>{{ meta?.fileFormat?.toUpperCase() ?? currentImage.fileFormat?.toUpperCase() ?? '—' }}</span>
@@ -180,6 +241,29 @@ const gifPlaying = ref(false);
 const persistedTagSnapshot = computed(() => snapshotTags(meta.value?.tags ?? currentImage.value?.tags ?? []));
 const editingTagSnapshot = computed(() => snapshotTags(editTags.value));
 const hasUnsavedChanges = computed(() => editingTagSnapshot.value !== persistedTagSnapshot.value);
+const displayFilePath = computed(() => meta.value?.filePath ?? currentImage.value?.filePath ?? "—");
+const displayFileName = computed(() => {
+  const fileName = meta.value?.fileName?.trim();
+  if (fileName) return fileName;
+
+  const path = displayFilePath.value;
+  if (!path || path === "—") return "—";
+  const normalizedPath = path.replace(/\\/g, "/");
+  return normalizedPath.split("/").pop() || normalizedPath;
+});
+const displayTags = computed(() => meta.value?.tags ?? currentImage.value?.tags ?? []);
+const imagePreviewSrc = computed(() => {
+  if (isMissing.value) {
+    return convertFileSrc(meta.value?.thumbnailPath || currentImage.value?.thumbnailPath || "");
+  }
+  return imgSrc.value;
+});
+const imagePreviewVisible = computed(() => {
+  if (!isMissing.value) return true;
+  return Boolean(meta.value?.thumbnailPath || currentImage.value?.thumbnailPath);
+});
+const showMissingOverlay = computed(() => isMissing.value && imagePreviewVisible.value);
+const showMissingFallback = computed(() => isMissing.value && !imagePreviewVisible.value);
 
 // 大文件 GIF 未播放时显示缩略图，否则显示原图
 const imgSrc = computed(() => {
@@ -398,6 +482,22 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   object-fit: contain;
 }
 
+.main-img--missing {
+  opacity: 0.5;
+}
+
+.missing-state--overlay {
+  position: absolute;
+  inset: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(1px);
+}
+
 .gif-toggle {
   position: absolute;
   bottom: 10px;
@@ -446,11 +546,56 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
   border: 1px solid rgba(127, 101, 72, 0.08);
 }
 
+.meta-row--wide {
+  grid-column: 1 / -1;
+}
+
 .meta-label {
   font-size: 0.72rem;
   color: #999;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.missing-clues {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
+.missing-clue {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.missing-clue__label {
+  font-size: 0.78rem;
+  color: #8c6d4f;
+}
+
+.missing-clue__value {
+  color: #3f2f20;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.missing-clue__value--path {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.84rem;
+}
+
+.missing-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.missing-tag {
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(196, 124, 61, 0.12);
+  color: #7a4c1f;
+  font-size: 0.82rem;
 }
 
 .tags-section {

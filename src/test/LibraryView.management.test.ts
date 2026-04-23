@@ -120,7 +120,8 @@ describe("LibraryView 管理视图", () => {
     expect(cards).toHaveLength(3);
     expect(images[0].attributes("alt")).toBe("img-newest");
     expect(cards[1].find(".img-missing").exists()).toBe(true);
-    expect(images[1].attributes("alt")).toBe("img-older");
+    expect(images[1].attributes("alt")).toBe("img-missing");
+    expect(images[2].attributes("alt")).toBe("img-older");
 
     wrapper.unmount();
   });

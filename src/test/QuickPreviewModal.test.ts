@@ -39,12 +39,28 @@ describe("QuickPreviewModal", () => {
       },
     });
 
-    expect(wrapper.find(".quick-preview__image").exists()).toBe(false);
+    expect(wrapper.find(".quick-preview__image").exists()).toBe(true);
+    expect(wrapper.find(".quick-preview__image").classes()).toContain("quick-preview__image--missing");
+    expect(wrapper.find(".quick-preview__missing--overlay").exists()).toBe(true);
     expect(wrapper.text()).toContain("原文件已丢失");
     expect(wrapper.text()).toContain("可查看详情重新定位，或删除这条记录。");
     expect(wrapper.text()).not.toContain("复制");
     expect(wrapper.text()).not.toContain("在文件夹中显示");
     expect(wrapper.text()).toContain("查看详情");
     expect(wrapper.text()).toContain("关闭");
+  });
+
+  it("文件已丢失且没有缩略图时退化成纯文字缺图态", () => {
+    const wrapper = mount(QuickPreviewModal, {
+      props: {
+        image: { ...baseImage, fileStatus: "missing", thumbnailPath: "", filePath: "" },
+        canPrev: false,
+        canNext: false,
+      },
+    });
+
+    expect(wrapper.find(".quick-preview__image").exists()).toBe(false);
+    expect(wrapper.find(".quick-preview__missing--overlay").exists()).toBe(false);
+    expect(wrapper.find(".quick-preview__missing").exists()).toBe(true);
   });
 });

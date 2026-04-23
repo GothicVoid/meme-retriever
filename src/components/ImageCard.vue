@@ -22,14 +22,22 @@
           @click.stop
         >
         <img
-          v-if="placeholderState === 'normal'"
-          :src="convertFileSrc(image.thumbnailPath || image.filePath)"
+          v-if="thumbnailVisible"
+          :src="thumbnailSrc"
           :alt="image.id"
+          :class="{ 'image-card__thumb--missing': isMissingRecord }"
           loading="lazy"
           @error="handleImageError"
         >
         <div
-          v-else
+          v-if="showMissingOverlay"
+          class="img-missing img-missing--overlay"
+          :title="placeholderTitle"
+        >
+          <span>{{ placeholderText }}</span>
+        </div>
+        <div
+          v-else-if="showPlaceholder"
           class="img-missing"
           :title="placeholderTitle"
         >
@@ -103,13 +111,20 @@
       data-testid="hover-preview"
     >
       <img
-        v-if="placeholderState === 'normal'"
-        :src="convertFileSrc(image.filePath)"
+        v-if="hoverPreviewVisibleImage"
+        :src="hoverPreviewSrc"
         :alt="image.id"
         class="hover-preview__image"
+        :class="{ 'hover-preview__image--missing': isMissingRecord }"
       >
       <div
-        v-else
+        v-if="showHoverMissingOverlay"
+        class="hover-preview__missing hover-preview__missing--overlay"
+      >
+        {{ placeholderText }}
+      </div>
+      <div
+        v-else-if="showHoverPlaceholder"
         class="hover-preview__missing"
       >
         {{ placeholderText }}
@@ -194,9 +209,10 @@ const hoverPreviewRef = ref<HTMLElement | null>(null);
 const hoverPreviewX = ref(0);
 const hoverPreviewY = ref(0);
 let hoverPreviewTimer: number | null = null;
-const imgError = ref<"normal" | "missing" | "load-failed" | "gif-damaged">(
-  props.image.fileStatus === "missing" ? "missing" : "normal",
-);
+const previewState = ref<"normal" | "load-failed" | "gif-damaged">("normal");
+const isMissingRecord = computed(() => props.image.fileStatus === "missing");
+const thumbnailSrc = computed(() => convertFileSrc(props.image.thumbnailPath || props.image.filePath));
+const hoverPreviewSrc = computed(() => convertFileSrc(props.image.filePath || props.image.thumbnailPath));
 
 const formatBadge = computed(() => {
   const fmt = props.image.fileFormat?.toLowerCase();
@@ -205,7 +221,19 @@ const formatBadge = computed(() => {
   return null;
 });
 
-const placeholderState = computed(() => imgError.value);
+const placeholderState = computed(() => {
+  if (previewState.value === "gif-damaged") return "gif-damaged";
+  if (previewState.value === "load-failed") {
+    return isMissingRecord.value ? "missing" : "load-failed";
+  }
+  return isMissingRecord.value ? "missing" : "normal";
+});
+const thumbnailVisible = computed(() => previewState.value === "normal");
+const showMissingOverlay = computed(() => thumbnailVisible.value && isMissingRecord.value);
+const showPlaceholder = computed(() => !thumbnailVisible.value);
+const hoverPreviewVisibleImage = computed(() => previewState.value === "normal");
+const showHoverMissingOverlay = computed(() => hoverPreviewVisibleImage.value && isMissingRecord.value);
+const showHoverPlaceholder = computed(() => !hoverPreviewVisibleImage.value);
 const placeholderText = computed(() => {
   if (placeholderState.value === "missing") return "原文件已丢失";
   return "加载失败";
@@ -374,11 +402,7 @@ function handleDelete() {
 }
 
 function handleImageError() {
-  if (props.image.fileStatus === "missing") {
-    imgError.value = "missing";
-    return;
-  }
-  imgError.value = props.image.fileFormat?.toLowerCase() === "gif" ? "gif-damaged" : "load-failed";
+  previewState.value = props.image.fileFormat?.toLowerCase() === "gif" ? "gif-damaged" : "load-failed";
 }
 
 function updateHoverPreviewPosition() {
@@ -472,6 +496,10 @@ onUnmounted(() => {
   background: linear-gradient(180deg, #ece7dd, #e5ded0);
 }
 
+.hover-preview__image--missing {
+  opacity: 0.55;
+}
+
 .hover-preview__missing {
   display: flex;
   align-items: center;
@@ -481,6 +509,16 @@ onUnmounted(() => {
   font-size: 0.82rem;
   text-align: center;
   padding: 0.75rem;
+}
+
+.hover-preview__missing--overlay {
+  position: absolute;
+  inset: 0.625rem;
+  height: 180px;
+  border: 1px solid rgba(134, 81, 41, 0.18);
+  background: rgba(24, 18, 13, 0.28);
+  color: #fff6eb;
+  backdrop-filter: blur(1px);
 }
 
 .hover-preview__action {
@@ -496,6 +534,18 @@ onUnmounted(() => {
   background: #f0f0f0;
   color: #aaa;
   font-size: 0.78rem;
+}
+
+.img-missing--overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 18, 13, 0.3);
+  color: #fff6eb;
+  backdrop-filter: blur(1px);
+}
+
+.image-card__thumb--missing {
+  opacity: 0.52;
 }
 
 .format-badge {

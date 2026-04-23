@@ -20,13 +20,25 @@
           ←
         </button>
         <img
-          v-if="!isMissing"
-          :src="convertFileSrc(image.filePath)"
+          v-if="previewVisible"
+          :src="previewSrc"
           :alt="image.id"
           class="quick-preview__image"
+          :class="{ 'quick-preview__image--missing': isMissing }"
         >
         <div
-          v-else
+          v-if="showMissingOverlay"
+          class="quick-preview__missing quick-preview__missing--overlay"
+        >
+          <p class="quick-preview__missing-title">
+            原文件已丢失
+          </p>
+          <p class="quick-preview__missing-desc">
+            可查看详情重新定位，或删除这条记录。
+          </p>
+        </div>
+        <div
+          v-else-if="showMissingFallback"
           class="quick-preview__missing"
         >
           <p class="quick-preview__missing-title">
@@ -96,6 +108,13 @@ const props = defineProps<{
 }>();
 
 const isMissing = computed(() => props.image.fileStatus === "missing");
+const previewSrc = computed(() => {
+  const path = isMissing.value ? props.image.thumbnailPath : props.image.filePath;
+  return convertFileSrc(path);
+});
+const previewVisible = computed(() => !isMissing.value || Boolean(props.image.thumbnailPath));
+const showMissingOverlay = computed(() => isMissing.value && previewVisible.value);
+const showMissingFallback = computed(() => isMissing.value && !previewVisible.value);
 
 defineEmits<{
   close: [];
@@ -162,11 +181,33 @@ defineEmits<{
   object-fit: contain;
 }
 
+.quick-preview__image--missing {
+  opacity: 0.55;
+}
+
 .quick-preview__missing {
   max-width: 28rem;
   padding: 2rem 1.5rem;
   text-align: center;
   color: var(--ui-text-primary);
+}
+
+.quick-preview__missing--overlay {
+  position: absolute;
+  inset: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(24, 18, 13, 0.28);
+  color: #fff6eb;
+  backdrop-filter: blur(1px);
+}
+
+.quick-preview__missing--overlay .quick-preview__missing-desc {
+  color: rgba(255, 246, 235, 0.9);
 }
 
 .quick-preview__missing-title {
