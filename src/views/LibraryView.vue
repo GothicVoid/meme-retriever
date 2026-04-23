@@ -1,9 +1,51 @@
 <template>
   <div class="library-view">
     <div class="page-head">
-      <div class="page-head__copy">
-        <h2>图库管理</h2>
+      <div class="page-head__left">
+        <div
+          v-if="!showColdLibraryEmptyState"
+          class="toolbar"
+        >
+          <div class="toolbar__row">
+            <div class="toolbar-actions">
+              <button
+                class="ui-button ui-button--primary"
+                data-action="add-images"
+                :disabled="store.indexing"
+                @click="handleAdd"
+              >
+                导入图片
+              </button>
+              <button
+                class="ui-button ui-button--secondary"
+                data-action="add-folder"
+                :disabled="store.indexing"
+                @click="handleAddFolder"
+              >
+                导入文件夹
+              </button>
+              <template v-if="store.selectedIds.size > 0">
+                <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
+                <button
+                  class="ui-button ui-button--danger"
+                  data-action="delete-selected"
+                  :disabled="managementActionsDisabled"
+                  @click="handleDeleteSelected"
+                >
+                  删除选中
+                </button>
+              </template>
+            </div>
+          </div>
+          <p
+            v-if="managementActionsDisabled"
+            class="toolbar-lock-reason"
+          >
+            导入处理中，完成后再整理图库。
+          </p>
+        </div>
       </div>
+      <h2 class="page-head__title">图库管理</h2>
       <div class="page-head__meta">
         <div class="gallery-total">
           共 {{ store.total }} 张
@@ -11,7 +53,7 @@
         <button
           v-if="showBackToSearch"
           type="button"
-          class="page-head__back ui-button ui-button--secondary ui-button--compact"
+          class="page-head__back ui-button ui-button--secondary"
           data-action="back-to-search"
           @click="handleBackToSearch"
         >
@@ -120,9 +162,9 @@
         </p>
         <h3>{{ summaryTitle }}</h3>
         <p class="main-task-card__stats">
-          <span>新增 {{ displayedSummary.importedCount }}</span>
-          <span>已存在 {{ displayedSummary.duplicatedCount }}</span>
-          <span class="main-task-card__stat main-task-card__stat--failure">失败 {{ displayedSummary.failedCount }}</span>
+          <span>新增 {{ displayedSummaryStats.importedCount }}</span>
+          <span>已存在 {{ displayedSummaryStats.duplicatedCount }}</span>
+          <span class="main-task-card__stat main-task-card__stat--failure">失败 {{ displayedSummaryStats.failedCount }}</span>
         </p>
       </div>
       <ul
@@ -169,7 +211,7 @@
           {{ retryingFailures ? "重试导入中..." : "重试导入" }}
         </button>
         <button
-          v-else-if="displayedSummary.importedCount > 0"
+          v-else-if="displayedSummaryStats.importedCount > 0"
           class="ui-button ui-button--secondary"
           data-action="view-latest-imported"
           @click="handleViewLatestImported"
@@ -232,14 +274,14 @@
           先看本次新增。
         </p>
         <p class="main-task-card__stats">
-          <span>新增 {{ displayedSummary.importedCount }}</span>
-          <span>已存在 {{ displayedSummary.duplicatedCount }}</span>
-          <span>失败 {{ displayedSummary.failedCount }}</span>
+          <span>新增 {{ displayedSummaryStats.importedCount }}</span>
+          <span>已存在 {{ displayedSummaryStats.duplicatedCount }}</span>
+          <span>失败 {{ displayedSummaryStats.failedCount }}</span>
         </p>
       </div>
       <div class="main-task-card__actions">
         <button
-          v-if="displayedSummary.importedCount > 0"
+          v-if="displayedSummaryStats.importedCount > 0"
           class="ui-button ui-button--primary"
           data-action="view-latest-imported"
           @click="handleViewLatestImported"
@@ -258,45 +300,6 @@
     </section>
 
     <section class="library-workbench">
-      <div class="toolbar">
-        <div class="toolbar__row">
-          <div class="toolbar-actions">
-            <button
-              class="ui-button ui-button--primary"
-              data-action="add-images"
-              :disabled="store.indexing"
-              @click="handleAdd"
-            >
-              导入图片
-            </button>
-            <button
-              class="ui-button ui-button--secondary"
-              data-action="add-folder"
-              :disabled="store.indexing"
-              @click="handleAddFolder"
-            >
-              导入文件夹
-            </button>
-            <template v-if="store.selectedIds.size > 0">
-              <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
-              <button
-                class="ui-button ui-button--danger"
-                data-action="delete-selected"
-                :disabled="managementActionsDisabled"
-                @click="handleDeleteSelected"
-              >
-                删除选中
-              </button>
-            </template>
-          </div>
-        </div>
-        <p
-          v-if="managementActionsDisabled"
-          class="toolbar-lock-reason"
-        >
-          导入处理中，完成后再整理图库。
-        </p>
-      </div>
       <section
         v-if="showLatestImportedTip"
         class="latest-import-position-tip"
@@ -306,14 +309,8 @@
       </section>
       <div class="gallery-panel__head">
         <div class="gallery-panel__title-group">
-          <span
-            class="view-switch active"
-            data-view="all"
-          >
-            全部图片
-          </span>
           <p class="usage-notice">
-            图库按原文件路径引用，移动、重命名或删除原图会导致图片失效，并影响复制和定位。
+            原文件移动、重命名或删除后会失效
           </p>
         </div>
         <div
@@ -321,22 +318,27 @@
           class="advanced-capabilities"
           data-section="private-role-library-entry"
         >
-          <p class="advanced-capabilities__description">
-            搜不到角色时，可补几张示例图帮助识别。
-          </p>
           <button
             type="button"
-            class="advanced-capabilities__action ui-button ui-button--text"
+            class="advanced-capabilities__action"
             data-action="open-private-role-library"
+            aria-label="打开角色搜索增强"
             @click="openPrivateRoleLibrary"
           >
-            打开角色维护
+            角色搜索增强
           </button>
+          <span
+            class="advanced-capabilities__hint"
+            role="img"
+            aria-label="说明：搜索词里没有字、模型又认不出角色时，可以补几张示例图帮助搜索"
+            title="搜索词里没有字、模型又认不出角色时，可以补几张示例图帮助搜索"
+            tabindex="0"
+          >?</span>
         </div>
       </div>
       <div
         ref="scrollContainer"
-        class="gallery-scroll"
+        :class="['gallery-scroll', { 'gallery-scroll--empty': showColdLibraryEmptyState }]"
         @scroll="handleScroll"
       >
         <div
@@ -352,6 +354,50 @@
             重试
           </button>
         </div>
+        <section
+          v-else-if="showColdLibraryEmptyState"
+          class="library-empty-state"
+          data-section="library-empty-state"
+        >
+          <div class="library-empty-state__intro">
+            <h3>图库还没有图片</h3>
+            <p>
+              这里用于查看全部图片、补充导入、处理导入失败和失效文件。
+            </p>
+          </div>
+          <div class="library-empty-state__preview">
+            <p>导入后，全部图片会按入库时间显示在这里</p>
+            <div class="library-empty-state__grid" aria-hidden="true">
+              <div
+                v-for="item in 6"
+                :key="item"
+                class="library-empty-state__card"
+              >
+                <div class="library-empty-state__thumb" />
+                <span />
+                <small />
+              </div>
+            </div>
+            <div class="library-empty-state__actions">
+              <button
+                class="ui-button ui-button--primary"
+                data-action="empty-add-images"
+                :disabled="store.indexing"
+                @click="handleAdd"
+              >
+                导入图片
+              </button>
+              <button
+                class="ui-button ui-button--secondary"
+                data-action="empty-add-folder"
+                :disabled="store.indexing"
+                @click="handleAddFolder"
+              >
+                导入文件夹
+              </button>
+            </div>
+          </div>
+        </section>
         <ImageGrid
           v-else
           :images="visibleImages as unknown as SearchResult[]"
@@ -444,7 +490,6 @@ const pagingError = ref(false);
 const showBackToTop = ref(false);
 const clearingMissing = ref(false);
 const showMissingFilter = ref(false);
-const showAdvancedCapabilities = true;
 const latestImportSummary = ref<LatestImportSummary | null>(null);
 const importFailures = ref<ImportFailure[]>([]);
 const showImportFailures = ref(false);
@@ -526,6 +571,12 @@ const displayedSummary = computed(() =>
   recoveryStore.completedRecoverySummary ?? latestImportSummary.value
 );
 
+const displayedSummaryStats = computed(() => ({
+  importedCount: displayedSummary.value?.importedCount ?? 0,
+  duplicatedCount: displayedSummary.value?.duplicatedCount ?? 0,
+  failedCount: displayedSummary.value?.failedCount ?? 0,
+}));
+
 const displayedFailures = computed(() =>
   recoveryStore.completedRecoverySummary?.failures ?? importFailures.value
 );
@@ -578,9 +629,15 @@ const visibleImages = computed(() =>
   showMissingFilter.value ? missingImages.value : store.images
 );
 
+const showColdLibraryEmptyState = computed(() =>
+  !showMissingFilter.value && !store.loading && store.total === 0 && store.images.length === 0
+);
+
 const emptyMessage = computed(() =>
   showMissingFilter.value ? "当前没有失效图片" : "图库为空，先导入图片开始使用"
 );
+
+const showAdvancedCapabilities = computed(() => store.total > 0);
 
 const latestImportedHighlightIds = computed(() => {
   const count = latestImportedState.value?.count ?? 0;
@@ -1027,30 +1084,34 @@ async function handleBackToSearch() {
     linear-gradient(180deg, color-mix(in srgb, var(--ui-bg-surface-strong) 96%, #fffaf2), var(--ui-bg-app));
 }
 .page-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.14rem 0.06rem 0.04rem;
+}
+.page-head__left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  padding: 0.14rem 0.06rem 0.02rem;
+  justify-content: flex-start;
+  min-width: 0;
 }
-.page-head__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-.page-head__copy h2 {
+.page-head__title {
   margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.2;
-  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.15;
+  font-weight: 800;
   color: var(--ui-text-primary);
+  text-align: center;
+  white-space: nowrap;
 }
 .page-head__meta {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
   flex-wrap: wrap;
+  min-width: 0;
 }
 .page-head__back {
   color: var(--ui-text-secondary);
@@ -1166,21 +1227,6 @@ async function handleBackToSearch() {
   opacity: 0.58;
   cursor: not-allowed;
 }
-.view-switch {
-  border: 1px solid var(--ui-border-subtle);
-  background: color-mix(in srgb, var(--ui-bg-surface-strong) 92%, white);
-  color: var(--ui-text-secondary);
-  border-radius: 999px;
-  padding: 0.34rem 0.72rem;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-.view-switch.active {
-  border-color: #1f2d4d;
-  background: #1f2d4d;
-  color: #fff;
-}
 .main-task-card__failures {
   margin: 0;
   padding-left: 1.1rem;
@@ -1223,7 +1269,7 @@ async function handleBackToSearch() {
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.18rem;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -1235,7 +1281,7 @@ async function handleBackToSearch() {
   display: flex;
   flex-direction: column;
   gap: 0.32rem;
-  padding: 0.14rem 0.06rem 0;
+  padding: 0.02rem 0.06rem 0;
 }
 .toolbar__row {
   display: flex;
@@ -1249,14 +1295,8 @@ async function handleBackToSearch() {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.18rem;
+  gap: 0.26rem;
   flex-wrap: wrap;
-}
-.advanced-capabilities__description {
-  margin: 0;
-  font-size: 0.72rem;
-  line-height: 1.35;
-  color: var(--ui-text-secondary);
 }
 .toolbar-lock-reason {
   margin: 0;
@@ -1273,8 +1313,46 @@ async function handleBackToSearch() {
 }
 .advanced-capabilities__action {
   flex-shrink: 0;
-  min-height: auto;
-  padding: 0;
+  min-height: 28px;
+  padding: 0 0.62rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ui-border-subtle) 78%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 72%, transparent);
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.advanced-capabilities__action:hover,
+.advanced-capabilities__action:focus-visible {
+  border-color: color-mix(in srgb, var(--ui-accent) 26%, var(--ui-border-subtle));
+  background: color-mix(in srgb, var(--ui-accent) 9%, var(--ui-bg-surface-strong));
+  color: var(--ui-text-primary);
+}
+.advanced-capabilities__hint {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ui-border-subtle) 76%, transparent);
+  border-radius: 999px;
+  color: var(--ui-text-secondary);
+  background: color-mix(in srgb, var(--ui-bg-surface-strong) 60%, transparent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+.advanced-capabilities__hint:hover,
+.advanced-capabilities__hint:focus-visible {
+  color: var(--ui-text-primary);
+  border-color: color-mix(in srgb, var(--ui-accent) 24%, var(--ui-border-subtle));
+  outline: none;
 }
 .gallery-panel__head {
   display: flex;
@@ -1311,6 +1389,98 @@ async function handleBackToSearch() {
     );
   scrollbar-gutter: stable;
 }
+.gallery-scroll--empty {
+  padding: 0;
+}
+.library-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  min-height: 100%;
+  padding: 0.92rem;
+  border: 1px solid color-mix(in srgb, var(--ui-border-subtle) 74%, transparent);
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ui-bg-surface-strong) 94%, white), color-mix(in srgb, #fff7ea 46%, white));
+}
+.library-empty-state__intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.32rem;
+}
+.library-empty-state__intro h3,
+.library-empty-state__intro p,
+.library-empty-state__preview p {
+  margin: 0;
+}
+.library-empty-state__intro h3 {
+  color: var(--ui-text-primary);
+  font-size: 1rem;
+  line-height: 1.28;
+}
+.library-empty-state__intro p,
+.library-empty-state__preview p {
+  color: var(--ui-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.library-empty-state__preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 0.85rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 330px;
+  border-radius: 0.95rem;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.86), transparent 42%),
+    color-mix(in srgb, var(--ui-bg-app) 82%, white);
+}
+.library-empty-state__grid {
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.68rem;
+}
+.library-empty-state__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-top: 0.1rem;
+}
+.library-empty-state__card {
+  min-height: 116px;
+  padding: 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--ui-border-subtle) 68%, transparent);
+  border-radius: 0.86rem;
+  background: color-mix(in srgb, white 72%, transparent);
+}
+.library-empty-state__thumb {
+  height: 72px;
+  border-radius: 0.62rem;
+  background:
+    linear-gradient(135deg, rgba(31, 45, 77, 0.08), rgba(196, 171, 134, 0.13)),
+    repeating-linear-gradient(90deg, rgba(31, 45, 77, 0.08), rgba(31, 45, 77, 0.08) 7px, transparent 7px, transparent 14px);
+  filter: blur(0.25px);
+}
+.library-empty-state__card span,
+.library-empty-state__card small {
+  display: block;
+  height: 6px;
+  margin-top: 0.46rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-border-subtle) 64%, white);
+}
+.library-empty-state__card span {
+  width: 62%;
+}
+.library-empty-state__card small {
+  width: 36%;
+}
 .gallery-footer {
   display: flex;
   justify-content: center;
@@ -1340,9 +1510,20 @@ async function handleBackToSearch() {
   }
   .main-task-card,
   .gallery-panel__head,
-  .toolbar__row {
+  .toolbar__row,
+  .library-empty-state {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .library-empty-state {
+    display: flex;
+  }
+  .library-empty-state__preview {
+    width: 100%;
+    min-height: 280px;
+  }
+  .library-empty-state__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .advanced-capabilities {
     width: 100%;

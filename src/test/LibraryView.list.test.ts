@@ -84,7 +84,7 @@ describe("LibraryView 图片列表展示", () => {
     wrapper.unmount();
   });
 
-  it("顶部显示按路径引用图片的使用提示", async () => {
+  it("顶部显示简短的路径失效提示", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 1;
@@ -96,8 +96,7 @@ describe("LibraryView 图片列表展示", () => {
     await flushPromises();
 
     expect(wrapper.find(".usage-notice").exists()).toBe(true);
-    expect(wrapper.text()).toContain("图库按原文件路径引用");
-    expect(wrapper.text()).toContain("影响复制和定位");
+    expect(wrapper.text()).toContain("原文件移动、重命名或删除后会失效");
 
     wrapper.unmount();
   });
@@ -164,7 +163,7 @@ describe("LibraryView 图片列表展示", () => {
     wrapper.unmount();
   });
 
-  it("图库为空时显示空状态提示", async () => {
+  it("图库为空时显示图库管理空状态", async () => {
     mockInvoke.mockImplementation(async (cmd) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 0;
@@ -175,7 +174,15 @@ describe("LibraryView 图片列表展示", () => {
     const wrapper = mount(LibraryView);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("图库为空，先导入图片开始使用");
+    expect(wrapper.text()).toContain("图库还没有图片");
+    expect(wrapper.text()).toContain("这里用于查看全部图片、补充导入、处理导入失败和失效文件。");
+    expect(wrapper.text()).toContain("导入后，全部图片会按入库时间显示在这里");
+    expect(wrapper.find("[data-section='library-empty-state']").exists()).toBe(true);
+    expect(wrapper.find(".toolbar").exists()).toBe(false);
+    expect(wrapper.find("[data-action='add-images']").exists()).toBe(false);
+    expect(wrapper.find("[data-action='add-folder']").exists()).toBe(false);
+    expect(wrapper.get("[data-action='empty-add-images']").text()).toContain("导入图片");
+    expect(wrapper.get("[data-action='empty-add-folder']").text()).toContain("导入文件夹");
   });
 
   it("初始加载失败时显示重试按钮并可重新加载", async () => {

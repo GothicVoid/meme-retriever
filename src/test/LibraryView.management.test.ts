@@ -96,7 +96,7 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.text()).toContain("图库管理");
     expect(wrapper.text()).not.toContain("在这里导入、整理和排查图片问题");
-    expect(wrapper.find("[data-view='all']").exists()).toBe(true);
+    expect(wrapper.find("[data-view='all']").exists()).toBe(false);
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
     expect(wrapper.find("[data-view='issues']").exists()).toBe(false);
     expect(wrapper.get("[data-action='add-images']").text()).toContain("导入图片");
@@ -333,7 +333,7 @@ describe("LibraryView 管理视图", () => {
     await wrapper.get("[data-action='view-latest-imported']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='all']").exists()).toBe(false);
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
     expect(scrollToMock).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
     expect(wrapper.find('[data-section="latest-import-position-tip"]').exists()).toBe(true);
@@ -733,7 +733,7 @@ describe("LibraryView 管理视图", () => {
     await wrapper.get("[data-action='view-latest-imported']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='all']").exists()).toBe(false);
     expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
     expect(wrapper.findAll(".status-badge--new")).toHaveLength(2);
     expect(wrapper.find('[data-section="latest-import-position-tip"]').exists()).toBe(true);

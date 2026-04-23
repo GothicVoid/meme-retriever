@@ -57,7 +57,8 @@ describe("LibraryView 路由视图恢复", () => {
     });
     await flushPromises();
 
-    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='all']").exists()).toBe(false);
+    expect(wrapper.find("[data-section='library-empty-state']").exists()).toBe(true);
     expect(wrapper.find("[data-view='issues']").exists()).toBe(false);
   });
 
@@ -73,7 +74,8 @@ describe("LibraryView 路由视图恢复", () => {
     });
     await flushPromises();
 
-    expect(wrapper.get("[data-view='all']").classes()).toContain("active");
+    expect(wrapper.find("[data-view='all']").exists()).toBe(false);
+    expect(wrapper.find("[data-section='library-empty-state']").exists()).toBe(true);
     expect(wrapper.find("[data-view='recent']").exists()).toBe(false);
   });
 
