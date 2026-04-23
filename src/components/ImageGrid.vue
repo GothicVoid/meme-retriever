@@ -1,5 +1,8 @@
 <template>
-  <div class="image-grid">
+  <div
+    class="image-grid"
+    :class="{ 'image-grid--library': layout === 'library' }"
+  >
     <p v-if="loading" class="hint">{{ loadingMessage ?? "加载中..." }}</p>
     <p v-else-if="!images.length" class="hint">{{ emptyMessage ?? '没找到相关图片，试试其他描述？' }}</p>
     <ImageCard
@@ -34,6 +37,7 @@ defineProps<{
   focusedId?: string | null;
   focusedIds?: Set<string>;
   statusBadgeLabels?: Record<string, string>;
+  layout?: "default" | "library";
 }>();
 defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string]; preview: [id: string] }>();
 </script>
@@ -41,18 +45,30 @@ defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; 
 <style scoped>
 .image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.75rem;
+  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0.625rem;
+}
+.image-grid--library {
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 0.7rem;
 }
 /* PRD §7.3: <800px 2列，>1400px 4列 */
 @media (max-width: 799px) {
   .image-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .image-grid--library {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.56rem;
+  }
 }
 @media (min-width: 1400px) {
   .image-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+  .image-grid--library {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   }
 }
 .hint { color: #888; padding: 1rem 0; }

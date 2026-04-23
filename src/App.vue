@@ -9,7 +9,10 @@
 
     <main
       class="app-shell__content"
-      :class="{ 'app-shell__content--sidebar': isSidebarMode }"
+      :class="{
+        'app-shell__content--sidebar': isSidebarMode,
+        'app-shell__content--library': route.path === '/library',
+      }"
     >
       <RouterView />
     </main>

@@ -375,6 +375,57 @@ describe("LibraryView 管理视图", () => {
     wrapper.unmount();
   });
 
+  it("查看本次新增时会重新获取图库列表后再定位", async () => {
+    let loadCount = 0;
+    const stalePage0 = Array.from({ length: 24 }, (_, index) => ({
+      ...mockImagesWithoutMissing[0],
+      id: `stale-${index}`,
+      filePath: `/library/images/stale-${index}.jpg`,
+      thumbnailPath: `/library/thumbs/stale-${index}.jpg`,
+      addedAt: 60 - index,
+    }));
+    const freshPage0 = Array.from({ length: 24 }, (_, index) => ({
+      ...mockImagesWithoutMissing[0],
+      id: `fresh-${index}`,
+      filePath: `/library/images/fresh-${index}.jpg`,
+      thumbnailPath: `/library/thumbs/fresh-${index}.jpg`,
+      addedAt: 100 - index,
+    }));
+
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 24;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) {
+        loadCount += 1;
+        return loadCount === 1 ? stalePage0 : freshPage0;
+      }
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-refresh-new",
+          totalCount: 24,
+          importedCount: 24,
+          duplicatedCount: 0,
+          failedCount: 0,
+          completedAt: Math.floor(Date.now() / 1000),
+        };
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='view-latest-imported']").trigger("click");
+    await flushPromises();
+    await flushPromises();
+
+    expect(loadCount).toBe(2);
+    expect(wrapper.findAll(".status-badge--new")).toHaveLength(24);
+    expect(wrapper.findAll(".image-card--focused")).toHaveLength(24);
+
+    wrapper.unmount();
+  });
+
   it("导入结果出现后即展示本轮新增的新角标，但未点击前不显示定位提示", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];

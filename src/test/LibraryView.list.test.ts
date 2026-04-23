@@ -65,11 +65,11 @@ describe("LibraryView 图片列表展示", () => {
     HTMLElement.prototype.scrollTo = vi.fn();
   });
 
-  it("首屏显示总数且只加载 15 张图片", async () => {
-    const images = makeImages(15);
+  it("首屏显示总数且按单页上限加载图片", async () => {
+    const images = makeImages(24);
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
-      if (cmd === "get_image_count") return 20;
+      if (cmd === "get_image_count") return 30;
       if (cmd === "get_images" && pageOf(args) === 0) return images;
       return [];
     });
@@ -77,8 +77,8 @@ describe("LibraryView 图片列表展示", () => {
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("共 20 张");
-    expect(wrapper.findAll(".image-card")).toHaveLength(15);
+    expect(wrapper.text()).toContain("共 30 张");
+    expect(wrapper.findAll(".image-card")).toHaveLength(24);
     expect(mockInvoke).toHaveBeenCalledWith("get_images", { page: 0 });
 
     wrapper.unmount();
@@ -103,12 +103,12 @@ describe("LibraryView 图片列表展示", () => {
   });
 
   it("滚动到底部时自动加载下一页并显示已到底部提示", async () => {
-    const page0 = makeImages(15);
-    const page1 = makeImages(5).map((image, index) => ({ ...image, id: `img-next-${index}` }));
+    const page0 = makeImages(24);
+    const page1 = makeImages(6).map((image, index) => ({ ...image, id: `img-next-${index}` }));
 
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
-      if (cmd === "get_image_count") return 20;
+      if (cmd === "get_image_count") return 30;
       if (cmd === "get_images" && pageOf(args) === 0) return page0;
       if (cmd === "get_images" && pageOf(args) === 1) return page1;
       return [];
@@ -123,8 +123,43 @@ describe("LibraryView 图片列表展示", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("get_images", { page: 1 });
-    expect(wrapper.findAll(".image-card")).toHaveLength(20);
+    expect(wrapper.findAll(".image-card")).toHaveLength(30);
     expect(wrapper.text()).toContain("已显示全部图片");
+
+    wrapper.unmount();
+  });
+
+  it("首屏未撑满视口时自动继续加载下一页", async () => {
+    const page0 = makeImages(24);
+    const page1 = makeImages(6).map((image, index) => ({ ...image, id: `img-fill-${index}` }));
+
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 30;
+      if (cmd === "get_images" && pageOf(args) === 0) return page0;
+      if (cmd === "get_images" && pageOf(args) === 1) return page1;
+      return [];
+    });
+
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return this.classList?.contains("gallery-scroll") ? 900 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return this.classList?.contains("gallery-scroll") ? 640 : 0;
+      },
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("get_images", { page: 1 });
+    expect(wrapper.findAll(".image-card")).toHaveLength(30);
 
     wrapper.unmount();
   });
@@ -171,13 +206,13 @@ describe("LibraryView 图片列表展示", () => {
   });
 
   it("滚动超过一页后显示回到顶部按钮，并平滑滚动到顶部", async () => {
-    const images = makeImages(15);
+    const images = makeImages(24);
     const scrollToMock = vi.fn();
     HTMLElement.prototype.scrollTo = scrollToMock;
 
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
-      if (cmd === "get_image_count") return 30;
+      if (cmd === "get_image_count") return 48;
       if (cmd === "get_images" && pageOf(args) === 0) return images;
       return [];
     });

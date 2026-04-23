@@ -1117,8 +1117,9 @@ pub async fn get_image_meta(
 
 #[tauri::command]
 pub async fn get_images(page: i64, db: State<'_, DbPool>) -> Result<Vec<ImageMeta>, String> {
+    const LIBRARY_PAGE_SIZE: i64 = 24;
     tracing::info!("get_images: page={page}");
-    let images = repo::get_images_paged(db.inner(), page, 15)
+    let images = repo::get_images_paged(db.inner(), page, LIBRARY_PAGE_SIZE)
         .await
         .map_err(|e| e.to_string())?;
 
