@@ -311,7 +311,7 @@ async fn do_index_inner(
 }
 
 fn image_dimensions(path: &Path) -> (Option<i64>, Option<i64>) {
-    match image::image_dimensions(path) {
+    match crate::image_io::image_dimensions(path) {
         Ok((w, h)) => (Some(w as i64), Some(h as i64)),
         Err(_) => (None, None),
     }

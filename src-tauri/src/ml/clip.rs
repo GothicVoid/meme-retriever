@@ -112,7 +112,7 @@ fn run_image_inference(
 ) -> anyhow::Result<Vec<f32>> {
     use ort::value::Tensor;
     // 1. 加载图像：短边缩放到 224，再中心裁剪 224×224（Chinese-CLIP 标准预处理）
-    let img = image::open(image_path)?.to_rgb8();
+    let img = crate::image_io::open_image(image_path)?.to_rgb8();
     let (orig_w, orig_h) = img.dimensions();
     let (new_w, new_h) = if orig_w <= orig_h {
         (

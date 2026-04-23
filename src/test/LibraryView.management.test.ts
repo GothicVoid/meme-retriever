@@ -81,6 +81,7 @@ describe("LibraryView 管理视图", () => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
     HTMLElement.prototype.scrollTo = vi.fn();
+    localStorage.clear();
   });
 
   it("显示图库管理标题、主视图入口和新的导入工具条文案", async () => {
@@ -136,6 +137,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 1,
           duplicatedCount: 1,
           failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -165,6 +167,8 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.text()).toContain("a2.jpg");
     expect(wrapper.text()).toContain("图片文件可能已损坏，暂时无法导入。");
+    expect(wrapper.find("[data-action='show-import-failures']").exists()).toBe(false);
+    expect(wrapper.get("[data-action='dismiss-import-summary']").text()).toContain("知道了");
 
     wrapper.unmount();
   });
@@ -181,6 +185,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 0,
           duplicatedCount: 0,
           failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -204,12 +209,13 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.text()).toContain("导入被中断了，可以继续导入剩余图片。");
     expect(wrapper.get("[data-action='retry-import-failures']").text()).toContain("重试导入");
-    expect(wrapper.find("[data-action='continue-managing-library']").exists()).toBe(true);
+    expect(wrapper.find("[data-action='dismiss-import-summary']").exists()).toBe(true);
+    expect(wrapper.find("[data-action='show-import-failures']").exists()).toBe(false);
 
     wrapper.unmount();
   });
 
-  it("普通不可重试失败不显示重试导入，并保留继续整理图库动作", async () => {
+  it("普通不可重试失败不显示重试导入，并提供知道了动作", async () => {
     mockInvoke.mockImplementation(async (cmd, args) => {
       if (cmd === "get_pending_tasks") return [];
       if (cmd === "get_image_count") return 3;
@@ -221,6 +227,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 1,
           duplicatedCount: 0,
           failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -243,7 +250,7 @@ describe("LibraryView 管理视图", () => {
     await flushPromises();
 
     expect(wrapper.find("[data-action='retry-import-failures']").exists()).toBe(false);
-    expect(wrapper.get("[data-action='continue-managing-library']").text()).toContain("继续整理图库");
+    expect(wrapper.get("[data-action='dismiss-import-summary']").text()).toContain("知道了");
     expect(wrapper.get("[data-action='view-latest-imported']").text()).toContain("查看本次新增");
 
     wrapper.unmount();
@@ -261,6 +268,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 1,
           duplicatedCount: 0,
           failedCount: 2,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -292,8 +300,8 @@ describe("LibraryView 管理视图", () => {
     await wrapper.get("[data-action='show-import-failures']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("可重试的失败项可以直接再试一次，其余失败已先跳过。");
     expect(wrapper.get("[data-action='retry-import-failures']").exists()).toBe(true);
+    expect(wrapper.get("[data-action='dismiss-import-summary']").exists()).toBe(true);
 
     wrapper.unmount();
   });
@@ -310,6 +318,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 2,
           duplicatedCount: 0,
           failedCount: 0,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       return [];
@@ -344,6 +353,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 2,
           duplicatedCount: 0,
           failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       return [];
@@ -376,6 +386,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 2,
           duplicatedCount: 0,
           failedCount: 0,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       return [];
@@ -386,6 +397,74 @@ describe("LibraryView 管理视图", () => {
 
     expect(wrapper.findAll(".status-badge--new")).toHaveLength(2);
     expect(wrapper.find('[data-section="latest-import-position-tip"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("超过承接窗口的历史导入摘要不再显示", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-stale",
+          totalCount: 2,
+          importedCount: 1,
+          duplicatedCount: 0,
+          failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000) - 31 * 60,
+        };
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it("普通导入摘要点击知道了后会退场，并记住当前批次已处理", async () => {
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "get_pending_tasks") return [];
+      if (cmd === "get_image_count") return 3;
+      if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return mockImagesWithoutMissing;
+      if (cmd === "get_latest_import_summary") {
+        return {
+          batchId: "batch-ack",
+          totalCount: 2,
+          importedCount: 1,
+          duplicatedCount: 0,
+          failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
+        };
+      }
+      if (cmd === "get_import_batch_failures") {
+        return [{
+          taskId: "task-ack-1",
+          filePath: "/tmp/imports/ack.jpg",
+          errorMessage: "damaged file",
+          failureKind: "file_damaged",
+          retryable: false,
+          userMessage: "图片文件可能已损坏，暂时无法导入。",
+        }];
+      }
+      return [];
+    });
+
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+    await wrapper.get("[data-action='dismiss-import-summary']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find('[data-section="latest-import-summary"]').exists()).toBe(false);
+    expect(localStorage.getItem("library.latestImportSummaryAck")).toBe("batch-ack");
 
     wrapper.unmount();
   });
@@ -446,6 +525,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 1,
           duplicatedCount: 1,
           failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -479,6 +559,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 11,
           duplicatedCount: 1,
           failedCount: 2,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -528,6 +609,7 @@ describe("LibraryView 管理视图", () => {
           importedCount: 4,
           duplicatedCount: 1,
           failedCount: 1,
+          completedAt: Math.floor(Date.now() / 1000),
         };
       }
       if (cmd === "get_import_batch_failures") {
@@ -559,6 +641,13 @@ describe("LibraryView 管理视图", () => {
     expect(wrapper.text()).toContain("刚刚继续导入");
 
     await wrapper.get("[data-action='show-import-failures']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("recovery-2.jpg");
+    expect(wrapper.find("[data-action='dismiss-import-summary']").exists()).toBe(true);
+    expect(wrapper.find("[data-action='show-import-failures']").exists()).toBe(false);
+
+    await wrapper.get("[data-action='dismiss-import-summary']").trigger("click");
     await flushPromises();
 
     expect(wrapper.text()).toContain("最近一次导入");

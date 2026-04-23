@@ -300,7 +300,7 @@ fn run_pipeline(
     use ort::value::Tensor;
 
     let dict = load_dict(dict_path)?;
-    let img = image::open(image_path)?.to_rgb8();
+    let img = crate::image_io::open_image(image_path)?.to_rgb8();
     let (orig_w, orig_h) = img.dimensions();
     if orig_w == 0 || orig_h == 0 {
         return Ok(String::new());

@@ -88,6 +88,7 @@ pub struct LatestImportSummaryPayload {
     pub imported_count: i64,
     pub duplicated_count: i64,
     pub failed_count: i64,
+    pub completed_at: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -712,7 +713,7 @@ async fn relocate_image_impl(
     let embedding = clip_result
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
-    let (width, height) = match image::image_dimensions(src) {
+    let (width, height) = match crate::image_io::image_dimensions(src) {
         Ok((w, h)) => (Some(w as i64), Some(h as i64)),
         Err(_) => (None, None),
     };
@@ -1202,7 +1203,7 @@ where
 }
 
 fn load_image_for_clipboard(path: &str) -> Result<arboard::ImageData<'static>, String> {
-    let rgba = image::open(path)
+    let rgba = crate::image_io::open_image(Path::new(path))
         .map_err(|e| format!("failed to open image: {e}"))?
         .to_rgba8();
     let (width, height) = rgba.dimensions();
@@ -1353,6 +1354,7 @@ async fn get_latest_import_summary_impl(
         imported_count: item.imported_count,
         duplicated_count: item.duplicated_count,
         failed_count: item.failed_count,
+        completed_at: item.completed_at,
     }))
 }
 
@@ -2178,6 +2180,7 @@ mod tests {
         assert_eq!(summary.total_count, 2);
         assert_eq!(summary.imported_count, 1);
         assert_eq!(summary.failed_count, 1);
+        assert!(summary.completed_at > 0);
 
         let failures = get_import_batch_failures_impl("batch-a".into(), &pool)
             .await

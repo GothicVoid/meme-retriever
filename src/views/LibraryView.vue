@@ -107,7 +107,11 @@
     </div>
     <section
       v-else-if="showFailureSummary"
-      class="main-task-card main-task-card--summary"
+      :class="[
+        'main-task-card',
+        'main-task-card--summary',
+        { 'main-task-card--summary-expanded': showImportFailures && displayedFailures.length > 0 },
+      ]"
       data-section="latest-import-summary"
     >
       <div class="main-task-card__copy">
@@ -115,39 +119,11 @@
           {{ summaryEyebrow }}
         </p>
         <h3>{{ summaryTitle }}</h3>
-        <p class="main-task-card__description">
-          先看失败原因。
-        </p>
         <p class="main-task-card__stats">
           <span>新增 {{ displayedSummary.importedCount }}</span>
           <span>已存在 {{ displayedSummary.duplicatedCount }}</span>
-          <span>失败 {{ displayedSummary.failedCount }}</span>
+          <span class="main-task-card__stat main-task-card__stat--failure">失败 {{ displayedSummary.failedCount }}</span>
         </p>
-      </div>
-      <div class="main-task-card__actions">
-        <button
-          class="ui-button ui-button--primary"
-          data-action="show-import-failures"
-          @click="handleShowFailures"
-        >
-          {{ showImportFailures ? "收起失败项" : "查看失败项" }}
-        </button>
-        <button
-          v-if="displayedSummary.importedCount > 0"
-          class="ui-button ui-button--secondary"
-          data-action="view-latest-imported"
-          @click="handleViewLatestImported"
-        >
-          查看本次新增
-        </button>
-        <button
-          v-if="recoveryStore.completedRecoverySummary"
-          class="ui-button ui-button--text"
-          data-action="dismiss-recovery-summary"
-          @click="dismissRecoverySummary"
-        >
-          稍后再看
-        </button>
       </div>
       <ul
         v-if="showImportFailures && displayedFailures.length > 0"
@@ -162,35 +138,52 @@
             {{ failure.fileName }}
           </p>
           <p class="main-task-card__failure-reason">
-            {{ failure.userMessage || failure.errorMessage || "处理失败，请重试" }}
+            {{ failure.userMessage || failure.errorMessage || '处理失败，请重试' }}
           </p>
         </li>
       </ul>
-      <div
-        v-if="showImportFailures && displayedFailures.length > 0"
-        class="main-task-card__follow-up"
-      >
-        <p class="main-task-card__follow-up-text">
-          {{ failureFollowUpText }}
-        </p>
-        <div class="main-task-card__follow-up-actions">
-          <button
-            v-if="showRetryFailuresAction"
-            class="ui-button ui-button--primary"
-            data-action="retry-import-failures"
-            :disabled="retryingFailures || managementActionsDisabled"
-            @click="handleRetryImportFailures"
-          >
-            {{ retryingFailures ? "重试导入中..." : "重试导入" }}
-          </button>
-          <button
-            class="ui-button ui-button--text"
-            data-action="continue-managing-library"
-            @click="handleContinueManagingLibrary"
-          >
-            继续整理图库
-          </button>
-        </div>
+      <div class="main-task-card__actions">
+        <button
+          v-if="showImportFailures && displayedFailures.length > 0"
+          class="ui-button ui-button--text"
+          data-action="dismiss-import-summary"
+          @click="handleAcknowledgeFailures"
+        >
+          知道了
+        </button>
+        <button
+          v-else
+          class="ui-button ui-button--primary"
+          data-action="show-import-failures"
+          @click="handleShowFailures"
+        >
+          查看失败项
+        </button>
+        <button
+          v-if="showImportFailures && showRetryFailuresAction"
+          class="ui-button ui-button--primary"
+          data-action="retry-import-failures"
+          :disabled="retryingFailures || managementActionsDisabled"
+          @click="handleRetryImportFailures"
+        >
+          {{ retryingFailures ? "重试导入中..." : "重试导入" }}
+        </button>
+        <button
+          v-else-if="displayedSummary.importedCount > 0"
+          class="ui-button ui-button--secondary"
+          data-action="view-latest-imported"
+          @click="handleViewLatestImported"
+        >
+          查看本次新增
+        </button>
+        <button
+          v-if="recoveryStore.completedRecoverySummary"
+          class="ui-button ui-button--text"
+          data-action="dismiss-recovery-summary"
+          @click="dismissRecoverySummary"
+        >
+          稍后再看
+        </button>
       </div>
     </section>
     <section
@@ -454,6 +447,7 @@ interface LatestImportSummary {
   importedCount: number;
   duplicatedCount: number;
   failedCount: number;
+  completedAt: number;
 }
 
 interface ImportFailure {
@@ -470,6 +464,38 @@ interface LatestImportedState {
   sourceKey: string;
   count: number;
   activated: boolean;
+}
+
+const IMPORT_SUMMARY_ACK_KEY = "library.latestImportSummaryAck";
+const IMPORT_SUMMARY_TTL_SECONDS = 30 * 60;
+
+function getAcknowledgedImportBatchId() {
+  try {
+    return localStorage.getItem(IMPORT_SUMMARY_ACK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setAcknowledgedImportBatchId(batchId: string | null) {
+  try {
+    if (!batchId) {
+      localStorage.removeItem(IMPORT_SUMMARY_ACK_KEY);
+      return;
+    }
+    localStorage.setItem(IMPORT_SUMMARY_ACK_KEY, batchId);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function shouldDisplayImportSummary(summary: LatestImportSummary) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (summary.completedAt <= 0 || nowSeconds - summary.completedAt > IMPORT_SUMMARY_TTL_SECONDS) {
+    return false;
+  }
+
+  return getAcknowledgedImportBatchId() !== summary.batchId;
 }
 
 const progressPercent = computed(() =>
@@ -582,29 +608,6 @@ const showRetryFailuresAction = computed(() =>
   showImportFailures.value && retryableImportFailures.value.length > 0
 );
 
-const failureFollowUpText = computed(() => {
-  if (!showImportFailures.value || displayedFailures.value.length === 0) {
-    return "";
-  }
-
-  const hasRetryableFailures = displayedFailures.value.some((failure) => failure.retryable);
-  const hasNonRetryableFailures = displayedFailures.value.some((failure) => !failure.retryable);
-
-  if (hasRetryableFailures && hasNonRetryableFailures) {
-    return "可重试的失败项可以直接再试一次，其余失败已先跳过。";
-  }
-
-  if (hasRetryableFailures) {
-    return "可重试的失败项可以直接再试一次。";
-  }
-
-  if ((displayedSummary.value?.importedCount ?? 0) > 0) {
-    return "这些失败项已先跳过，你可以先看本次新增，稍后再继续整理图库。";
-  }
-
-  return "这些失败项已先跳过，你可以继续整理图库。";
-});
-
 watch(displayedSummarySourceKey, (sourceKey) => {
   if (!sourceKey || !displayedSummary.value) {
     return;
@@ -715,6 +718,15 @@ async function fetchLatestImportSummary() {
       return;
     }
 
+    if (!shouldDisplayImportSummary(summary)) {
+      latestImportSummary.value = null;
+      return;
+    }
+
+    if (getAcknowledgedImportBatchId() && getAcknowledgedImportBatchId() !== summary.batchId) {
+      setAcknowledgedImportBatchId(null);
+    }
+
     latestImportSummary.value = summary;
     if (summary.failedCount <= 0) {
       return;
@@ -805,7 +817,17 @@ function dismissRecoverySummary() {
   latestImportedState.value = null;
 }
 
-function handleShowFailures() {
+function dismissImportSummary() {
+  const batchId = latestImportSummary.value?.batchId;
+  if (batchId) {
+    setAcknowledgedImportBatchId(batchId);
+  }
+  latestImportSummary.value = null;
+  importFailures.value = [];
+  showImportFailures.value = false;
+}
+
+function handleAcknowledgeFailures() {
   if (recoveryStore.completedRecoverySummary) {
     recoveryStore.markRecoveryResultSeen();
     showImportFailures.value = false;
@@ -813,11 +835,11 @@ function handleShowFailures() {
     return;
   }
 
-  showImportFailures.value = !showImportFailures.value;
+  dismissImportSummary();
 }
 
-function handleContinueManagingLibrary() {
-  showImportFailures.value = false;
+function handleShowFailures() {
+  showImportFailures.value = true;
 }
 
 function handleViewLatestImported() {
@@ -835,6 +857,8 @@ function handleViewLatestImported() {
 
   if (recoveryStore.completedRecoverySummary) {
     recoveryStore.markRecoveryResultSeen();
+  } else {
+    dismissImportSummary();
   }
 
   scrollToTop();
@@ -853,7 +877,7 @@ async function handleRetryImportFailures() {
         path: failure.filePath!,
       }))
     );
-    showImportFailures.value = false;
+    dismissImportSummary();
     await reloadGallery();
   } finally {
     retryingFailures.value = false;
@@ -999,6 +1023,9 @@ async function handleBackToSearch() {
 .main-task-card--summary {
   background: linear-gradient(135deg, color-mix(in srgb, #eef6ff 88%, white), color-mix(in srgb, #dbeafe 72%, white));
 }
+.main-task-card--summary-expanded {
+  align-items: flex-start;
+}
 .main-task-card--progress {
   background: linear-gradient(135deg, color-mix(in srgb, #f5f8ff 90%, white), color-mix(in srgb, #e0e7ff 72%, white));
 }
@@ -1034,6 +1061,17 @@ async function handleBackToSearch() {
   gap: 0.8rem;
   color: var(--ui-text-secondary);
   font-size: 0.9rem;
+}
+.main-task-card__stat {
+  display: inline-flex;
+  align-items: center;
+}
+.main-task-card__stat--failure {
+  color: #9d6320;
+  font-weight: 700;
+  background: color-mix(in srgb, #f2c98c 20%, transparent);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
 }
 .main-task-card__actions {
   display: flex;
@@ -1094,6 +1132,8 @@ async function handleBackToSearch() {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
 }
 .main-task-card__failure-item {
   color: var(--ui-text-primary);
@@ -1109,23 +1149,11 @@ async function handleBackToSearch() {
   color: var(--ui-text-secondary);
   line-height: 1.45;
 }
-.main-task-card__follow-up {
-  display: flex;
+.main-task-card--summary-expanded .main-task-card__actions {
   flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 0.25rem;
-  border-top: 1px solid var(--ui-border-subtle);
-}
-.main-task-card__follow-up-text {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  line-height: 1.5;
-}
-.main-task-card__follow-up-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  min-width: 88px;
 }
 .usage-notice {
   margin: 0;
@@ -1231,6 +1259,9 @@ async function handleBackToSearch() {
   }
   .main-task-card__actions {
     width: 100%;
+  }
+  .main-task-card--summary-expanded .main-task-card__actions {
+    align-items: flex-start;
   }
   .usage-notice {
     text-align: left;

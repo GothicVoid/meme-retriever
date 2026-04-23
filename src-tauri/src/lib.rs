@@ -3,6 +3,7 @@
 pub mod commands;
 pub mod config;
 pub mod db;
+pub mod image_io;
 pub mod indexer;
 pub mod kb;
 pub mod ml;

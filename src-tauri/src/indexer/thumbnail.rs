@@ -5,7 +5,7 @@ pub fn generate(src: &Path, dst: &Path, size: u32) -> anyhow::Result<()> {
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let img = image::open(src)?;
+    let img = crate::image_io::open_image(src)?;
     img.thumbnail(size, size).save(dst)?;
     Ok(())
 }

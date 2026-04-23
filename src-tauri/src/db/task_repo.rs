@@ -19,6 +19,7 @@ pub struct ImportBatchSummary {
     pub imported_count: i64,
     pub duplicated_count: i64,
     pub failed_count: i64,
+    pub completed_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -218,7 +219,8 @@ pub async fn get_latest_import_batch_summary(
             COUNT(*) AS total_count,
             SUM(CASE WHEN result_kind='imported' THEN 1 ELSE 0 END) AS imported_count,
             SUM(CASE WHEN result_kind='duplicated' THEN 1 ELSE 0 END) AS duplicated_count,
-            SUM(CASE WHEN result_kind='failed' THEN 1 ELSE 0 END) AS failed_count
+            SUM(CASE WHEN result_kind='failed' THEN 1 ELSE 0 END) AS failed_count,
+            MAX(updated_at) AS completed_at
          FROM task_queue
          WHERE batch_id = (
             SELECT batch_id
@@ -238,6 +240,7 @@ pub async fn get_latest_import_batch_summary(
         imported_count: r.get("imported_count"),
         duplicated_count: r.get("duplicated_count"),
         failed_count: r.get("failed_count"),
+        completed_at: r.get("completed_at"),
     }))
 }
 
@@ -452,6 +455,7 @@ mod tests {
         assert_eq!(summary.imported_count, 1);
         assert_eq!(summary.duplicated_count, 1);
         assert_eq!(summary.failed_count, 1);
+        assert_eq!(summary.completed_at, 200);
     }
 
     #[sqlx::test(migrations = "./migrations")]
