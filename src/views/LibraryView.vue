@@ -24,15 +24,31 @@
               >
                 导入文件夹
               </button>
-              <template v-if="store.selectedIds.size > 0">
+              <button
+                v-if="!selectionMode && visibleImages.length > 0"
+                class="ui-button ui-button--secondary"
+                data-action="enter-batch-delete"
+                :disabled="managementActionsDisabled"
+                @click="enterSelectionMode"
+              >
+                批量删除
+              </button>
+              <template v-if="selectionMode">
                 <span class="selection-count">已选 {{ store.selectedIds.size }} 张</span>
                 <button
                   class="ui-button ui-button--danger"
                   data-action="delete-selected"
-                  :disabled="managementActionsDisabled"
+                  :disabled="managementActionsDisabled || store.selectedIds.size === 0"
                   @click="handleDeleteSelected"
                 >
                   删除选中
+                </button>
+                <button
+                  class="ui-button ui-button--text"
+                  data-action="cancel-selection"
+                  @click="exitSelectionMode"
+                >
+                  取消
                 </button>
               </template>
             </div>
@@ -404,10 +420,12 @@
           :loading="store.loading && store.images.length === 0"
           :show-debug-info="false"
           layout="library"
-          :selectable="true"
+          :selectable="selectionMode"
           :selected-ids="store.selectedIds"
           :focused-ids="latestImportedHighlightIds"
           :status-badge-labels="latestImportedBadgeLabels"
+          :card-click-action="selectionMode ? 'select' : 'open'"
+          :hover-preview="false"
           :empty-message="emptyMessage"
           @delete="handleDelete"
           @select="store.toggleSelection"
@@ -495,6 +513,7 @@ const importFailures = ref<ImportFailure[]>([]);
 const showImportFailures = ref(false);
 const latestImportedState = ref<LatestImportedState | null>(null);
 const retryingFailures = ref(false);
+const selectionMode = ref(false);
 
 interface LatestImportSummary {
   batchId: string;
@@ -717,19 +736,25 @@ watch(hasMissingImages, (nextHasMissing) => {
   }
 });
 
+watch(visibleImages, (images) => {
+  if (images.length === 0) {
+    exitSelectionMode();
+  }
+});
+
 watch(
   () => route?.query.fileStatus,
   (fileStatus) => {
     if (fileStatus === "missing") {
       showMissingFilter.value = true;
-      store.clearSelection();
+      exitSelectionMode();
       return;
     }
 
     const browserFileStatus = new URLSearchParams(window.location.search).get("fileStatus");
     if (browserFileStatus === "missing") {
       showMissingFilter.value = true;
-      store.clearSelection();
+      exitSelectionMode();
       return;
     }
 
@@ -822,6 +847,7 @@ async function fetchLatestImportSummary() {
 async function reloadGallery() {
   pagingError.value = false;
   showBackToTop.value = false;
+  exitSelectionMode();
   try {
     await store.fetchImageCount();
     await fetchLatestImportSummary();
@@ -889,12 +915,24 @@ function scrollToTop() {
 
 function handleViewMissingImages() {
   showMissingFilter.value = true;
-  store.clearSelection();
+  exitSelectionMode();
   scrollToTop();
 }
 
 function handleViewAllImages() {
   showMissingFilter.value = false;
+  exitSelectionMode();
+}
+
+function enterSelectionMode() {
+  if (managementActionsDisabled.value || visibleImages.value.length === 0) {
+    return;
+  }
+  selectionMode.value = true;
+}
+
+function exitSelectionMode() {
+  selectionMode.value = false;
   store.clearSelection();
 }
 
@@ -1019,10 +1057,12 @@ async function handleDeleteFromDetail(id: string) {
 
 async function handleDeleteSelected() {
   const count = store.selectedIds.size;
+  if (count === 0) return;
   const ok = await confirm(`确认删除 ${count} 张图片？此操作不可撤销。`, { title: "批量删除" });
   if (!ok) return;
   await store.deleteSelected();
   store.total = Math.max(0, store.total - count);
+  exitSelectionMode();
 }
 
 async function handleClearMissing() {
@@ -1035,7 +1075,7 @@ async function handleClearMissing() {
   try {
     const removed = await invoke<number>("clear_missing_images");
     if (removed > 0) {
-      store.clearSelection();
+      exitSelectionMode();
     }
     await reloadGallery();
     if (missingImages.value.length === 0) {

@@ -10,7 +10,7 @@
       class="image-card ui-result-card"
       :class="{ 'image-card--focused': focused }"
       @click="handleClick"
-      @dblclick="emit('open', image.id)"
+      @dblclick="handleDoubleClick"
     >
       <div class="image-media ui-result-card__media">
         <input
@@ -184,14 +184,23 @@ import { getRelevanceBadgeClass, getUserFacingRelevanceLabel } from "@/utils/rel
 
 const CLOSE_CONTEXT_MENU_EVENT = "image-card:close-context-menu";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   image: SearchResult;
   showDebugInfo: boolean;
   selectable?: boolean;
   selected?: boolean;
   focused?: boolean;
   statusBadgeLabel?: string;
-}>();
+  clickAction?: "copy" | "open" | "select";
+  hoverPreview?: boolean;
+}>(), {
+  selectable: false,
+  selected: false,
+  focused: false,
+  statusBadgeLabel: undefined,
+  clickAction: "copy",
+  hoverPreview: true,
+});
 const emit = defineEmits<{
   delete: [id: string];
   select: [id: string];
@@ -216,6 +225,8 @@ const previewState = ref<"normal" | "load-failed" | "gif-damaged">("normal");
 const isMissingRecord = computed(() => props.image.fileStatus === "missing");
 const thumbnailSrc = computed(() => convertFileSrc(props.image.thumbnailPath || props.image.filePath));
 const hoverPreviewSrc = computed(() => convertFileSrc(props.image.filePath || props.image.thumbnailPath));
+const clickAction = computed(() => props.clickAction);
+const hoverPreviewEnabled = computed(() => props.hoverPreview);
 
 const formatBadge = computed(() => {
   const fmt = props.image.fileFormat?.toLowerCase();
@@ -314,6 +325,14 @@ const hoverPreviewStyle = computed(() => ({
 async function handleClick() {
   hoverPreviewVisible.value = false;
   clearHoverPreviewTimer();
+  if (clickAction.value === "open") {
+    emit("open", props.image.id);
+    return;
+  }
+  if (clickAction.value === "select") {
+    emit("select", props.image.id);
+    return;
+  }
   try {
     await copyImage(props.image.id);
     showToast("已复制", "info", 1500);
@@ -325,6 +344,12 @@ async function handleClick() {
       "error",
       1500,
     );
+  }
+}
+
+function handleDoubleClick() {
+  if (clickAction.value === "copy") {
+    emit("open", props.image.id);
   }
 }
 
@@ -401,6 +426,7 @@ function scheduleHoverPreviewClose() {
 }
 
 function handleMouseEnter() {
+  if (!hoverPreviewEnabled.value) return;
   clearHoverPreviewTimer();
   clearHoverPreviewCloseTimer();
   hoverPreviewTimer = window.setTimeout(() => {
@@ -411,6 +437,7 @@ function handleMouseEnter() {
 }
 
 function handleMouseLeave() {
+  if (!hoverPreviewEnabled.value) return;
   clearHoverPreviewTimer();
   scheduleHoverPreviewClose();
 }

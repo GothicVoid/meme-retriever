@@ -28,6 +28,17 @@ const mockImages: ImageMeta[] = [
   { id: "uuid-2", filePath: "/img2.jpg", fileName: "img2.jpg", thumbnailPath: "/t2.jpg", width: 100, height: 100, addedAt: 0, useCount: 0, tags: [] },
 ];
 
+function mockGallery(images = mockImages) {
+  mockInvoke.mockImplementation(async (cmd, args) => {
+    if (cmd === "get_pending_tasks") return [];
+    if (cmd === "get_image_count") return images.length;
+    if (cmd === "get_images" && (!args || (args as { page?: number }).page === 0)) return images;
+    if (cmd === "get_latest_import_summary") return null;
+    if (cmd === "delete_images") return null;
+    return [];
+  });
+}
+
 describe("LibraryView 批量删除", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -35,43 +46,62 @@ describe("LibraryView 批量删除", () => {
     mockConfirm.mockReset();
   });
 
-  it("无选中时不显示批量删除按钮", async () => {
-    mockInvoke.mockResolvedValueOnce(2);
-    mockInvoke.mockResolvedValueOnce(mockImages);
+  it("默认不显示删除选中按钮，保留批量删除入口", async () => {
+    mockGallery();
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
     expect(wrapper.find("[data-action='delete-selected']").exists()).toBe(false);
+    expect(wrapper.find("[data-action='enter-batch-delete']").exists()).toBe(true);
     wrapper.unmount();
   });
 
-  it("有选中时显示批量删除按钮", async () => {
-    mockInvoke.mockResolvedValueOnce(2);
-    mockInvoke.mockResolvedValueOnce(mockImages);
+  it("点击批量删除后进入选择模式并显示 checkbox", async () => {
+    mockGallery();
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
-    const store = useLibraryStore();
-    store.toggleSelection("uuid-1");
+
+    await wrapper.get("[data-action='enter-batch-delete']").trigger("click");
     await wrapper.vm.$nextTick();
+
     expect(wrapper.find("[data-action='delete-selected']").exists()).toBe(true);
+    expect(wrapper.find("input[type='checkbox']").exists()).toBe(true);
     wrapper.unmount();
   });
 
   it("批量删除确认框显示选中数量", async () => {
-    mockInvoke.mockResolvedValueOnce(2);
-    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockGallery();
     mockConfirm.mockResolvedValueOnce(false);
     const wrapper = mount(LibraryView, { attachTo: document.body });
     await flushPromises();
-    const store = useLibraryStore();
-    store.toggleSelection("uuid-1");
-    store.toggleSelection("uuid-2");
+
+    await wrapper.get("[data-action='enter-batch-delete']").trigger("click");
     await wrapper.vm.$nextTick();
+    const checkboxes = wrapper.findAll("input[type='checkbox']");
+    await checkboxes[0].trigger("change");
+    await checkboxes[1].trigger("change");
+
     await wrapper.find("[data-action='delete-selected']").trigger("click");
     await flushPromises();
     expect(mockConfirm).toHaveBeenCalledWith(
       expect.stringContaining("2"),
       expect.anything()
     );
+    wrapper.unmount();
+  });
+
+  it("取消选择模式后隐藏 checkbox 并清空选择", async () => {
+    mockGallery();
+    const wrapper = mount(LibraryView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.get("[data-action='enter-batch-delete']").trigger("click");
+    await wrapper.find("input[type='checkbox']").trigger("change");
+    await wrapper.get("[data-action='cancel-selection']").trigger("click");
+    await wrapper.vm.$nextTick();
+
+    const store = useLibraryStore();
+    expect(wrapper.find("input[type='checkbox']").exists()).toBe(false);
+    expect(store.selectedIds.size).toBe(0);
     wrapper.unmount();
   });
 

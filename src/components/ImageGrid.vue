@@ -14,6 +14,8 @@
       :selected="selectedIds?.has(img.id) ?? false"
       :focused="focusedIds?.has(img.id) || focusedId === img.id"
       :status-badge-label="statusBadgeLabels?.[img.id]"
+      :click-action="cardClickAction"
+      :hover-preview="hoverPreview"
       @delete="$emit('delete', $event)"
       @copied="$emit('copied', $event)"
       @select="$emit('select', $event)"
@@ -26,7 +28,7 @@
 <script setup lang="ts">
 import ImageCard from "./ImageCard.vue";
 import type { SearchResult } from "@/stores/search";
-defineProps<{
+withDefaults(defineProps<{
   images: SearchResult[];
   loading: boolean;
   showDebugInfo: boolean;
@@ -38,7 +40,20 @@ defineProps<{
   focusedIds?: Set<string>;
   statusBadgeLabels?: Record<string, string>;
   layout?: "default" | "library";
-}>();
+  cardClickAction?: "copy" | "open" | "select";
+  hoverPreview?: boolean;
+}>(), {
+  loadingMessage: undefined,
+  emptyMessage: undefined,
+  selectable: false,
+  selectedIds: undefined,
+  focusedId: null,
+  focusedIds: undefined,
+  statusBadgeLabels: undefined,
+  layout: "default",
+  cardClickAction: "copy",
+  hoverPreview: true,
+});
 defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string]; preview: [id: string] }>();
 </script>
 
@@ -53,6 +68,7 @@ defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; 
   grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
   gap: 0.7rem;
 }
+
 /* PRD §7.3: <800px 2列，>1400px 4列 */
 @media (max-width: 799px) {
   .image-grid {

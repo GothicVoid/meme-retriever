@@ -51,6 +51,23 @@ describe("ImageCard", () => {
     vi.useRealTimers();
   });
 
+  it("hoverPreview=false 时不显示轻预览入口", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false, hoverPreview: false },
+      attachTo: document.body,
+    });
+
+    await wrapper.get(".image-card-shell").trigger("mouseenter");
+    await vi.advanceTimersByTimeAsync(180);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="hover-preview"]').exists()).toBe(false);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("鼠标快速扫过卡片时不显示轻预览", async () => {
     vi.useFakeTimers();
     const wrapper = mount(ImageCard, {
@@ -409,6 +426,28 @@ describe("ImageCard", () => {
     await wrapper.find("input[type='checkbox']").trigger("change");
     expect(wrapper.emitted("select")).toBeTruthy();
     expect(wrapper.emitted("select")![0]).toEqual(["uuid-1"]);
+  });
+
+  it("clickAction=open 时单击图片打开详情且不复制", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false, clickAction: "open" },
+    });
+
+    await wrapper.find(".image-card").trigger("click");
+
+    expect(wrapper.emitted("open")![0]).toEqual(["uuid-1"]);
+    expect(copyImageMock).not.toHaveBeenCalled();
+  });
+
+  it("clickAction=select 时单击图片切换选中且不复制", async () => {
+    const wrapper = mount(ImageCard, {
+      props: { image: mockImage, showDebugInfo: false, clickAction: "select" },
+    });
+
+    await wrapper.find(".image-card").trigger("click");
+
+    expect(wrapper.emitted("select")![0]).toEqual(["uuid-1"]);
+    expect(copyImageMock).not.toHaveBeenCalled();
   });
 
   it("单击图片时复制到剪贴板并显示成功提示", async () => {
