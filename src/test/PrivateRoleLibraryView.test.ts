@@ -69,13 +69,15 @@ describe("PrivateRoleLibraryView", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("kb_get_state");
-    expect(wrapper.text()).toContain("角色识别增强维护");
+    expect(wrapper.text()).toContain("按角色名搜不到时，补几张图试一下，能搜到再保存");
     expect(wrapper.text()).toContain("阿布");
     expect(wrapper.text()).toContain("老板");
     expect(wrapper.text()).toContain("检测到潜在冲突词");
+    expect(wrapper.find("[data-action='back-to-library']").exists()).toBe(true);
   });
 
-  it("编辑后点击校验会调用后端并刷新报告", async () => {
+  it("编辑后会自动触发校验并刷新报告", async () => {
+    vi.useFakeTimers();
     mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
       if (cmd === "kb_validate_entries") {
@@ -103,7 +105,7 @@ describe("PrivateRoleLibraryView", () => {
 
     await wrapper.get("[data-entry='阿布']").trigger("click");
     await wrapper.get("[data-field='name']").setValue("阿布 Plus");
-    await wrapper.get("[data-action='validate-kb']").trigger("click");
+    await vi.advanceTimersByTimeAsync(450);
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith(
@@ -115,6 +117,7 @@ describe("PrivateRoleLibraryView", () => {
       })
     );
     expect(wrapper.text()).toContain("高歧义短词");
+    vi.useRealTimers();
   });
 
   it("点击保存会将当前私有角色库写回", async () => {
@@ -301,7 +304,7 @@ describe("PrivateRoleLibraryView", () => {
                 category: "person",
                 aliases: ["角色别名"],
                 matchTerms: ["摊手"],
-                notes: "测试备注",
+                notes: "",
                 matchMode: "contains",
                 priority: 0,
                 exampleImages: ["kb_examples/new-role/sample-1.jpg"],
@@ -320,12 +323,12 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.find("[data-field='category']").exists()).toBe(false);
     expect(wrapper.find("[data-field='match-mode']").exists()).toBe(false);
     expect(wrapper.find("[data-field='priority']").exists()).toBe(false);
+    expect(wrapper.find("[data-field='notes']").exists()).toBe(false);
 
     await wrapper.get("[data-action='new-entry']").trigger("click");
     await wrapper.get("[data-field='name']").setValue("新角色");
     await wrapper.get("[data-field='aliases']").setValue("角色别名");
     await wrapper.get("[data-field='match-terms']").setValue("摊手");
-    await wrapper.get("[data-field='notes']").setValue("测试备注");
     mockOpen.mockResolvedValueOnce("/tmp/new-role.jpg");
     await wrapper.get("[data-action='import-example-image']").trigger("click");
     await wrapper.get("[data-action='save-kb']").trigger("click");

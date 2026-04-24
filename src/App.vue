@@ -1,7 +1,12 @@
 <template>
   <div
     class="app-shell"
-    :class="`app-shell--${effectiveWindowMode}`"
+    :class="[
+      `app-shell--${effectiveWindowMode}`,
+      {
+        'app-shell--private-role': route.path === '/private-role-maintenance' || route.path === '/kb-maintenance',
+      },
+    ]"
     data-ui-theme="memedesk"
   >
     <GlobalProgressBar />
@@ -12,6 +17,7 @@
       :class="{
         'app-shell__content--sidebar': isSidebarMode,
         'app-shell__content--library': route.path === '/library',
+        'app-shell__content--private-role': route.path === '/private-role-maintenance' || route.path === '/kb-maintenance',
       }"
     >
       <RouterView />

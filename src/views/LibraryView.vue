@@ -346,8 +346,8 @@
           <span
             class="advanced-capabilities__hint"
             role="img"
-            aria-label="说明：搜索词里没有字、模型又认不出角色时，可以补几张示例图帮助搜索"
-            title="搜索词里没有字、模型又认不出角色时，可以补几张示例图帮助搜索"
+            aria-label="说明：按角色名搜不到时，可补几张示例图帮助识别"
+            title="按角色名搜不到时，可补几张示例图帮助识别"
             tabindex="0"
           >?</span>
         </div>

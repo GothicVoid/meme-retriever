@@ -92,7 +92,7 @@ describe("LibraryView 高级能力入口", () => {
     expect(wrapper.text()).toContain("角色搜索增强");
     expect(wrapper.find("[data-section='private-role-library-entry']").exists()).toBe(true);
     expect(action.attributes("aria-label")).toContain("角色搜索增强");
-    expect(hint.attributes("title")).toContain("补几张示例图帮助搜索");
+    expect(hint.attributes("title")).toContain("按角色名搜不到时，可补几张示例图帮助识别");
     expect(hint.attributes("aria-label")).toContain("说明");
   });
 

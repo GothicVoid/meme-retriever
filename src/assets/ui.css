@@ -105,6 +105,11 @@ button {
   gap: var(--ui-space-5);
 }
 
+.app-shell--expanded.app-shell--private-role {
+  padding: 0;
+  gap: 0;
+}
+
 .app-shell--expanded .app-shell__content {
   width: min(1200px, 100%);
   margin: 0 auto;
@@ -117,6 +122,18 @@ button {
 .app-shell--expanded .app-shell__content--library {
   width: 100%;
   margin: 0;
+}
+
+.app-shell--expanded .app-shell__content--private-role {
+  width: 100%;
+  margin: 0;
+  min-height: 100%;
+  display: block;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at top right, rgba(229, 126, 63, 0.16), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(20, 101, 192, 0.12), transparent 32%),
+    linear-gradient(180deg, #fcfaf6 0%, #f3efe7 100%);
 }
 
 .ui-input-shell {
