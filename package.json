@@ -9,7 +9,6 @@
     "preview": "vite preview",
     "prepare": "husky",
     "tauri": "tauri",
-    "kb": "cargo run --manifest-path src-tauri/Cargo.toml --bin kb --",
     "lint": "eslint src --ext .ts,.vue",
     "test": "vitest --run",
     "test:watch": "vitest"
