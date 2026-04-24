@@ -27,7 +27,6 @@ const mockState = {
         name: "阿布",
         category: "person",
         aliases: ["布布"],
-        matchTerms: ["撇嘴", "委屈"],
         notes: "私有角色卡片",
         matchMode: "contains",
         priority: 100,
@@ -37,7 +36,6 @@ const mockState = {
         name: "老板",
         category: "person",
         aliases: ["王总"],
-        matchTerms: ["冷笑", "看报表"],
         notes: "工作场景常用私有对象",
         matchMode: "contains",
         priority: 90,
@@ -172,7 +170,7 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.text()).toContain("已保存到");
   });
 
-  it("输入角色线索后可以看到测试命中结果", async () => {
+  it("输入角色名后可以看到测试命中结果", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
       if (cmd === "kb_test_match_entries") {
@@ -181,8 +179,8 @@ describe("PrivateRoleLibraryView", () => {
             {
               name: "老板",
               category: "person",
-              matchType: "MatchTermSubstring",
-              matchedTerm: "冷笑",
+              matchType: "AliasExact",
+              matchedTerm: "王总",
               score: 355,
               priority: 90,
             },
@@ -196,12 +194,12 @@ describe("PrivateRoleLibraryView", () => {
     const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
-    await wrapper.get("[data-field='test-text']").setValue("我想找老板冷笑那张图");
+    await wrapper.get("[data-field='test-text']").setValue("王总");
     await wrapper.get("[data-action='test-match']").trigger("click");
     await flushPromises();
 
     expect(wrapper.text()).toContain("最终推荐角色：老板");
-    expect(wrapper.text()).toContain("命中词：冷笑");
+    expect(wrapper.text()).toContain("命中词：王总");
   });
 
   it("示例图会以图片卡片展示并随保存一起提交", async () => {
@@ -285,7 +283,7 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.html()).toContain("asset://app_data/kb_examples/entry/sample.jpg");
   });
 
-  it("维护工具不再暴露旧分类和匹配控制字段，新建角色按私有角色默认值保存", async () => {
+  it("维护工具不再暴露旧分类和匹配控制字段，新建角色按主体识别字段保存", async () => {
     mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
       if (cmd === "kb_get_state") return Promise.resolve(mockState);
       if (cmd === "kb_import_example_image") {
@@ -303,7 +301,6 @@ describe("PrivateRoleLibraryView", () => {
                 name: "新角色",
                 category: "person",
                 aliases: ["角色别名"],
-                matchTerms: ["摊手"],
                 notes: "",
                 matchMode: "contains",
                 priority: 0,
@@ -324,11 +321,11 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.find("[data-field='match-mode']").exists()).toBe(false);
     expect(wrapper.find("[data-field='priority']").exists()).toBe(false);
     expect(wrapper.find("[data-field='notes']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("匹配线索");
 
     await wrapper.get("[data-action='new-entry']").trigger("click");
     await wrapper.get("[data-field='name']").setValue("新角色");
     await wrapper.get("[data-field='aliases']").setValue("角色别名");
-    await wrapper.get("[data-field='match-terms']").setValue("摊手");
     mockOpen.mockResolvedValueOnce("/tmp/new-role.jpg");
     await wrapper.get("[data-action='import-example-image']").trigger("click");
     await wrapper.get("[data-action='save-kb']").trigger("click");

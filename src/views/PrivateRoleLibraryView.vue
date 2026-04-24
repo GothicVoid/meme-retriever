@@ -65,7 +65,7 @@
             v-model.trim="filterKeyword"
             class="filter-input"
             type="text"
-            placeholder="按角色名 / 别名 / 线索词筛选"
+            placeholder="按角色名 / 别名筛选"
           >
 
           <div class="entry-list">
@@ -179,7 +179,7 @@
                 <div class="panel-head compact">
                   <div>
                     <h3>先试一下能不能搜到</h3>
-                    <p class="panel-copy">输入你真的会搜的名字、别名或记忆线索，先确认这次补强值不值。</p>
+                    <p class="panel-copy">输入你真的会搜的角色名或别名，先确认这个角色有没有被认出来。</p>
                   </div>
                 </div>
                 <textarea
@@ -187,7 +187,7 @@
                   data-field="test-text"
                   class="test-text"
                   rows="4"
-                  placeholder="输入角色名、别名或你记得的动作/表情线索"
+                  placeholder="输入角色名或别名"
                 />
                 <button
                   class="primary-btn full"
@@ -261,21 +261,6 @@
                 </div>
               </section>
 
-              <details class="extra-fields">
-                <summary>更多补充（可选）</summary>
-
-                <div class="extra-fields__body">
-                  <label class="field">
-                    <span>匹配线索 <em>动作、表情、场景等记忆点；想不到可以先留空</em></span>
-                    <textarea
-                      v-model="form.matchTerms"
-                      data-field="match-terms"
-                      rows="4"
-                      placeholder="如：撇嘴、冷笑、看报表"
-                    />
-                  </label>
-                </div>
-              </details>
             </section>
           </div>
         </section>
@@ -300,7 +285,6 @@ import { routerKey, type Router } from "vue-router";
 type EntryForm = {
   name: string;
   aliases: string;
-  matchTerms: string;
   notes: string;
   exampleImages: string[];
 };
@@ -310,7 +294,6 @@ type KbEntry = {
   name: string;
   category: "meme" | "source" | "person";
   aliases: string[];
-  matchTerms: string[];
   notes: string;
   matchMode: "exact" | "contains" | "exact_or_contains";
   priority: number;
@@ -365,7 +348,6 @@ let validationTimer: ReturnType<typeof setTimeout> | null = null;
 const form = reactive<EntryForm>({
   name: "",
   aliases: "",
-  matchTerms: "",
   notes: "",
   exampleImages: [],
 });
@@ -381,7 +363,6 @@ const filteredEntries = computed(() => {
     const haystack = [
       entry.name,
       entry.aliases.join(" "),
-      entry.matchTerms.join(" "),
       entry.notes,
     ]
       .join(" ")
@@ -445,7 +426,6 @@ function createEntry() {
       name: "",
       category: "person",
       aliases: [],
-      matchTerms: [],
       notes: "",
       matchMode: "contains",
       priority: 0,
@@ -486,7 +466,6 @@ function syncEntryToForm() {
     syncingForm.value = true;
     form.name = "";
     form.aliases = "";
-    form.matchTerms = "";
     form.notes = "";
     form.exampleImages = [];
     syncingForm.value = false;
@@ -496,7 +475,6 @@ function syncEntryToForm() {
   syncingForm.value = true;
   form.name = selectedEntry.value.name;
   form.aliases = selectedEntry.value.aliases.join(", ");
-  form.matchTerms = selectedEntry.value.matchTerms.join(", ");
   form.notes = selectedEntry.value.notes;
   form.exampleImages = [...selectedEntry.value.exampleImages];
   syncingForm.value = false;
@@ -507,7 +485,6 @@ function syncFormToEntry() {
   selectedEntry.value.name = form.name;
   selectedEntry.value.category = "person";
   selectedEntry.value.aliases = parseList(form.aliases);
-  selectedEntry.value.matchTerms = parseList(form.matchTerms);
   selectedEntry.value.notes = form.notes.trim();
   selectedEntry.value.matchMode = selectedEntry.value.matchMode || "contains";
   selectedEntry.value.priority = selectedEntry.value.priority || 0;

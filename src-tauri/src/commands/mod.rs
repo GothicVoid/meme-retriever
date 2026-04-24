@@ -132,6 +132,7 @@ pub struct KbEntryPayload {
     pub name: String,
     pub category: String,
     pub aliases: Vec<String>,
+    #[serde(default)]
     pub match_terms: Vec<String>,
     pub notes: String,
     pub match_mode: String,
