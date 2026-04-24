@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use super::provider::{category_threshold, KnowledgeBaseProvider, PrivateRoleMatch, QueryNormalization};
-use crate::db::repo::{TagCategory, TagRecord, TagSourceStrategy};
+use super::provider::{KnowledgeBaseProvider, PrivateRoleMatch, QueryNormalization};
+use crate::db::repo::TagCategory;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -17,17 +17,11 @@ struct KbEntry {
     #[serde(default)]
     aliases: Vec<String>,
     #[serde(default)]
-    match_terms: Vec<String>,
-    #[serde(default = "default_match_mode")]
     match_mode: String,
     #[serde(default = "default_priority")]
     priority: f32,
     #[serde(default)]
     example_images: Vec<String>,
-}
-
-fn default_match_mode() -> String {
-    "contains".to_string()
 }
 
 fn default_priority() -> f32 {
@@ -76,126 +70,6 @@ impl LocalKBProvider {
                 .or(entry.r#type.as_deref())
                 .unwrap_or("custom"),
         )
-    }
-
-    fn all_terms<'a>(entry: &'a KbEntry) -> impl Iterator<Item = &'a str> + 'a {
-        std::iter::once(entry.name.as_str()).chain(entry.aliases.iter().map(String::as_str))
-    }
-
-    fn match_candidates(&self, ocr_text: &str, file_name: &str) -> Vec<TagRecord> {
-        let normalized_ocr = normalize(ocr_text);
-        let normalized_file_name = normalize_file_name(file_name);
-        let mut candidates = Vec::new();
-
-        for entry in &self.entries {
-            let mut score = 0.0f32;
-            let mut matched_sources = HashSet::new();
-            let mut strongest = 0.0f32;
-
-            let canonical = normalize(&entry.name);
-            if term_matches(&normalized_ocr, &canonical, &entry.match_mode) {
-                strongest = strongest.max(if normalized_ocr == canonical { 1.0 } else { 0.8 });
-                matched_sources.insert("ocr");
-            }
-
-            for alias in &entry.aliases {
-                let normalized_alias = normalize(alias);
-                if exact_or_contains(&normalized_ocr, &normalized_alias, &entry.match_mode) {
-                    let base = if normalized_ocr == normalized_alias {
-                        0.9
-                    } else {
-                        0.8
-                    };
-                    strongest = strongest.max(base);
-                    matched_sources.insert("ocr");
-                }
-            }
-
-            let mut matched_term_count = 0;
-            for term in &entry.match_terms {
-                let normalized_term = normalize(term);
-                if allow_match_term(&normalized_term)
-                    && term_matches(&normalized_ocr, &normalized_term, &entry.match_mode)
-                {
-                    strongest = strongest.max(0.6);
-                    matched_term_count += 1;
-                    matched_sources.insert("ocr");
-                }
-            }
-
-            for name_term in Self::all_terms(entry) {
-                let normalized_name_term = normalize(name_term);
-                if allow_file_name_match(&normalized_name_term)
-                    && normalized_file_name.contains(&normalized_name_term)
-                {
-                    strongest = strongest.max(0.3);
-                    matched_sources.insert("file_name");
-                    break;
-                }
-            }
-
-            if strongest == 0.0 {
-                continue;
-            }
-
-            score += strongest;
-            if matched_sources.len() > 1 {
-                score += 0.1;
-            }
-            if matched_term_count > 1 {
-                score += 0.05 * (matched_term_count as f32 - 1.0);
-            }
-            score = (score * entry.priority).min(1.0);
-
-            let category = Self::entry_category(entry);
-            let threshold = category_threshold(&category);
-            let file_name_only =
-                matched_sources.len() == 1 && matched_sources.contains("file_name");
-            if score < threshold || file_name_only {
-                continue;
-            }
-
-            candidates.push(TagRecord {
-                tag_text: entry.name.clone(),
-                category,
-                is_auto: true,
-                source_strategy: match (
-                    matched_sources.contains("ocr"),
-                    matched_sources.contains("file_name"),
-                ) {
-                    (true, true) => TagSourceStrategy::OcrFileName,
-                    (true, false) => TagSourceStrategy::Ocr,
-                    (false, true) => TagSourceStrategy::FileName,
-                    (false, false) => TagSourceStrategy::Fallback,
-                },
-                confidence: score.min(1.0),
-            });
-        }
-
-        candidates.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| b.tag_text.len().cmp(&a.tag_text.len()))
-        });
-
-        let mut kept = Vec::new();
-        let mut per_category: HashMap<&'static str, usize> = HashMap::new();
-        let mut seen = HashSet::new();
-        for candidate in candidates {
-            let key = candidate.tag_text.to_lowercase();
-            if seen.contains(&key) {
-                continue;
-            }
-            let category_key = candidate.category.as_str();
-            if *per_category.get(category_key).unwrap_or(&0) >= 2 || kept.len() >= 5 {
-                continue;
-            }
-            seen.insert(key);
-            *per_category.entry(category_key).or_insert(0) += 1;
-            kept.push(candidate);
-        }
-        kept
     }
 }
 
@@ -288,10 +162,6 @@ impl KnowledgeBaseProvider for LocalKBProvider {
             })
             .map(|(_, _, role)| role)
     }
-
-    fn auto_tag(&self, ocr_text: &str, file_name: &str) -> Vec<TagRecord> {
-        self.match_candidates(ocr_text, file_name)
-    }
 }
 
 fn normalize(value: &str) -> String {
@@ -308,41 +178,6 @@ fn normalize(value: &str) -> String {
         .to_lowercase()
 }
 
-fn normalize_file_name(file_name: &str) -> String {
-    let stem = std::path::Path::new(file_name)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or(file_name);
-    normalize(stem)
-}
-
-fn allow_match_term(term: &str) -> bool {
-    let len = term.chars().count();
-    len > 2 || (len == 2 && !term.contains(' '))
-}
-
-fn allow_file_name_match(term: &str) -> bool {
-    term.chars().count() >= 3
-}
-
-fn exact_or_contains(haystack: &str, needle: &str, mode: &str) -> bool {
-    match mode {
-        "exact" => haystack == needle,
-        "exact_or_contains" => haystack == needle || haystack.contains(needle),
-        _ => haystack.contains(needle),
-    }
-}
-
-fn term_matches(haystack: &str, needle: &str, mode: &str) -> bool {
-    if needle.chars().count() <= 1 {
-        return false;
-    }
-    if needle.chars().count() == 2 && mode != "exact" && mode != "exact_or_contains" {
-        return haystack == needle;
-    }
-    exact_or_contains(haystack, needle, mode)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,18 +189,14 @@ mod tests {
                 name: "蚌埠住了".into(),
                 category: Some("meme".into()),
                 aliases: vec!["绷不住了".into()],
-                match_terms: vec!["笑死".into()],
                 priority: 1.0,
-                match_mode: "contains".into(),
                 ..Default::default()
             },
             KbEntry {
                 name: "甄嬛传".into(),
                 category: Some("source".into()),
                 aliases: vec!["后宫甄嬛传".into()],
-                match_terms: vec!["皇上".into(), "臣妾".into()],
                 priority: 0.95,
-                match_mode: "contains".into(),
                 ..Default::default()
             },
         ])
@@ -379,27 +210,12 @@ mod tests {
     }
 
     #[test]
-    fn test_auto_tag_from_ocr() {
-        let tags = provider().auto_tag("这个我真的绷不住了", "sample.jpg");
-        assert_eq!(tags.len(), 1);
-        assert_eq!(tags[0].tag_text, "蚌埠住了");
-        assert!(tags[0].confidence >= 0.6);
-    }
-
-    #[test]
-    fn test_auto_tag_ignores_file_name_only() {
-        let tags = provider().auto_tag("", "绷不住了_sample.jpg");
-        assert!(tags.is_empty());
-    }
-
-    #[test]
     fn test_detect_private_role_from_query_substring() {
         let provider = LocalKBProvider::from_entries(vec![
             KbEntry {
                 name: "阿布".into(),
                 category: Some("person".into()),
                 aliases: vec!["布布".into()],
-                match_terms: vec!["撇嘴".into()],
                 priority: 10.0,
                 example_images: vec!["kb_examples/abu-1.jpg".into()],
                 ..Default::default()
@@ -408,7 +224,6 @@ mod tests {
                 name: "甄嬛传".into(),
                 category: Some("source".into()),
                 aliases: vec!["甄嬛".into()],
-                match_terms: vec!["皇上".into()],
                 priority: 5.0,
                 ..Default::default()
             },
@@ -426,7 +241,6 @@ mod tests {
             name: "老板".into(),
             category: Some("person".into()),
             aliases: vec!["王总".into()],
-            match_terms: vec!["冷笑".into()],
             priority: 10.0,
             example_images: vec![],
             ..Default::default()
@@ -441,7 +255,6 @@ mod tests {
             name: "阿布".into(),
             category: Some("person".into()),
             aliases: vec!["布布".into()],
-            match_terms: vec!["撇嘴".into()],
             priority: 10.0,
             example_images: vec!["kb_examples/abu-1.jpg".into()],
             ..Default::default()
@@ -490,9 +303,7 @@ mod tests {
                   "canonical": "甄嬛传",
                   "category": "source",
                   "aliases": ["甄嬛"],
-                  "match_terms": ["皇上", "娘娘"],
                   "description": "宫斗剧经典来源",
-                  "match_mode": "contains",
                   "priority": 20
                 }
               ]

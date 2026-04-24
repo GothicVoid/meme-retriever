@@ -132,8 +132,6 @@ pub struct KbEntryPayload {
     pub name: String,
     pub category: String,
     pub aliases: Vec<String>,
-    #[serde(default)]
-    pub match_terms: Vec<String>,
     pub notes: String,
     pub match_mode: String,
     pub priority: i32,
@@ -478,7 +476,6 @@ fn kb_file_from_payload(payload: KbFilePayload) -> KnowledgeBaseFile {
                 name: entry.name,
                 category: entry.category,
                 aliases: entry.aliases,
-                match_terms: entry.match_terms,
                 notes: entry.notes,
                 match_mode: entry.match_mode,
                 priority: entry.priority,
@@ -498,7 +495,6 @@ fn kb_file_to_payload(kb: KnowledgeBaseFile) -> KbFilePayload {
                 name: entry.name,
                 category: entry.category,
                 aliases: entry.aliases,
-                match_terms: entry.match_terms,
                 notes: entry.notes,
                 match_mode: entry.match_mode,
                 priority: entry.priority,
@@ -752,15 +748,12 @@ async fn relocate_image_impl(
             .await
             .map_err(|e| e.to_string())?;
     }
-    let manual_tags = repo::get_tags_for_image(db, id)
+    let next_tags = repo::get_tags_for_image(db, id)
         .await
         .unwrap_or_default()
         .into_iter()
         .filter(|tag| !tag.is_auto)
         .collect::<Vec<_>>();
-    let auto_tags = engine.build_auto_tags(&ocr_text, &img.file_name, Some(&img.file_path));
-    let mut next_tags = manual_tags;
-    next_tags.extend(auto_tags);
     repo::delete_tags(db, id).await.map_err(|e| e.to_string())?;
     repo::insert_tags(db, id, &next_tags)
         .await
@@ -1466,18 +1459,12 @@ pub async fn reindex_all(
                         tracing::error!("reindex_all: failed to save ocr for {id}: {e}");
                     } else {
                         tracing::debug!("reindex_all: ocr ok for {id} len={}", text.len());
-                        let manual_tags = repo::get_tags_for_image(&pool, &id)
+                        let next_tags = repo::get_tags_for_image(&pool, &id)
                             .await
                             .unwrap_or_default()
                             .into_iter()
                             .filter(|tag| !tag.is_auto)
                             .collect::<Vec<_>>();
-                        let mut next_tags = manual_tags;
-                        next_tags.extend(engine.build_auto_tags(
-                            &text,
-                            &img.file_name,
-                            Some(&img.file_path),
-                        ));
                         if let Err(e) = repo::delete_tags(&pool, &id).await {
                             tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
                         } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
@@ -1490,18 +1477,12 @@ pub async fn reindex_all(
                     if let Err(e) = repo::delete_ocr_for_image(&pool, &id).await {
                         tracing::warn!("reindex_all: failed to clear old ocr for {id}: {e}");
                     }
-                    let manual_tags = repo::get_tags_for_image(&pool, &id)
+                    let next_tags = repo::get_tags_for_image(&pool, &id)
                         .await
                         .unwrap_or_default()
                         .into_iter()
                         .filter(|tag| !tag.is_auto)
                         .collect::<Vec<_>>();
-                    let mut next_tags = manual_tags;
-                    next_tags.extend(engine.build_auto_tags(
-                        "",
-                        &img.file_name,
-                        Some(&img.file_path),
-                    ));
                     if let Err(e) = repo::delete_tags(&pool, &id).await {
                         tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
                     } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {

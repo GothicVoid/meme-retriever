@@ -1,4 +1,4 @@
-use crate::db::repo::{TagCategory, TagRecord};
+use crate::db::repo::TagCategory;
 
 #[derive(Debug, Clone)]
 pub struct QueryNormalization {
@@ -18,7 +18,6 @@ pub trait KnowledgeBaseProvider: Send + Sync {
     fn normalize_query(&self, query: &str) -> QueryNormalization;
     fn related_terms(&self, query: &str) -> Vec<String>;
     fn detect_private_role(&self, query: &str) -> Option<PrivateRoleMatch>;
-    fn auto_tag(&self, ocr_text: &str, file_name: &str) -> Vec<TagRecord>;
 }
 
 pub fn category_threshold(category: &TagCategory) -> f32 {

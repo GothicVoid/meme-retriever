@@ -196,26 +196,6 @@ impl SearchEngine {
         *self.example_image_index.write().unwrap() = example_image_index;
     }
 
-    pub fn build_auto_tags(
-        &self,
-        ocr_text: &str,
-        file_name: &str,
-        image_path: Option<&str>,
-    ) -> Vec<repo::TagRecord> {
-        let mut merged = {
-            let kb = self.kb.read().unwrap();
-            kb.auto_tag(ocr_text, file_name)
-        };
-
-        if let Some(path) = image_path {
-            let visual_tags = self.example_image_index.read().unwrap().match_image(path);
-            merge_auto_tag_candidates(&mut merged, visual_tags);
-        }
-
-        clip_auto_tags(&mut merged);
-        merged
-    }
-
     pub async fn search(
         &self,
         query: &str,
@@ -660,48 +640,6 @@ impl SearchEngine {
     }
 }
 
-fn merge_auto_tag_candidates(existing: &mut Vec<repo::TagRecord>, incoming: Vec<repo::TagRecord>) {
-    for tag in incoming {
-        if let Some(current) = existing.iter_mut().find(|item| item.tag_text == tag.tag_text) {
-            current.confidence = current.confidence.max(tag.confidence);
-            if matches!(current.source_strategy, repo::TagSourceStrategy::ExampleImage) {
-                current.source_strategy = tag.source_strategy;
-            }
-            continue;
-        }
-        existing.push(tag);
-    }
-}
-
-fn clip_auto_tags(tags: &mut Vec<repo::TagRecord>) {
-    tags.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| b.tag_text.len().cmp(&a.tag_text.len()))
-    });
-
-    let mut kept = Vec::new();
-    let mut per_category: std::collections::HashMap<&'static str, usize> =
-        std::collections::HashMap::new();
-    let mut seen = std::collections::HashSet::new();
-
-    for tag in tags.drain(..) {
-        let key = tag.tag_text.to_lowercase();
-        if !seen.insert(key) {
-            continue;
-        }
-        let category_key = tag.category.as_str();
-        if *per_category.get(category_key).unwrap_or(&0) >= 2 || kept.len() >= 5 {
-            continue;
-        }
-        *per_category.entry(category_key).or_insert(0) += 1;
-        kept.push(tag);
-    }
-
-    *tags = kept;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1123,7 +1061,6 @@ mod tests {
                 name: "阿布".into(),
                 category: "person".into(),
                 aliases: vec!["布布".into()],
-                match_terms: vec![],
                 notes: "私有角色".into(),
                 match_mode: "contains".into(),
                 priority: 10,
@@ -1150,7 +1087,6 @@ mod tests {
                 name: "老板".into(),
                 category: "person".into(),
                 aliases: vec!["王总".into()],
-                match_terms: vec![],
                 notes: "私有角色".into(),
                 match_mode: "contains".into(),
                 priority: 10,

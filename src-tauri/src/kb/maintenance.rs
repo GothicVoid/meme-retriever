@@ -23,8 +23,6 @@ pub struct KnowledgeBaseEntry {
     pub category: String,
     #[serde(default)]
     pub aliases: Vec<String>,
-    #[serde(default)]
-    pub match_terms: Vec<String>,
     #[serde(alias = "description")]
     #[serde(default)]
     pub notes: String,
@@ -151,7 +149,6 @@ impl KnowledgeBaseFile {
             }
 
             validate_term_collection("aliases", &entry.aliases, name, &mut errors);
-            validate_term_collection("match_terms", &entry.match_terms, name, &mut errors);
             validate_example_images(entry, name, &mut errors, &mut warnings);
 
             for term in entry.all_terms() {
@@ -263,7 +260,6 @@ impl KnowledgeBaseEntry {
         self.notes = self.notes.trim().to_string();
         self.match_mode = self.match_mode.trim().to_string();
         self.aliases = dedup_terms(&self.aliases);
-        self.match_terms = dedup_terms(&self.match_terms);
         self.example_images = dedup_paths(&self.example_images);
     }
 
@@ -395,11 +391,10 @@ pub fn execute_cli(args: &[String]) -> anyhow::Result<String> {
                 .into_iter()
                 .map(|entry| {
                     format!(
-                        "{} [{}] aliases={} match_terms={} priority={}",
+                        "{} [{}] aliases={} priority={}",
                         entry.name,
                         entry.category,
                         entry.aliases.len(),
-                        entry.match_terms.len(),
                         entry.priority
                     )
                 })
@@ -609,17 +604,6 @@ fn base_score(match_type: MatchType) -> i32 {
 fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
     let mut entry: KnowledgeBaseEntry =
         serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;
-    if entry.match_terms.is_empty() {
-        entry.match_terms = value["tags"]
-            .as_array()
-            .map(|array| {
-                array
-                    .iter()
-                    .filter_map(|item| item.as_str().map(|value| value.to_string()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-    }
     if entry.category.is_empty() {
         entry.category = value["type"]
             .as_str()
@@ -852,7 +836,6 @@ fn param_aliases(key: &str) -> Vec<&str> {
         "--category" => vec!["--category", "-g"],
         "--keyword" => vec!["--keyword", "-k"],
         "--aliases" => vec!["--aliases", "-a"],
-        "--match-terms" => vec!["--match-terms", "-m"],
         "--notes" => vec!["--notes", "--description", "-d"],
         "--description" => vec!["--description", "-d"],
         "--match-mode" => vec!["--match-mode", "-M"],
@@ -868,7 +851,6 @@ fn parse_entry_from_args(args: &[String]) -> anyhow::Result<KnowledgeBaseEntry> 
         name: require_value(args, "--name")?,
         category: require_value(args, "--category")?,
         aliases: parse_csv(args, "--aliases"),
-        match_terms: parse_csv(args, "--match-terms"),
         notes: parse_optional_value(args, "--notes").unwrap_or_default(),
         match_mode: parse_optional_value(args, "--match-mode").unwrap_or_else(default_match_mode),
         priority: parse_optional_value(args, "--priority")
@@ -883,10 +865,10 @@ fn cli_help() -> String {
     [
         "kb list [--file path] [--name 名称] [--category 分类] [--keyword 关键词]",
         "  别名: -f -c -g -k",
-        "kb add --name 名称 --category 分类 [--aliases a,b] [--match-terms a,b] [--notes 文本] [--match-mode exact|contains|exact_or_contains] [--priority 数值]",
-        "  别名: -c -g -a -m -d -M -p",
+        "kb add --name 名称 --category 分类 [--aliases a,b] [--notes 文本] [--match-mode exact|contains|exact_or_contains] [--priority 数值]",
+        "  别名: -c -g -a -d -M -p",
         "kb edit --target 旧名称 --name 新名称 --category 分类 [其他参数同 add]",
-        "  别名: -t -c -g -a -m -d -M -p",
+        "  别名: -t -c -g -a -d -M -p",
         "kb delete --name 名称 [--file path]",
         "  别名: -c -f",
         "kb validate [--file path]",
@@ -909,7 +891,6 @@ mod tests {
             name: name.to_string(),
             category: "meme".to_string(),
             aliases: vec!["绷不住了".to_string()],
-            match_terms: vec!["忍不住笑".to_string()],
             notes: "测试条目".to_string(),
             match_mode: "contains".to_string(),
             priority: 10,
@@ -930,7 +911,6 @@ mod tests {
                         "绷不住了".to_string(),
                         "皇上".to_string(),
                     ],
-                    match_terms: vec!["皇上".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 10,
@@ -940,7 +920,6 @@ mod tests {
                     name: "甄嬛传".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["笑死".to_string(), "皇上".to_string()],
-                    match_terms: vec!["皇上".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 5,
@@ -950,7 +929,6 @@ mod tests {
                     name: "蚌埠住了".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["蚌住了".to_string()],
-                    match_terms: vec!["笑到不行".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 1,
@@ -978,7 +956,6 @@ mod tests {
                     name: "甄嬛传".to_string(),
                     category: "source".to_string(),
                     aliases: vec!["甄嬛".to_string()],
-                    match_terms: vec!["皇上".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 20,
@@ -1003,7 +980,6 @@ mod tests {
                     name: "马云".to_string(),
                     category: "person".to_string(),
                     aliases: vec!["杰克马".to_string()],
-                    match_terms: vec!["马云".to_string()],
                     notes: String::new(),
                     match_mode: "exact_or_contains".to_string(),
                     priority: 10,
@@ -1013,7 +989,6 @@ mod tests {
                     name: "臣妾".to_string(),
                     category: "meme".to_string(),
                     aliases: vec![],
-                    match_terms: vec!["臣妾".to_string()],
                     notes: String::new(),
                     match_mode: "exact".to_string(),
                     priority: 10,
@@ -1050,7 +1025,6 @@ mod tests {
                     name: "蚌埠住了".to_string(),
                     category: "meme".to_string(),
                     aliases: vec!["绷不住了".to_string(), "笑死".to_string()],
-                    match_terms: vec!["忍不住笑".to_string()],
                     notes: "更新说明".to_string(),
                     match_mode: "contains".to_string(),
                     priority: 30,
@@ -1074,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn load_legacy_schema_and_map_type_and_tags() {
+    fn load_legacy_schema_and_map_type_and_notes() {
         let kb = KnowledgeBaseFile::from_json_str(
             r#"{
               "version": 1,
@@ -1092,7 +1066,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(kb.entries[0].category, "meme");
-        assert_eq!(kb.entries[0].match_terms, vec!["搞笑", "表情包"]);
         assert_eq!(kb.entries[0].match_mode, "contains");
         assert_eq!(kb.entries[0].name, "蚌埠住了");
         assert_eq!(kb.entries[0].notes, "表示忍不住笑了");
@@ -1108,7 +1081,6 @@ mod tests {
                   "name": "阿布",
                   "category": "person",
                   "aliases": ["布布"],
-                  "match_terms": ["撇嘴"],
                   "notes": "私有角色",
                   "example_images": ["kb_examples/abu/sample-1.jpg"]
                 }
@@ -1130,7 +1102,6 @@ mod tests {
                     name: "阿布".to_string(),
                     category: "person".to_string(),
                     aliases: vec!["布布".to_string()],
-                    match_terms: vec!["撇嘴".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 0,
@@ -1140,7 +1111,6 @@ mod tests {
                     name: "甄嬛传".to_string(),
                     category: "source".to_string(),
                     aliases: vec!["甄嬛".to_string()],
-                    match_terms: vec!["皇上".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
                     priority: 0,
@@ -1175,7 +1145,6 @@ mod tests {
                 name: "阿布老师".to_string(),
                 category: "person".to_string(),
                 aliases: vec!["布布老师".to_string()],
-                match_terms: vec!["委屈撇嘴".to_string()],
                 notes: String::new(),
                 match_mode: "contains".to_string(),
                 priority: 0,
@@ -1214,7 +1183,6 @@ mod tests {
                 name: "老板".to_string(),
                 category: "person".to_string(),
                 aliases: vec!["王总".to_string()],
-                match_terms: vec!["冷笑".to_string()],
                 notes: String::new(),
                 match_mode: "contains".to_string(),
                 priority: 0,

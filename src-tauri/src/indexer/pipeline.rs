@@ -302,11 +302,6 @@ async fn do_index_inner(
     if !ocr_text.is_empty() {
         repo::insert_ocr(pool, &id, &ocr_text).await?;
     }
-    let auto_tags = engine.build_auto_tags(&ocr_text, &rec.file_name, Some(&rec.file_path));
-    if !auto_tags.is_empty() {
-        repo::insert_tags(pool, &id, &auto_tags).await?;
-    }
-
     Ok((id.clone(), IndexResult::Imported(id)))
 }
 
