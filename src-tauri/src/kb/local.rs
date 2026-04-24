@@ -18,11 +18,6 @@ struct KbEntry {
     aliases: Vec<String>,
     #[serde(default)]
     match_terms: Vec<String>,
-    #[serde(default)]
-    #[serde(alias = "description")]
-    notes: String,
-    #[serde(default)]
-    tags: Vec<String>,
     #[serde(default = "default_match_mode")]
     match_mode: String,
     #[serde(default = "default_priority")]
@@ -84,9 +79,7 @@ impl LocalKBProvider {
     }
 
     fn all_terms<'a>(entry: &'a KbEntry) -> impl Iterator<Item = &'a str> + 'a {
-        std::iter::once(entry.name.as_str())
-            .chain(entry.aliases.iter().map(String::as_str))
-            .chain(entry.match_terms.iter().map(String::as_str))
+        std::iter::once(entry.name.as_str()).chain(entry.aliases.iter().map(String::as_str))
     }
 
     fn match_candidates(&self, ocr_text: &str, file_name: &str) -> Vec<TagRecord> {
@@ -208,25 +201,7 @@ impl LocalKBProvider {
 
 impl KnowledgeBaseProvider for LocalKBProvider {
     fn expand_query(&self, query: &str) -> String {
-        let normalized = normalize(query);
-        for entry in &self.entries {
-            if normalize(&entry.name) == normalized
-                || entry
-                    .aliases
-                    .iter()
-                    .any(|alias| normalize(alias) == normalized)
-            {
-                let extra_terms = if entry.tags.is_empty() {
-                    entry.match_terms.join(" ")
-                } else {
-                    entry.tags.join(" ")
-                };
-                return format!("{} {} {}", entry.name, entry.notes, extra_terms)
-                    .trim()
-                    .to_string();
-            }
-        }
-        query.to_string()
+        query.trim().to_string()
     }
 
     fn normalize_query(&self, query: &str) -> QueryNormalization {
@@ -238,7 +213,7 @@ impl KnowledgeBaseProvider for LocalKBProvider {
             .unwrap_or_else(|| query.trim().to_string());
         QueryNormalization {
             tag_query: tag_query.clone(),
-            expanded_query: self.expand_query(&tag_query),
+            expanded_query: tag_query,
         }
     }
 
@@ -256,7 +231,6 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                     .iter()
                     .cloned()
                     .chain(std::iter::once(entry.name.clone()))
-                    .chain(entry.match_terms.iter().cloned())
                     .collect();
             }
         }
@@ -302,7 +276,6 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                             .iter()
                             .cloned()
                             .chain(std::iter::once(entry.name.clone()))
-                            .chain(entry.match_terms.iter().cloned())
                             .collect(),
                     },
                 ))
@@ -402,6 +375,7 @@ mod tests {
     fn test_normalize_query_alias_to_canonical() {
         let normalized = provider().normalize_query("绷不住了");
         assert_eq!(normalized.tag_query, "蚌埠住了");
+        assert_eq!(normalized.expanded_query, "蚌埠住了");
     }
 
     #[test]
@@ -443,7 +417,7 @@ mod tests {
         let matched = provider.detect_private_role("我想找阿布撇嘴那张").unwrap();
         assert_eq!(matched.name, "阿布");
         assert_eq!(matched.matched_term, "阿布");
-        assert!(matched.related_terms.contains(&"撇嘴".to_string()));
+        assert_eq!(matched.related_terms, vec!["布布".to_string(), "阿布".to_string()]);
     }
 
     #[test]
@@ -462,7 +436,22 @@ mod tests {
     }
 
     #[test]
-    fn expand_query_supports_legacy_schema() {
+    fn test_detect_private_role_ignores_action_only_terms() {
+        let provider = LocalKBProvider::from_entries(vec![KbEntry {
+            name: "阿布".into(),
+            category: Some("person".into()),
+            aliases: vec!["布布".into()],
+            match_terms: vec!["撇嘴".into()],
+            priority: 10.0,
+            example_images: vec!["kb_examples/abu-1.jpg".into()],
+            ..Default::default()
+        }]);
+
+        assert!(provider.detect_private_role("我想找撇嘴那张").is_none());
+    }
+
+    #[test]
+    fn normalize_query_supports_legacy_schema() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("knowledge_base.json");
         std::fs::write(
@@ -482,14 +471,14 @@ mod tests {
         )
         .unwrap();
 
-        let provider = LocalKBProvider::load(&path).unwrap();
-        let expanded = provider.expand_query("绷不住了");
+        let normalized = LocalKBProvider::load(&path).unwrap().normalize_query("绷不住了");
 
-        assert_eq!(expanded, "蚌埠住了 表示忍不住笑了 搞笑 表情包");
+        assert_eq!(normalized.tag_query, "蚌埠住了");
+        assert_eq!(normalized.expanded_query, "蚌埠住了");
     }
 
     #[test]
-    fn expand_query_supports_maintenance_schema() {
+    fn normalize_query_supports_maintenance_schema() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("knowledge_base.json");
         std::fs::write(
@@ -511,9 +500,9 @@ mod tests {
         )
         .unwrap();
 
-        let provider = LocalKBProvider::load(&path).unwrap();
-        let expanded = provider.expand_query("甄嬛");
+        let normalized = LocalKBProvider::load(&path).unwrap().normalize_query("甄嬛");
 
-        assert_eq!(expanded, "甄嬛传 宫斗剧经典来源 皇上 娘娘");
+        assert_eq!(normalized.tag_query, "甄嬛传");
+        assert_eq!(normalized.expanded_query, "甄嬛传");
     }
 }

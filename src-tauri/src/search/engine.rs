@@ -1123,7 +1123,7 @@ mod tests {
                 name: "阿布".into(),
                 category: "person".into(),
                 aliases: vec!["布布".into()],
-                match_terms: vec!["撇嘴".into()],
+                match_terms: vec![],
                 notes: "私有角色".into(),
                 match_mode: "contains".into(),
                 priority: 10,
@@ -1132,7 +1132,7 @@ mod tests {
         };
 
         let engine = make_engine_with_kb(pool, kb_file).await;
-        let results = engine.search("阿布撇嘴", 10, 0.3, 0.4, 0.3).await.unwrap();
+        let results = engine.search("阿布在这", 10, 0.3, 0.4, 0.3).await.unwrap();
 
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "abu-role");
@@ -1150,7 +1150,7 @@ mod tests {
                 name: "老板".into(),
                 category: "person".into(),
                 aliases: vec!["王总".into()],
-                match_terms: vec!["冷笑".into()],
+                match_terms: vec![],
                 notes: "私有角色".into(),
                 match_mode: "contains".into(),
                 priority: 10,
@@ -1159,7 +1159,7 @@ mod tests {
         };
 
         let engine = make_engine_with_kb(pool, kb_file).await;
-        let results = engine.search("老板冷笑", 10, 0.3, 0.4, 0.3).await.unwrap();
+        let results = engine.search("老板来了", 10, 0.3, 0.4, 0.3).await.unwrap();
 
         if let Some(first) = results.first() {
             assert_ne!(first.debug_info.as_ref().unwrap().main_route, "privateRole");

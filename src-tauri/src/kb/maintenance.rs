@@ -65,8 +65,6 @@ pub enum MatchType {
     AliasExact,
     CanonicalSubstring,
     AliasSubstring,
-    MatchTermExact,
-    MatchTermSubstring,
 }
 
 pub struct KnowledgeBaseStore {
@@ -220,7 +218,6 @@ impl KnowledgeBaseFile {
                             || entry
                                 .aliases
                                 .iter()
-                                .chain(entry.match_terms.iter())
                                 .any(|term| normalize_text(term).contains(kw))
                     })
                     .unwrap_or(true)
@@ -273,7 +270,6 @@ impl KnowledgeBaseEntry {
     pub fn all_terms(&self) -> Vec<String> {
         let mut terms = vec![self.name.clone()];
         terms.extend(self.aliases.clone());
-        terms.extend(self.match_terms.clone());
         terms
     }
 }
@@ -545,19 +541,6 @@ fn entry_match(entry: &KnowledgeBaseEntry, normalized_text: &str) -> Option<Matc
         best = select_better(best, candidate);
     }
 
-    for term in &entry.match_terms {
-        let candidate = score_term(
-            term,
-            &normalize_text(term),
-            normalized_text,
-            MatchType::MatchTermExact,
-            MatchType::MatchTermSubstring,
-            entry.priority,
-            &entry.match_mode,
-        );
-        best = select_better(best, candidate);
-    }
-
     best.map(|(match_type, matched_term, score)| MatchCandidate {
         name: entry.name.clone(),
         category: entry.category.clone(),
@@ -620,8 +603,6 @@ fn base_score(match_type: MatchType) -> i32 {
         MatchType::AliasExact => 520,
         MatchType::CanonicalSubstring => 420,
         MatchType::AliasSubstring => 360,
-        MatchType::MatchTermExact => 300,
-        MatchType::MatchTermSubstring => 240,
     }
 }
 
@@ -944,7 +925,11 @@ mod tests {
                 KnowledgeBaseEntry {
                     name: "蚌埠住了".to_string(),
                     category: "meme".to_string(),
-                    aliases: vec!["绷不住了".to_string(), "绷不住了".to_string()],
+                    aliases: vec![
+                        "绷不住了".to_string(),
+                        "绷不住了".to_string(),
+                        "皇上".to_string(),
+                    ],
                     match_terms: vec!["皇上".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
@@ -954,7 +939,7 @@ mod tests {
                 KnowledgeBaseEntry {
                     name: "甄嬛传".to_string(),
                     category: "meme".to_string(),
-                    aliases: vec!["笑死".to_string()],
+                    aliases: vec!["笑死".to_string(), "皇上".to_string()],
                     match_terms: vec!["皇上".to_string()],
                     notes: String::new(),
                     match_mode: "contains".to_string(),
@@ -1004,11 +989,9 @@ mod tests {
 
         let result = kb.test_match("皇上看到这个真的绷不住了！！");
 
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "蚌埠住了");
         assert_eq!(result[0].match_type, MatchType::AliasSubstring);
-        assert_eq!(result[1].name, "甄嬛传");
-        assert_eq!(result[1].match_type, MatchType::MatchTermSubstring);
     }
 
     #[test]
@@ -1214,7 +1197,7 @@ mod tests {
             "--file".to_string(),
             path.display().to_string(),
             "--text".to_string(),
-            "这个图是阿布老师委屈撇嘴".to_string(),
+            "这个图是阿布老师".to_string(),
         ])
         .unwrap();
         assert!(test_output.contains("最终推荐角色：阿布老师"));
