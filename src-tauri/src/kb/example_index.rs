@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use crate::db::repo::{TagCategory, TagRecord, TagSourceStrategy};
 use crate::kb::maintenance::{KnowledgeBaseEntry, KnowledgeBaseFile};
-use crate::kb::provider::category_threshold;
 use crate::ml::clip::ClipEncoder;
 use crate::search::vector_store::VectorStore;
 
@@ -14,7 +13,6 @@ pub struct ExampleImageIndex {
 #[derive(Debug, Clone)]
 struct ExampleImageEntry {
     name: String,
-    category: TagCategory,
     embeddings: Vec<Vec<f32>>,
 }
 
@@ -58,13 +56,13 @@ impl ExampleImageIndex {
             .iter()
             .filter_map(|entry| {
                 let score = entry.best_score(&image_embedding)?;
-                let threshold = example_threshold(&entry.category);
+                let threshold = example_threshold();
                 if score < threshold {
                     return None;
                 }
                 Some(TagRecord {
                     tag_text: entry.name.clone(),
-                    category: entry.category.clone(),
+                    category: TagCategory::Person,
                     is_auto: true,
                     source_strategy: TagSourceStrategy::ExampleImage,
                     confidence: score,
@@ -95,7 +93,7 @@ impl ExampleImageIndex {
         for embedding in &entry.embeddings {
             for (id, score) in vector_store.query(embedding, top_k * 2) {
                 let normalized_score = ((score + 1.0) / 2.0).clamp(0.0, 1.0);
-                let threshold = example_threshold(&entry.category);
+                let threshold = example_threshold();
                 if normalized_score < threshold {
                     continue;
                 }
@@ -120,11 +118,6 @@ impl ExampleImageIndex {
 impl ExampleImageEntry {
     fn from_kb_entry(entry: &KnowledgeBaseEntry, base_dir: &Path) -> Option<Self> {
         if entry.example_images.is_empty() {
-            return None;
-        }
-
-        let category = TagCategory::from(entry.category.as_str());
-        if matches!(category, TagCategory::Custom) {
             return None;
         }
 
@@ -162,7 +155,6 @@ impl ExampleImageEntry {
 
         Some(Self {
             name: entry.name.clone(),
-            category,
             embeddings,
         })
     }
@@ -194,13 +186,8 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     dot
 }
 
-fn example_threshold(category: &TagCategory) -> f32 {
-    match category {
-        TagCategory::Person => 0.9,
-        TagCategory::Source => 0.88,
-        TagCategory::Meme => category_threshold(category).max(0.92),
-        TagCategory::Custom => 1.0,
-    }
+fn example_threshold() -> f32 {
+    0.9
 }
 
 #[cfg(test)]
@@ -221,11 +208,7 @@ mod tests {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
                 name: "测试人物".into(),
-                category: "person".into(),
                 aliases: vec![],
-                notes: String::new(),
-                match_mode: "contains".into(),
-                priority: 1,
                 example_images: vec![fixture("sample.jpg")],
             }],
         };
@@ -244,11 +227,7 @@ mod tests {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
                 name: "测试人物".into(),
-                category: "person".into(),
                 aliases: vec![],
-                notes: String::new(),
-                match_mode: "contains".into(),
-                priority: 1,
                 example_images: vec![fixture("sample.jpg")],
             }],
         };

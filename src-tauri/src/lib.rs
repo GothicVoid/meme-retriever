@@ -140,7 +140,6 @@ pub fn run() {
             commands::show_main_window,
             commands::kb_get_state,
             commands::kb_validate_entries,
-            commands::kb_test_match_entries,
             commands::kb_save_entries,
             commands::kb_import_example_image,
         ])

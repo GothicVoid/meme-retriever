@@ -10,7 +10,7 @@ use crate::db::{repo, DbPool};
 use crate::kb::example_index::ExampleImageIndex;
 use crate::kb::local::LocalKBProvider;
 use crate::kb::maintenance::{
-    KnowledgeBaseEntry, KnowledgeBaseFile, MatchCandidate, ValidationReport,
+    KnowledgeBaseEntry, KnowledgeBaseFile, ValidationReport,
 };
 use crate::kb::provider::KnowledgeBaseProvider;
 use crate::search::engine::SearchEngine;
@@ -130,11 +130,7 @@ pub struct ClearGalleryProgress {
 #[serde(rename_all = "camelCase")]
 pub struct KbEntryPayload {
     pub name: String,
-    pub category: String,
     pub aliases: Vec<String>,
-    pub notes: String,
-    pub match_mode: String,
-    pub priority: i32,
     pub example_images: Vec<String>,
 }
 
@@ -166,24 +162,6 @@ pub struct KbStatePayload {
     pub path: String,
     pub knowledge_base: KbFilePayload,
     pub validation_report: KbValidationReportPayload,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KbMatchCandidatePayload {
-    pub name: String,
-    pub category: String,
-    pub match_type: String,
-    pub matched_term: String,
-    pub score: i32,
-    pub priority: i32,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KbTestMatchPayload {
-    pub matches: Vec<KbMatchCandidatePayload>,
-    pub recommended_name: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -474,11 +452,7 @@ fn kb_file_from_payload(payload: KbFilePayload) -> KnowledgeBaseFile {
             .into_iter()
             .map(|entry| KnowledgeBaseEntry {
                 name: entry.name,
-                category: entry.category,
                 aliases: entry.aliases,
-                notes: entry.notes,
-                match_mode: entry.match_mode,
-                priority: entry.priority,
                 example_images: entry.example_images,
             })
             .collect(),
@@ -493,11 +467,7 @@ fn kb_file_to_payload(kb: KnowledgeBaseFile) -> KbFilePayload {
             .into_iter()
             .map(|entry| KbEntryPayload {
                 name: entry.name,
-                category: entry.category,
                 aliases: entry.aliases,
-                notes: entry.notes,
-                match_mode: entry.match_mode,
-                priority: entry.priority,
                 example_images: entry.example_images,
             })
             .collect(),
@@ -516,17 +486,6 @@ fn validation_report_to_payload(report: ValidationReport) -> KbValidationReportP
                 canonicals: conflict.canonicals,
             })
             .collect(),
-    }
-}
-
-fn match_candidate_to_payload(candidate: MatchCandidate) -> KbMatchCandidatePayload {
-    KbMatchCandidatePayload {
-        name: candidate.name,
-        category: candidate.category,
-        match_type: format!("{:?}", candidate.match_type),
-        matched_term: candidate.matched_term,
-        score: candidate.score,
-        priority: candidate.priority,
     }
 }
 
@@ -1606,22 +1565,6 @@ pub async fn kb_validate_entries(
 ) -> Result<KbValidationReportPayload, String> {
     let report = kb_file_from_payload(knowledge_base).validate();
     Ok(validation_report_to_payload(report))
-}
-
-#[tauri::command]
-pub async fn kb_test_match_entries(
-    knowledge_base: KbFilePayload,
-    text: String,
-) -> Result<KbTestMatchPayload, String> {
-    let matches = kb_file_from_payload(knowledge_base).test_match(&text);
-    let recommended_name = matches.first().map(|item| item.name.clone());
-    Ok(KbTestMatchPayload {
-        matches: matches
-            .into_iter()
-            .map(match_candidate_to_payload)
-            .collect(),
-        recommended_name,
-    })
 }
 
 #[tauri::command]

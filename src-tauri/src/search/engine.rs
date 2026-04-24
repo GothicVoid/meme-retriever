@@ -1059,11 +1059,7 @@ mod tests {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
                 name: "阿布".into(),
-                category: "person".into(),
                 aliases: vec!["布布".into()],
-                notes: "私有角色".into(),
-                match_mode: "contains".into(),
-                priority: 10,
                 example_images: vec![sample_path.clone()],
             }],
         };
@@ -1085,11 +1081,7 @@ mod tests {
             version: 1,
             entries: vec![KnowledgeBaseEntry {
                 name: "老板".into(),
-                category: "person".into(),
                 aliases: vec!["王总".into()],
-                notes: "私有角色".into(),
-                match_mode: "contains".into(),
-                priority: 10,
                 example_images: vec![],
             }],
         };

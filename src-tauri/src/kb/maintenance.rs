@@ -4,9 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 const DEFAULT_VERSION: u32 = 1;
-const DEFAULT_MATCH_MODE: &str = "contains";
-const VALID_CATEGORIES: [&str; 3] = ["meme", "source", "person"];
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KnowledgeBaseFile {
     #[serde(default = "default_version")]
@@ -19,17 +16,8 @@ pub struct KnowledgeBaseFile {
 pub struct KnowledgeBaseEntry {
     #[serde(alias = "canonical")]
     pub name: String,
-    #[serde(alias = "type")]
-    pub category: String,
     #[serde(default)]
     pub aliases: Vec<String>,
-    #[serde(alias = "description")]
-    #[serde(default)]
-    pub notes: String,
-    #[serde(default = "default_match_mode")]
-    pub match_mode: String,
-    #[serde(default)]
-    pub priority: i32,
     #[serde(default)]
     pub example_images: Vec<String>,
 }
@@ -47,24 +35,6 @@ pub struct TermConflict {
     pub canonicals: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchCandidate {
-    pub name: String,
-    pub category: String,
-    pub match_type: MatchType,
-    pub matched_term: String,
-    pub score: i32,
-    pub priority: i32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MatchType {
-    CanonicalExact,
-    AliasExact,
-    CanonicalSubstring,
-    AliasSubstring,
-}
-
 pub struct KnowledgeBaseStore {
     path: PathBuf,
     kb: KnowledgeBaseFile,
@@ -72,10 +42,6 @@ pub struct KnowledgeBaseStore {
 
 fn default_version() -> u32 {
     DEFAULT_VERSION
-}
-
-fn default_match_mode() -> String {
-    DEFAULT_MATCH_MODE.to_string()
 }
 
 impl Default for KnowledgeBaseFile {
@@ -129,27 +95,13 @@ impl KnowledgeBaseFile {
                 errors.push("name 不能为空".to_string());
             }
 
-            if !VALID_CATEGORIES.contains(&entry.category.as_str()) {
-                errors.push(format!("非法分类：{}", entry.category));
-            }
-
-            if !matches!(
-                entry.match_mode.as_str(),
-                "exact" | "contains" | "exact_or_contains"
-            ) {
-                errors.push(format!(
-                    "非法 match_mode：{}（仅支持 exact / contains / exact_or_contains）",
-                    entry.match_mode
-                ));
-            }
-
             let name_key = normalize_text(name);
             if let Some(previous) = name_map.insert(name_key, name.to_string()) {
                 errors.push(format!("name 已存在：{}", previous));
             }
 
             validate_term_collection("aliases", &entry.aliases, name, &mut errors);
-            validate_example_images(entry, name, &mut errors, &mut warnings);
+            validate_example_images(entry, name, &mut errors);
 
             for term in entry.all_terms() {
                 let normalized = normalize_text(&term);
@@ -162,7 +114,7 @@ impl KnowledgeBaseFile {
                     .insert(name.to_string());
 
                 if is_ambiguous_short_term(&normalized) {
-                    warnings.push(format!("高歧义短词，请确认是否保留：{} -> {}", name, term));
+                    warnings.push(format!("短词可能较泛，可留意：{} -> {}", name, term));
                 }
             }
         }
@@ -199,14 +151,12 @@ impl KnowledgeBaseFile {
     pub fn search_entries(
         &self,
         name: Option<&str>,
-        category: Option<&str>,
         keyword: Option<&str>,
     ) -> Vec<&KnowledgeBaseEntry> {
         let keyword = keyword.map(normalize_text);
         self.entries
             .iter()
             .filter(|entry| name.map(|v| entry.name == v).unwrap_or(true))
-            .filter(|entry| category.map(|v| entry.category == v).unwrap_or(true))
             .filter(|entry| {
                 keyword
                     .as_ref()
@@ -222,31 +172,8 @@ impl KnowledgeBaseFile {
             .collect()
     }
 
-    pub fn test_match(&self, text: &str) -> Vec<MatchCandidate> {
-        let normalized_text = normalize_text(text);
-        if normalized_text.is_empty() {
-            return vec![];
-        }
-
-        let mut results = self
-            .entries
-            .iter()
-            .filter_map(|entry| entry_match(entry, &normalized_text))
-            .collect::<Vec<_>>();
-
-        results.sort_by(|a, b| {
-            b.score
-                .cmp(&a.score)
-                .then_with(|| b.priority.cmp(&a.priority))
-                .then_with(|| b.matched_term.chars().count().cmp(&a.matched_term.chars().count()))
-                .then_with(|| a.name.cmp(&b.name))
-        });
-        results
-    }
-
     pub fn format_in_place(&mut self) {
-        self.entries
-            .sort_by(|a, b| a.category.cmp(&b.category).then_with(|| a.name.cmp(&b.name)));
+        self.entries.sort_by(|a, b| a.name.cmp(&b.name));
         for entry in &mut self.entries {
             entry.normalize();
         }
@@ -256,9 +183,6 @@ impl KnowledgeBaseFile {
 impl KnowledgeBaseEntry {
     pub fn normalize(&mut self) {
         self.name = self.name.trim().to_string();
-        self.category = self.category.trim().to_string();
-        self.notes = self.notes.trim().to_string();
-        self.match_mode = self.match_mode.trim().to_string();
         self.aliases = dedup_terms(&self.aliases);
         self.example_images = dedup_paths(&self.example_images);
     }
@@ -402,108 +326,8 @@ pub fn resolve_default_kb_path() -> PathBuf {
         .unwrap_or_else(default_kb_path)
 }
 
-fn entry_match(entry: &KnowledgeBaseEntry, normalized_text: &str) -> Option<MatchCandidate> {
-    let normalized_name = normalize_text(&entry.name);
-    let mut best = score_term(
-        &entry.name,
-        &normalized_name,
-        normalized_text,
-        MatchType::CanonicalExact,
-        MatchType::CanonicalSubstring,
-        entry.priority,
-        &entry.match_mode,
-    );
-
-    for alias in &entry.aliases {
-        let candidate = score_term(
-            alias,
-            &normalize_text(alias),
-            normalized_text,
-            MatchType::AliasExact,
-            MatchType::AliasSubstring,
-            entry.priority,
-            &entry.match_mode,
-        );
-        best = select_better(best, candidate);
-    }
-
-    best.map(|(match_type, matched_term, score)| MatchCandidate {
-        name: entry.name.clone(),
-        category: entry.category.clone(),
-        match_type,
-        matched_term,
-        score,
-        priority: entry.priority,
-    })
-}
-
-fn score_term(
-    original_term: &str,
-    normalized_term: &str,
-    normalized_text: &str,
-    exact_type: MatchType,
-    substring_type: MatchType,
-    priority: i32,
-    match_mode: &str,
-) -> Option<(MatchType, String, i32)> {
-    if normalized_term.is_empty() {
-        return None;
-    }
-
-    if normalized_text == normalized_term {
-        let score = base_score(exact_type) + normalized_term.chars().count() as i32 * 5 + priority;
-        return Some((exact_type, original_term.to_string(), score));
-    }
-
-    if matches!(match_mode, "contains" | "exact_or_contains")
-        && normalized_text.contains(normalized_term)
-    {
-        let score =
-            base_score(substring_type) + normalized_term.chars().count() as i32 * 3 + priority;
-        return Some((substring_type, original_term.to_string(), score));
-    }
-
-    None
-}
-
-fn select_better(
-    current: Option<(MatchType, String, i32)>,
-    next: Option<(MatchType, String, i32)>,
-) -> Option<(MatchType, String, i32)> {
-    match (current, next) {
-        (None, value) => value,
-        (value, None) => value,
-        (Some(current), Some(next)) => {
-            if next.2 > current.2 {
-                Some(next)
-            } else {
-                Some(current)
-            }
-        }
-    }
-}
-
-fn base_score(match_type: MatchType) -> i32 {
-    match match_type {
-        MatchType::CanonicalExact => 600,
-        MatchType::AliasExact => 520,
-        MatchType::CanonicalSubstring => 420,
-        MatchType::AliasSubstring => 360,
-    }
-}
-
 fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
-    let mut entry: KnowledgeBaseEntry =
-        serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;
-    if entry.category.is_empty() {
-        entry.category = value["type"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-    }
-    if entry.match_mode.is_empty() {
-        entry.match_mode = default_match_mode();
-    }
+    let mut entry: KnowledgeBaseEntry = serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;
     if entry.example_images.is_empty() {
         entry.example_images = value["example_images"]
             .as_array()
@@ -523,7 +347,6 @@ fn validate_example_images(
     entry: &KnowledgeBaseEntry,
     name: &str,
     errors: &mut Vec<String>,
-    warnings: &mut Vec<String>,
 ) {
     let mut seen = BTreeSet::new();
     for value in &entry.example_images {
@@ -551,10 +374,8 @@ fn validate_example_images(
         }
     }
 
-    if entry.category != "person" {
-        warnings.push(format!("当前条目不是私有角色卡片：{}", name));
-    } else if entry.example_images.is_empty() {
-        warnings.push(format!("缺少示例图，将降级为普通搜索：{}", name));
+    if entry.example_images.is_empty() {
+        errors.push(format!("缺少示例图：{}", name));
     }
 }
 
@@ -686,12 +507,8 @@ mod tests {
     fn sample_entry(name: &str) -> KnowledgeBaseEntry {
         KnowledgeBaseEntry {
             name: name.to_string(),
-            category: "meme".to_string(),
             aliases: vec!["绷不住了".to_string()],
-            notes: "测试条目".to_string(),
-            match_mode: "contains".to_string(),
-            priority: 10,
-            example_images: vec![],
+            example_images: vec![format!("kb_examples/{name}/sample-1.jpg")],
         }
     }
 
@@ -702,33 +519,21 @@ mod tests {
             entries: vec![
                 KnowledgeBaseEntry {
                     name: "蚌埠住了".to_string(),
-                    category: "meme".to_string(),
                     aliases: vec![
                         "绷不住了".to_string(),
                         "绷不住了".to_string(),
                         "皇上".to_string(),
                     ],
-                    notes: String::new(),
-                    match_mode: "contains".to_string(),
-                    priority: 10,
                     example_images: vec![],
                 },
                 KnowledgeBaseEntry {
                     name: "甄嬛传".to_string(),
-                    category: "meme".to_string(),
                     aliases: vec!["笑死".to_string(), "皇上".to_string()],
-                    notes: String::new(),
-                    match_mode: "contains".to_string(),
-                    priority: 5,
                     example_images: vec![],
                 },
                 KnowledgeBaseEntry {
                     name: "蚌埠住了".to_string(),
-                    category: "meme".to_string(),
                     aliases: vec!["蚌住了".to_string()],
-                    notes: String::new(),
-                    match_mode: "contains".to_string(),
-                    priority: 1,
                     example_images: vec![],
                 },
             ],
@@ -744,71 +549,6 @@ mod tests {
     }
 
     #[test]
-    fn test_match_returns_best_candidate_and_hit_type() {
-        let kb = KnowledgeBaseFile {
-            version: 1,
-            entries: vec![
-                sample_entry("蚌埠住了"),
-                KnowledgeBaseEntry {
-                    name: "甄嬛传".to_string(),
-                    category: "source".to_string(),
-                    aliases: vec!["甄嬛".to_string()],
-                    notes: String::new(),
-                    match_mode: "contains".to_string(),
-                    priority: 20,
-                    example_images: vec![],
-                },
-            ],
-        };
-
-        let result = kb.test_match("皇上看到这个真的绷不住了！！");
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].name, "蚌埠住了");
-        assert_eq!(result[0].match_type, MatchType::AliasSubstring);
-    }
-
-    #[test]
-    fn match_mode_exact_or_contains_and_exact_follow_spec() {
-        let kb = KnowledgeBaseFile {
-            version: 1,
-            entries: vec![
-                KnowledgeBaseEntry {
-                    name: "马云".to_string(),
-                    category: "person".to_string(),
-                    aliases: vec!["杰克马".to_string()],
-                    notes: String::new(),
-                    match_mode: "exact_or_contains".to_string(),
-                    priority: 10,
-                    example_images: vec![],
-                },
-                KnowledgeBaseEntry {
-                    name: "臣妾".to_string(),
-                    category: "meme".to_string(),
-                    aliases: vec![],
-                    notes: String::new(),
-                    match_mode: "exact".to_string(),
-                    priority: 10,
-                    example_images: vec![],
-                },
-            ],
-        };
-
-        let contains_result = kb.test_match("今天又看到杰克马的截图");
-        assert_eq!(contains_result.len(), 1);
-        assert_eq!(contains_result[0].name, "马云");
-        assert_eq!(contains_result[0].match_type, MatchType::AliasSubstring);
-
-        let exact_result = kb.test_match("臣妾");
-        assert_eq!(exact_result.len(), 1);
-        assert_eq!(exact_result[0].name, "臣妾");
-        assert_eq!(exact_result[0].match_type, MatchType::CanonicalExact);
-
-        let no_contains_for_exact = kb.test_match("臣妾做不到啊");
-        assert!(no_contains_for_exact.iter().all(|item| item.name != "臣妾"));
-    }
-
-    #[test]
     fn store_add_edit_delete_and_save_round_trip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("knowledge_base.json");
@@ -820,12 +560,8 @@ mod tests {
                 "蚌埠住了",
                 KnowledgeBaseEntry {
                     name: "蚌埠住了".to_string(),
-                    category: "meme".to_string(),
                     aliases: vec!["绷不住了".to_string(), "笑死".to_string()],
-                    notes: "更新说明".to_string(),
-                    match_mode: "contains".to_string(),
-                    priority: 30,
-                    example_images: vec![],
+                    example_images: vec!["kb_examples/蚌埠住了/sample-2.jpg".to_string()],
                 },
             )
             .unwrap();
@@ -845,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn load_legacy_schema_and_map_type_and_notes() {
+    fn load_legacy_schema_and_map_name() {
         let kb = KnowledgeBaseFile::from_json_str(
             r#"{
               "version": 1,
@@ -862,23 +598,18 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(kb.entries[0].category, "meme");
-        assert_eq!(kb.entries[0].match_mode, "contains");
         assert_eq!(kb.entries[0].name, "蚌埠住了");
-        assert_eq!(kb.entries[0].notes, "表示忍不住笑了");
     }
 
     #[test]
-    fn load_new_role_schema_maps_name_and_notes() {
+    fn load_new_role_schema_maps_name_and_examples() {
         let kb = KnowledgeBaseFile::from_json_str(
             r#"{
               "version": 1,
               "entries": [
                 {
                   "name": "阿布",
-                  "category": "person",
                   "aliases": ["布布"],
-                  "notes": "私有角色",
                   "example_images": ["kb_examples/abu/sample-1.jpg"]
                 }
               ]
@@ -887,7 +618,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(kb.entries[0].name, "阿布");
-        assert_eq!(kb.entries[0].notes, "私有角色");
+        assert_eq!(kb.entries[0].example_images, vec!["kb_examples/abu/sample-1.jpg"]);
     }
 
     #[test]
@@ -897,20 +628,12 @@ mod tests {
             entries: vec![
                 KnowledgeBaseEntry {
                     name: "阿布".to_string(),
-                    category: "person".to_string(),
                     aliases: vec!["布布".to_string()],
-                    notes: String::new(),
-                    match_mode: "contains".to_string(),
-                    priority: 0,
                     example_images: vec![],
                 },
                 KnowledgeBaseEntry {
                     name: "甄嬛传".to_string(),
-                    category: "source".to_string(),
                     aliases: vec!["甄嬛".to_string()],
-                    notes: String::new(),
-                    match_mode: "contains".to_string(),
-                    priority: 0,
                     example_images: vec!["kb_examples/zhenhuan/sample-1.jpg".to_string()],
                 },
             ],
@@ -920,16 +643,14 @@ mod tests {
 
         assert!(
             report
-                .warnings
+                .errors
                 .iter()
-                .any(|warning| warning == "缺少示例图，将降级为普通搜索：阿布")
+                .any(|error| error == "缺少示例图：阿布")
         );
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|warning| warning == "当前条目不是私有角色卡片：甄嬛传")
-        );
+        assert!(!report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("当前条目不是私有角色卡片")));
     }
 
 }

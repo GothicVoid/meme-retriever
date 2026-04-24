@@ -1,18 +1,17 @@
 <template>
   <div class="kb-view">
     <header class="topbar">
-      <button
-        type="button"
-        class="ghost-btn small"
-        data-action="back-to-library"
-        @click="goBack"
-      >
-        返回图库
-      </button>
+      <div class="topbar-main">
+        <button
+          type="button"
+          class="ghost-btn small"
+          data-action="back-to-library"
+          @click="goBack"
+        >
+          返回图库
+        </button>
 
-      <div class="topbar-copy">
-        <p class="eyebrow">角色搜索增强</p>
-        <h1>按角色名搜不到时，补几张图试一下，能搜到再保存</h1>
+        <p class="topbar-tip">只有角色名搜不到时，再来补图。</p>
       </div>
 
       <div class="topbar-actions">
@@ -22,7 +21,7 @@
           :disabled="loading || saving"
           @click="saveKnowledgeBase"
         >
-          {{ saving ? "保存中..." : "保存角色库" }}
+          {{ saving ? "保存中..." : "保存角色" }}
         </button>
       </div>
     </header>
@@ -33,7 +32,7 @@
         class="meta-pill"
         :class="{ dirty: dirty }"
       >
-        {{ dirty ? "有未保存修改" : "已与磁盘同步" }}
+        {{ dirty ? "有未保存修改" : "已保存" }}
       </span>
     </div>
 
@@ -47,18 +46,18 @@
     <div class="workspace">
       <aside class="entry-rail">
         <div class="entry-panel">
-          <div class="panel-head">
-            <div>
+          <div class="panel-head panel-head--stacked">
+            <div class="panel-head-row">
               <h2>角色</h2>
-              <p class="panel-copy">已有就直接选，没有再新建。</p>
+              <button
+                class="ghost-btn small"
+                data-action="new-entry"
+                @click="createEntry"
+              >
+                新建
+              </button>
             </div>
-            <button
-              class="ghost-btn small"
-              data-action="new-entry"
-              @click="createEntry"
-            >
-              新建
-            </button>
+            <p class="panel-copy">已有就直接选，没有再新建。</p>
           </div>
 
           <input
@@ -78,7 +77,12 @@
               @click="selectEntry(entry.id)"
             >
               <span class="entry-title">{{ entry.name || "未命名角色" }}</span>
-              <span class="entry-meta">{{ entry.exampleImages.length > 0 ? "已配示例图" : "缺少示例图" }}</span>
+              <span
+                v-if="entry.aliases.length > 0"
+                class="entry-meta"
+              >
+                {{ entry.aliases.join(" / ") }}
+              </span>
             </button>
             <div
               v-if="filteredEntries.length === 0"
@@ -97,8 +101,7 @@
         >
           <div class="editor-head">
             <div>
-              <h2>当前角色</h2>
-              <p class="panel-copy">先补名字和示例图，再试一下能不能搜到。</p>
+              <h2>{{ selectedEntry.name || "未命名角色" }}</h2>
             </div>
             <button
               class="danger-btn small"
@@ -112,25 +115,29 @@
 
           <div class="editor-layout">
             <section class="editor-main">
-              <label class="field">
-                <span>角色主名称 <em>先填你真正会拿来搜的名字</em></span>
-                <input
-                  v-model="form.name"
-                  data-field="name"
-                  type="text"
-                  placeholder="如：阿布 / 老板"
-                >
-              </label>
+              <div class="field-row">
+                <label class="field field--narrow">
+                  <span>角色主名称 <em>先填你真正会拿来搜的名字</em></span>
+                  <input
+                    v-model="form.name"
+                    data-field="name"
+                    class="compact-input"
+                    type="text"
+                    placeholder="如：阿布 / 老板"
+                  >
+                </label>
 
-              <label class="field">
-                <span>别名 <em>昵称、常见写法或外文名；支持逗号或换行分隔</em></span>
-                <textarea
-                  v-model="form.aliases"
-                  data-field="aliases"
-                  rows="3"
-                  placeholder="如：布布，Abu，阿布老师"
-                />
-              </label>
+                <label class="field field--narrow">
+                  <span>别名 <em>支持逗号分隔，少量填写即可</em></span>
+                  <input
+                    v-model="form.aliases"
+                    data-field="aliases"
+                    class="compact-input"
+                    type="text"
+                    placeholder="如：布布，Abu"
+                  >
+                </label>
+              </div>
 
               <div class="field">
                 <span>示例图 <em>优先放最像这个角色的几张，宁少勿杂</em></span>
@@ -172,76 +179,12 @@
                     <span class="import-card-copy">选择本地图片后自动复制到角色库目录</span>
                   </button>
                 </div>
-                <span class="mini-note">补完示例图后，直接在下面试一下是否能命中。</span>
+                <span class="mini-note">补完示例图后直接保存，再回搜索页按你平时的叫法试试。</span>
               </div>
 
-              <section class="report-card action-card">
-                <div class="panel-head compact">
-                  <div>
-                    <h3>先试一下能不能搜到</h3>
-                    <p class="panel-copy">输入你真的会搜的角色名或别名，先确认这个角色有没有被认出来。</p>
-                  </div>
-                </div>
-                <textarea
-                  v-model="testText"
-                  data-field="test-text"
-                  class="test-text"
-                  rows="4"
-                  placeholder="输入角色名或别名"
-                />
-                <button
-                  class="primary-btn full"
-                  data-action="test-match"
-                  :disabled="loading"
-                  @click="testMatch"
-                >
-                  测试召回
-                </button>
-
-                <div
-                  v-if="matchResult.recommendedName"
-                  class="match-summary"
-                >
-                  最终推荐角色：{{ matchResult.recommendedName }}
-                </div>
-                <div
-                  v-else-if="tested"
-                  class="report-ok"
-                >
-                  未命中任何私有角色
-                </div>
-
-                <div class="match-list">
-                  <div
-                    v-for="item in matchResult.matches"
-                    :key="`${item.name}-${item.matchedTerm}-${item.matchType}`"
-                    class="match-item"
-                  >
-                    <div class="match-title">
-                      {{ item.name }}
-                    </div>
-                    <div class="match-meta">
-                      {{ item.matchType }} · 命中词：{{ item.matchedTerm }} · 分值：{{ item.score }}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
               <section class="report-card">
-                <div class="panel-head compact">
-                  <div>
-                    <h3>系统已自动检查</h3>
-                    <p class="panel-copy">你修改后会自动刷新这里的风险提示，不用再多点一步。</p>
-                  </div>
-                </div>
                 <div
-                  v-if="report.errors.length === 0 && report.warnings.length === 0"
-                  class="report-ok"
-                >
-                  当前没有发现结构错误或警告
-                </div>
-                <div
-                  v-else
+                  v-if="report.errors.length > 0 || report.warnings.length > 0"
                   class="report-list"
                 >
                   <div
@@ -256,11 +199,10 @@
                     :key="`warning-${warning}`"
                     class="report-item warning"
                   >
-                    {{ warning }}
+                    {{ formatWarningMessage(warning) }}
                   </div>
                 </div>
               </section>
-
             </section>
           </div>
         </section>
@@ -277,7 +219,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { routerKey, type Router } from "vue-router";
@@ -285,18 +227,13 @@ import { routerKey, type Router } from "vue-router";
 type EntryForm = {
   name: string;
   aliases: string;
-  notes: string;
   exampleImages: string[];
 };
 
 type KbEntry = {
   id: string;
   name: string;
-  category: "meme" | "source" | "person";
   aliases: string[];
-  notes: string;
-  matchMode: "exact" | "contains" | "exact_or_contains";
-  priority: number;
   exampleImages: string[];
 };
 
@@ -304,18 +241,6 @@ type ValidationReport = {
   errors: string[];
   warnings: string[];
   conflicts: { term: string; canonicals: string[] }[];
-};
-
-type MatchResult = {
-  matches: Array<{
-    name: string;
-    category: string;
-    matchType: string;
-    matchedTerm: string;
-    score: number;
-    priority: number;
-  }>;
-  recommendedName: string | null;
 };
 
 type KbStateResponse = {
@@ -332,14 +257,11 @@ const loading = ref(false);
 const saving = ref(false);
 const importingExample = ref(false);
 const dirty = ref(false);
-const tested = ref(false);
 const statusMessage = ref("");
 const filterKeyword = ref("");
 const selectedEntryId = ref("");
-const testText = ref("");
 const syncingForm = ref(false);
 const report = ref<ValidationReport>({ errors: [], warnings: [], conflicts: [] });
-const matchResult = ref<MatchResult>({ matches: [], recommendedName: null });
 const version = ref(1);
 const entries = ref<KbEntry[]>([]);
 const router = inject<Router | null>(routerKey, null);
@@ -348,7 +270,6 @@ let validationTimer: ReturnType<typeof setTimeout> | null = null;
 const form = reactive<EntryForm>({
   name: "",
   aliases: "",
-  notes: "",
   exampleImages: [],
 });
 
@@ -360,13 +281,7 @@ const filteredEntries = computed(() => {
     return entries.value;
   }
   return entries.value.filter((entry) => {
-    const haystack = [
-      entry.name,
-      entry.aliases.join(" "),
-      entry.notes,
-    ]
-      .join(" ")
-      .toLowerCase();
+    const haystack = [entry.name, entry.aliases.join(" ")].join(" ").toLowerCase();
     return haystack.includes(keyword);
   });
 });
@@ -404,8 +319,6 @@ async function loadState() {
     selectedEntryId.value = entries.value[0]?.id ?? "";
     syncEntryToForm();
     dirty.value = false;
-    tested.value = false;
-    matchResult.value = { matches: [], recommendedName: null };
   } catch (error) {
     statusMessage.value = String(error);
   } finally {
@@ -424,11 +337,7 @@ function createEntry() {
   const entry = hydrateEntry(
     {
       name: "",
-      category: "person",
       aliases: [],
-      notes: "",
-      matchMode: "contains",
-      priority: 0,
       exampleImages: [],
     },
     entries.value.length
@@ -466,28 +375,26 @@ function syncEntryToForm() {
     syncingForm.value = true;
     form.name = "";
     form.aliases = "";
-    form.notes = "";
     form.exampleImages = [];
-    syncingForm.value = false;
+    void nextTick(() => {
+      syncingForm.value = false;
+    });
     return;
   }
 
   syncingForm.value = true;
   form.name = selectedEntry.value.name;
   form.aliases = selectedEntry.value.aliases.join(", ");
-  form.notes = selectedEntry.value.notes;
   form.exampleImages = [...selectedEntry.value.exampleImages];
-  syncingForm.value = false;
+  void nextTick(() => {
+    syncingForm.value = false;
+  });
 }
 
 function syncFormToEntry() {
   if (!selectedEntry.value) return;
   selectedEntry.value.name = form.name;
-  selectedEntry.value.category = "person";
   selectedEntry.value.aliases = parseList(form.aliases);
-  selectedEntry.value.notes = form.notes.trim();
-  selectedEntry.value.matchMode = selectedEntry.value.matchMode || "contains";
-  selectedEntry.value.priority = selectedEntry.value.priority || 0;
   selectedEntry.value.exampleImages = [...form.exampleImages];
   dirty.value = true;
 }
@@ -564,6 +471,18 @@ function scheduleAutoValidation() {
   }, 400);
 }
 
+function formatWarningMessage(warning: string) {
+  const shortTermPrefix = "短词可能较泛，可留意：";
+  if (warning.startsWith(shortTermPrefix)) {
+    const payload = warning.slice(shortTermPrefix.length).trim();
+    const [name, term] = payload.split("->").map((part) => part.trim());
+    if (name && term) {
+      return `“${term}”这个叫法比较短。先留着也行；如果以后搜出来的结果不稳定，再删掉就行。`;
+    }
+  }
+  return warning;
+}
+
 async function saveKnowledgeBase() {
   saving.value = true;
   statusMessage.value = "";
@@ -583,24 +502,11 @@ async function saveKnowledgeBase() {
     }
     syncEntryToForm();
     dirty.value = false;
-    statusMessage.value = `已保存到 ${state.path}`;
+    statusMessage.value = "已保存。现在回搜索页按你平时会搜的叫法试试；如果还是搜不到，再回来补 1-2 张更像的图。";
   } catch (error) {
     statusMessage.value = String(error);
   } finally {
     saving.value = false;
-  }
-}
-
-async function testMatch() {
-  tested.value = true;
-  statusMessage.value = "";
-  try {
-    matchResult.value = await invoke<MatchResult>("kb_test_match_entries", {
-      knowledgeBase: buildPayload(),
-      text: testText.value,
-    });
-  } catch (error) {
-    statusMessage.value = String(error);
   }
 }
 
@@ -647,31 +553,27 @@ function goBack() {
 }
 
 .topbar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.95rem 1rem;
+  padding: 0.75rem 1rem;
   border-radius: 16px;
   background: rgba(255, 252, 245, 0.9);
   border: 1px solid rgba(104, 76, 48, 0.12);
   box-shadow: 0 12px 30px rgba(97, 75, 48, 0.06);
 }
 
-.topbar-copy {
+.topbar-main {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
   min-width: 0;
 }
 
-.eyebrow {
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
+.topbar-tip {
+  font-size: 0.84rem;
   color: #8c6b4b;
-  margin-bottom: 0.18rem;
-}
-
-.topbar h1 {
-  font-size: 1.02rem;
-  line-height: 1.4;
 }
 
 .topbar-actions {
@@ -710,7 +612,7 @@ function goBack() {
 
 .workspace {
   display: grid;
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 0.75rem;
   align-items: start;
 }
@@ -761,6 +663,31 @@ function goBack() {
   gap: 0.6rem;
 }
 
+.panel-head--stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.panel-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.panel-head > div,
+.editor-head > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.panel-head > button,
+.editor-head > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .editor-head {
   margin-bottom: 0.8rem;
 }
@@ -788,15 +715,20 @@ function goBack() {
   gap: 0.75rem;
 }
 
-.action-card {
-  border-color: rgba(208, 111, 58, 0.18);
-  box-shadow: 0 14px 28px rgba(214, 106, 34, 0.08);
-}
-
 .field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.field--narrow {
+  max-width: 32rem;
 }
 
 .field span {
@@ -816,8 +748,7 @@ function goBack() {
 
 .filter-input,
 .field input,
-.field textarea,
-.test-text {
+.field textarea {
   width: 100%;
   border: 1px solid #d8cabc;
   border-radius: 12px;
@@ -827,10 +758,15 @@ function goBack() {
   color: inherit;
 }
 
+.compact-input {
+  min-height: 2.7rem;
+  padding-top: 0.58rem;
+  padding-bottom: 0.58rem;
+}
+
 .filter-input:focus,
 .field input:focus,
-.field textarea:focus,
-.test-text:focus {
+.field textarea:focus {
   outline: none;
   border-color: #d06f3a;
   box-shadow: 0 0 0 3px rgba(208, 111, 58, 0.12);
@@ -871,11 +807,10 @@ function goBack() {
 .entry-title {
   display: block;
   font-weight: 700;
-  margin-bottom: 0.18rem;
+  margin-bottom: 0.12rem;
 }
 
-.entry-meta,
-.match-meta {
+.entry-meta {
   font-size: 0.78rem;
   color: #7d6958;
   line-height: 1.4;
@@ -1026,16 +961,13 @@ function goBack() {
   padding: 0.9rem;
 }
 
-.report-list,
-.match-list {
+.report-list {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
 }
 
 .report-item,
-.match-item,
-.report-ok,
 .empty-state {
   border-radius: 12px;
   padding: 0.68rem 0.8rem;
@@ -1066,18 +998,6 @@ function goBack() {
   border-color: rgba(212, 140, 62, 0.2);
   background: rgba(255, 245, 232, 0.88);
   color: #9a6027;
-}
-
-.match-title {
-  font-weight: 700;
-  margin-bottom: 0.14rem;
-}
-
-.match-summary {
-  margin-top: 0.7rem;
-  margin-bottom: 0.7rem;
-  font-weight: 700;
-  color: #b75920;
 }
 
 .mini-note {
@@ -1141,13 +1061,22 @@ function goBack() {
 }
 
 @media (max-width: 1080px) {
-  .workspace,
-  .topbar {
+  .workspace {
     grid-template-columns: 1fr;
   }
 
   .entry-rail {
     position: static;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar-main {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .topbar-actions {
@@ -1167,12 +1096,16 @@ function goBack() {
     padding: 0.8rem;
   }
 
-  .topbar h1 {
-    font-size: 0.94rem;
-  }
-
   .example-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .field--narrow {
+    max-width: none;
   }
 }
 </style>

@@ -25,20 +25,12 @@ const mockState = {
     entries: [
       {
         name: "阿布",
-        category: "person",
         aliases: ["布布"],
-        notes: "私有角色卡片",
-        matchMode: "contains",
-        priority: 100,
         exampleImages: ["kb_examples/abu/sample-1.jpg"],
       },
       {
         name: "老板",
-        category: "person",
         aliases: ["王总"],
-        notes: "工作场景常用私有对象",
-        matchMode: "contains",
-        priority: 90,
         exampleImages: ["kb_examples/boss/sample-1.jpg"],
       },
     ],
@@ -67,7 +59,7 @@ describe("PrivateRoleLibraryView", () => {
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith("kb_get_state");
-    expect(wrapper.text()).toContain("按角色名搜不到时，补几张图试一下，能搜到再保存");
+    expect(wrapper.text()).toContain("只有角色名搜不到时，再来补图");
     expect(wrapper.text()).toContain("阿布");
     expect(wrapper.text()).toContain("老板");
     expect(wrapper.text()).toContain("检测到潜在冲突词");
@@ -91,7 +83,7 @@ describe("PrivateRoleLibraryView", () => {
         });
         return Promise.resolve({
           errors: [],
-          warnings: ["高歧义短词，请确认是否保留：阿布 Plus -> 阿布"],
+          warnings: ["短词可能较泛，可留意：阿布 Plus -> 阿布"],
           conflicts: [],
         });
       }
@@ -114,7 +106,7 @@ describe("PrivateRoleLibraryView", () => {
         }),
       })
     );
-    expect(wrapper.text()).toContain("高歧义短词");
+    expect(wrapper.text()).toContain("“阿布”这个叫法比较短");
     vi.useRealTimers();
   });
 
@@ -167,39 +159,7 @@ describe("PrivateRoleLibraryView", () => {
         }),
       })
     );
-    expect(wrapper.text()).toContain("已保存到");
-  });
-
-  it("输入角色名后可以看到测试命中结果", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "kb_get_state") return Promise.resolve(mockState);
-      if (cmd === "kb_test_match_entries") {
-        return Promise.resolve({
-          matches: [
-            {
-              name: "老板",
-              category: "person",
-              matchType: "AliasExact",
-              matchedTerm: "王总",
-              score: 355,
-              priority: 90,
-            },
-          ],
-          recommendedName: "老板",
-        });
-      }
-      return Promise.resolve(undefined);
-    });
-
-    const wrapper = mount(PrivateRoleLibraryView);
-    await flushPromises();
-
-    await wrapper.get("[data-field='test-text']").setValue("王总");
-    await wrapper.get("[data-action='test-match']").trigger("click");
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("最终推荐角色：老板");
-    expect(wrapper.text()).toContain("命中词：王总");
+    expect(wrapper.text()).toContain("已保存。现在回搜索页按你平时会搜的叫法试试");
   });
 
   it("示例图会以图片卡片展示并随保存一起提交", async () => {
@@ -299,11 +259,7 @@ describe("PrivateRoleLibraryView", () => {
             entries: expect.arrayContaining([
               expect.objectContaining({
                 name: "新角色",
-                category: "person",
                 aliases: ["角色别名"],
-                notes: "",
-                matchMode: "contains",
-                priority: 0,
                 exampleImages: ["kb_examples/new-role/sample-1.jpg"],
               }),
             ]),
