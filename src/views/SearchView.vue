@@ -450,6 +450,7 @@
               v-if="showDevToolsPopover"
               ref="devToolsPopoverRef"
               class="search-view__dev-tools-popover ui-floating-panel"
+              :style="devToolsPopoverStyle"
             >
               <div class="search-view__dev-tools-header">
                 <p class="search-view__dev-tools-title">
@@ -657,6 +658,8 @@ const devToolsPopoverRef = ref<HTMLElement | null>(null);
 const devToolsButtonRef = ref<HTMLElement | null>(null);
 const importButtonRef = ref<HTMLButtonElement | null>(null);
 const importMenuRef = ref<HTMLElement | null>(null);
+const devToolsPopoverX = ref(0);
+const devToolsPopoverY = ref(0);
 const focusedResultIndex = ref(-1);
 const previewImageId = ref<string | null>(null);
 const homeState = ref<HomeState | null>(null);
@@ -946,6 +949,10 @@ const clearGalleryProgressPercent = computed(() =>
 const canClearGallery = computed(() =>
   libraryStore.images.length > 0 && !libraryStore.clearing && !libraryStore.indexing
 );
+const devToolsPopoverStyle = computed(() => ({
+  left: `${devToolsPopoverX.value}px`,
+  top: `${devToolsPopoverY.value}px`,
+}));
 
 const searchSummaryTitle = computed(() => {
   const query = store.query.trim();
@@ -1255,6 +1262,9 @@ function closeImportMenu() {
 
 function toggleDevToolsPopover() {
   showDevToolsPopover.value = !showDevToolsPopover.value;
+  if (showDevToolsPopover.value) {
+    void nextTick(() => updateDevToolsPopoverPosition());
+  }
 }
 
 function toggleImportMenu() {
@@ -1412,6 +1422,31 @@ function handlePointerDown(event: MouseEvent) {
   ) {
     closeImportMenu();
   }
+}
+
+function updateDevToolsPopoverPosition() {
+  const button = devToolsButtonRef.value;
+  const popover = devToolsPopoverRef.value;
+  if (!button || !popover) return;
+
+  const gap = 12;
+  const buttonRect = button.getBoundingClientRect();
+  const popoverRect = popover.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  let left = buttonRect.right - popoverRect.width;
+  left = Math.min(left, viewportWidth - popoverRect.width - gap);
+  left = Math.max(gap, left);
+
+  let top = buttonRect.top - popoverRect.height - gap;
+  if (top < gap) {
+    top = Math.min(buttonRect.bottom + gap, viewportHeight - popoverRect.height - gap);
+  }
+  top = Math.max(gap, top);
+
+  devToolsPopoverX.value = left;
+  devToolsPopoverY.value = top;
 }
 
 function handleSearchBarKeydown(event: KeyboardEvent) {
@@ -1831,6 +1866,12 @@ watch(showSearchAssistPanel, (visible) => {
   }
 });
 
+watch(showDevToolsPopover, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  updateDevToolsPopoverPosition();
+});
+
 watch(visibleResults, (nextResults) => {
   if (!nextResults.length) {
     focusedResultIndex.value = -1;
@@ -1890,6 +1931,7 @@ onMounted(async () => {
   attachLoadMoreObserver();
   document.addEventListener("keydown", handleGlobalKeydown);
   document.addEventListener("mousedown", handlePointerDown);
+  window.addEventListener("resize", updateDevToolsPopoverPosition);
 });
 
 onBeforeUnmount(() => {
@@ -1902,6 +1944,7 @@ onBeforeUnmount(() => {
   loadMoreObserver?.disconnect();
   document.removeEventListener("keydown", handleGlobalKeydown);
   document.removeEventListener("mousedown", handlePointerDown);
+  window.removeEventListener("resize", updateDevToolsPopoverPosition);
 });
 </script>
 
@@ -2036,14 +2079,15 @@ onBeforeUnmount(() => {
 }
 
 .search-view__dev-tools-popover {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.45rem);
+  position: fixed;
   width: min(22rem, calc(100vw - 2rem));
+  max-height: min(32rem, calc(100vh - 5.5rem));
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   z-index: 35;
 }
 .search-view__dev-tools-header,
