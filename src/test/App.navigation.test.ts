@@ -95,8 +95,6 @@ describe("App 工作台壳层", () => {
     await flushPromises();
     mockInvoke.mockClear();
 
-    const settings = useSettingsStore();
-    settings.currentWindowMode = "sidebar";
     await router.push("/");
     await flushPromises();
 
@@ -114,6 +112,27 @@ describe("App 工作台壳层", () => {
     expect(saveCallIndex).toBeGreaterThanOrEqual(0);
     expect(applyCallIndex).toBeGreaterThanOrEqual(0);
     expect(saveCallIndex).toBeLessThan(applyCallIndex);
+    expect(useSettingsStore().currentWindowMode).toBe("sidebar");
+  });
+
+  it("仅 query 变化时不会重复触发窗口布局", async () => {
+    const router = createTestRouter();
+    await router.push("/library");
+    await router.isReady();
+
+    mount(App, {
+      global: {
+        plugins: [router],
+      },
+    });
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    await router.push("/library?view=recent");
+    await flushPromises();
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("save_window_preferences", expect.anything());
+    expect(mockInvoke).not.toHaveBeenCalledWith("apply_window_layout", expect.anything());
   });
 
   it("启动时存在 3 条及以上未完成入库任务时显示恢复对话框", async () => {

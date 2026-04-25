@@ -78,12 +78,15 @@ defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; 
 <style scoped>
 .image-grid {
   display: grid;
+  width: 100%;
+  min-width: 0;
   align-content: start;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(148px, 100%), 1fr));
   gap: 0.625rem;
+  overflow-x: clip;
 }
 .image-grid--library {
-  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.7rem;
 }
 
@@ -93,8 +96,18 @@ defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; 
     grid-template-columns: repeat(2, 1fr);
   }
   .image-grid--library {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.56rem;
+  }
+}
+@media (min-width: 960px) {
+  .image-grid--library {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1180px) {
+  .image-grid--library {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 @media (min-width: 1400px) {
@@ -102,7 +115,7 @@ defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; 
     grid-template-columns: repeat(4, 1fr);
   }
   .image-grid--library {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 .hint { color: #888; padding: 1rem 0; }

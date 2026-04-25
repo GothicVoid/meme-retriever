@@ -64,10 +64,7 @@ import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 const recoveryStore = useTaskRecoveryStore();
 const settings = useSettingsStore();
 const route = useRoute();
-const isSidebarMode = computed(() =>
-  route.path === "/" && settings.currentWindowMode === "sidebar"
-);
-
+const isSidebarMode = computed(() => route.path === "/");
 const effectiveWindowMode = computed<WindowMode>(() =>
   isSidebarMode.value ? "sidebar" : "expanded"
 );
@@ -85,9 +82,13 @@ onMounted(async () => {
 });
 
 watch(
-  [effectiveWindowMode, () => route.fullPath],
-  async ([mode]) => {
+  effectiveWindowMode,
+  async (mode, previousMode) => {
+    settings.currentWindowMode = mode;
     await nextTick();
+    if (mode === previousMode) {
+      return;
+    }
     await saveWindowPreferences(mode);
     await applyWindowLayout(mode);
   },

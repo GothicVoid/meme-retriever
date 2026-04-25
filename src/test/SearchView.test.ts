@@ -7,7 +7,6 @@ import { confirm } from "@tauri-apps/plugin-dialog";
 import SearchView from "@/views/SearchView.vue";
 import Toast from "@/components/Toast.vue";
 import { useSearchStore } from "@/stores/search";
-import { useSettingsStore } from "@/stores/settings";
 import type { ImageMeta } from "@/stores/library";
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -142,7 +141,6 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
-    expect(useSettingsStore().currentWindowMode).toBe("expanded");
   });
 
   it("存在未完成任务时，点击底部图库按钮会直接进入待处理视图", async () => {
@@ -172,7 +170,6 @@ describe("SearchView", () => {
 
     expect(router.currentRoute.value.path).toBe("/library");
     expect(router.currentRoute.value.query.view).toBe("recent");
-    expect(useSettingsStore().currentWindowMode).toBe("expanded");
 
     wrapper.unmount();
   });

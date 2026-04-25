@@ -587,8 +587,8 @@ import QuickPreviewModal from "@/components/QuickPreviewModal.vue";
 import { useSearch } from "@/composables/useSearch";
 import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
-import { useSettingsStore } from "@/stores/settings";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
+import { useSettingsStore } from "@/stores/settings";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import { getRelevanceLevel } from "@/utils/relevance";
 import type { SearchResult } from "@/stores/search";
@@ -600,8 +600,8 @@ import coldStartPreview4 from "@/assets/cold-start-previews/preview-4.jpg";
 
 const { store, debouncedSearch, debouncedRecordSearchHistory } = useSearch();
 const { copyImage } = useClipboard();
-const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
+const settings = useSettingsStore();
 const recoveryStore = useTaskRecoveryStore();
 const router = inject<Router | undefined>(routerKey, undefined);
 const cancelDebouncedSearch = debouncedSearch as typeof debouncedSearch & { cancel?: () => void };
@@ -1118,7 +1118,6 @@ function goToGalleryManagement(targetView: "recent" | "missing") {
     setPendingPostImportFlag();
   }
   showImportMenu.value = false;
-  settings.currentWindowMode = "expanded";
   if (router) {
     void router.push({
       path: "/library",
@@ -1140,7 +1139,6 @@ function goToGalleryManagement(targetView: "recent" | "missing") {
 
 function goToPrivateRoleLibrary() {
   showImportMenu.value = false;
-  settings.currentWindowMode = "expanded";
   if (router) {
     void router.push("/private-role-maintenance");
     return;
@@ -1309,7 +1307,6 @@ async function handleImportFolder() {
 }
 
 async function openGalleryManagement() {
-  settings.currentWindowMode = "expanded";
   closeDevToolsPopover();
   if (inProgressIndicator.value) {
     if (router) {
@@ -1962,6 +1959,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
@@ -2296,6 +2294,7 @@ onBeforeUnmount(() => {
 .home-landing {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 0.8rem;
   padding: 0.1rem 0.05rem 0.4rem;
 }
@@ -2538,6 +2537,7 @@ onBeforeUnmount(() => {
 .home-section {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 0.875rem;
 }
 .home-searches {

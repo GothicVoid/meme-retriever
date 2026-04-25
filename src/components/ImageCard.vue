@@ -473,10 +473,12 @@ onUnmounted(() => {
 <style scoped>
 .image-card-shell {
   position: relative;
+  min-width: 0;
 }
 
 .image-card {
   cursor: pointer;
+  min-width: 0;
 }
 
 .image-card--focused {

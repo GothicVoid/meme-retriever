@@ -491,12 +491,9 @@ import DetailModal from "@/components/DetailModal.vue";
 import { useLibraryStore, type ImportEntry } from "@/stores/library";
 import { useTaskRecoveryStore } from "@/stores/taskRecovery";
 import type { SearchResult } from "@/stores/search";
-import { useSettingsStore } from "@/stores/settings";
-import { applyWindowLayout, saveWindowPreferences } from "@/utils/windowLayout";
 
 const store = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
-const settingsStore = useSettingsStore();
 const route = inject<RouteLocationNormalizedLoaded | null>(routeLocationKey, null);
 const router = inject<Router | undefined>(routerKey, undefined);
 const detailId = ref<string | null>(null);
@@ -1096,10 +1093,6 @@ async function openPrivateRoleLibrary() {
 }
 
 async function handleBackToSearch() {
-  settingsStore.currentWindowMode = "sidebar";
-  await saveWindowPreferences("sidebar");
-  await applyWindowLayout("sidebar");
-
   if (router) {
     await router.push("/");
     return;
@@ -1416,6 +1409,7 @@ async function handleBackToSearch() {
   flex: 1;
   min-height: 240px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0.18rem 0.18rem 0.24rem 0.02rem;
   border-radius: 1.1rem;
   background:
