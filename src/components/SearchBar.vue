@@ -13,6 +13,7 @@
       :placeholder="placeholder"
       aria-label="搜索表情"
       @input="handleInput"
+      @keydown="handleKeydown"
       @keydown.esc="$emit('update:modelValue', '')"
       @focus="$emit('focus')"
       @blur="$emit('blur')"
@@ -42,6 +43,7 @@ const emit = defineEmits<{
   "update:modelValue": [value: string];
   focus: [];
   blur: [];
+  keydown: [event: KeyboardEvent];
 }>();
 
 const inputRef = ref<HTMLInputElement>();
@@ -55,6 +57,10 @@ function focusAndSelect() {
 function handleInput(event: Event) {
   if (isComposing.value) return;
   emit("update:modelValue", (event.target as HTMLInputElement).value);
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  emit("keydown", event);
 }
 
 function handleCompositionStart() {

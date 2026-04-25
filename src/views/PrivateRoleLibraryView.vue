@@ -5,13 +5,15 @@
         <button
           type="button"
           class="ghost-btn small"
-          data-action="back-to-library"
+          data-action="go-back"
           @click="goBack"
         >
-          返回图库
+          返回
         </button>
 
-        <p class="topbar-tip">只有角色名搜不到时，再来补图。</p>
+        <p class="topbar-tip">
+          只有角色名搜不到时，再来补图。
+        </p>
       </div>
 
       <div class="topbar-actions">
@@ -57,7 +59,9 @@
                 新建
               </button>
             </div>
-            <p class="panel-copy">已有就直接选，没有再新建。</p>
+            <p class="panel-copy">
+              已有就直接选，没有再新建。
+            </p>
           </div>
 
           <input
@@ -544,7 +548,12 @@ function goBack() {
     return;
   }
 
-  void router?.push("/library");
+  if (router) {
+    void router.push("/");
+    return;
+  }
+
+  window.history.pushState({}, "", "/");
 }
 </script>
 

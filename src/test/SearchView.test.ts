@@ -305,21 +305,26 @@ describe("SearchView", () => {
 
     await wrapper.find("input").trigger("focus");
     await flushPromises();
-    await wrapper.find(".search-assist-panel__chip").trigger("click");
+    await wrapper.find('[data-testid="search-history-dropdown-item"]').trigger("click");
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "笑死" }));
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "阿布 撇嘴" }));
     expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("最近常用");
 
     wrapper.unmount();
   });
 
-  it("搜索辅助面板使用新的示例词配置", async () => {
+  it("搜索辅助面板只展示最近搜索，不再展示静态建议词", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          recentSearches: [{ query: "阿布 撇嘴", updatedAt: 1 }],
+        });
+      }
       if (cmd === "get_images") return Promise.resolve([]);
       return Promise.resolve([]);
     });
@@ -329,9 +334,10 @@ describe("SearchView", () => {
     await wrapper.find("input").trigger("focus");
     await flushPromises();
 
-    expect(wrapper.text()).toContain("笑死");
-    expect(wrapper.text()).toContain("猫猫无语");
-    expect(wrapper.text()).toContain("华强买瓜");
+    expect(wrapper.text()).toContain("最近搜过");
+    expect(wrapper.text()).toContain("阿布 撇嘴");
+    expect(wrapper.text()).not.toContain("可以直接试");
+    expect(wrapper.find(".search-assist-panel__chip").exists()).toBe(false);
 
     wrapper.unmount();
   });
@@ -634,6 +640,60 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("搜索框保持焦点时按上下方向键也能切换结果焦点", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    await input.trigger("keydown", { key: "ArrowDown" });
+    await flushPromises();
+    expect(wrapper.findAll(".image-card--focused")).toHaveLength(1);
+
+    await input.trigger("keydown", { key: "ArrowDown" });
+    await flushPromises();
+    const focusedCards = wrapper.findAll(".image-card--focused");
+    expect(focusedCards).toHaveLength(1);
+
+    wrapper.unmount();
+  });
+
+  it("搜索框聚焦时 ArrowLeft 仍用于移动光标，不会劫持结果焦点", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    await input.trigger("keydown", { key: "ArrowLeft" });
+    await flushPromises();
+
+    expect(wrapper.findAll(".image-card--focused")).toHaveLength(0);
+
+    wrapper.unmount();
+  });
+
   it("搜索结果支持用 Space 打开轻量预览，并用 Esc 关闭", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
@@ -795,13 +855,17 @@ describe("SearchView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("这次搜索没成功");
-    expect(wrapper.text()).toContain("可以重试，或先查看失效图片");
+    expect(wrapper.text()).toContain("刚才这次搜索没有完成");
 
     const galleryAction = wrapper.find('[data-action="primary-recovery-action"]');
     expect(galleryAction.exists()).toBe(true);
-    expect(galleryAction.text()).toContain("查看失效图片");
+    expect(galleryAction.text()).toContain("重试");
 
-    await galleryAction.trigger("click");
+    const secondaryAction = wrapper.find('[data-action="secondary-recovery-action"]');
+    expect(secondaryAction.exists()).toBe(true);
+    expect(secondaryAction.text()).toContain("查看失效图片");
+
+    await secondaryAction.trigger("click");
     expect(window.location.pathname).toBe("/library");
     expect(window.location.search).toContain("fileStatus=missing");
 
@@ -1365,7 +1429,7 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
-  it("搜索失败且存在最近用过时展示快捷入口，并可回到首页启动态", async () => {
+  it("无结果时展示去图库确认和修正关键词入口", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -1382,15 +1446,17 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    const recentUsedAction = wrapper.find('[data-action="show-recent-used"]');
-    expect(recentUsedAction.exists()).toBe(true);
+    const primaryAction = wrapper.find('[data-action="primary-recovery-action"]');
+    const focusAction = wrapper.find('[data-action="focus-query-input"]');
+    expect(primaryAction.exists()).toBe(true);
+    expect(primaryAction.text()).toContain("去图库确认有没有这张图");
+    expect(focusAction.exists()).toBe(true);
 
-    await recentUsedAction.trigger("click");
+    await focusAction.trigger("click");
     await flushPromises();
 
-    expect(wrapper.find("input").element.value).toBe("");
-    expect(wrapper.text()).toContain("最近常用");
-    expect(wrapper.text()).not.toContain("先发出去再说");
+    expect(wrapper.find("input").element.value).toBe("完全搜不到");
+    expect(document.activeElement?.tagName).toBe("INPUT");
 
     wrapper.unmount();
   });

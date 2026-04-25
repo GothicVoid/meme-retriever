@@ -171,7 +171,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useClipboard } from "@/composables/useClipboard";
 import { showToast } from "@/composables/useToast";
 import type { SearchResult } from "@/stores/search";
-import { getRelevanceBadgeClass, getUserFacingRelevanceLabel } from "@/utils/relevance";
+import { getRelevanceBadgeClass, getRelevanceLevel, getUserFacingRelevanceLabel } from "@/utils/relevance";
 
 const CLOSE_CONTEXT_MENU_EVENT = "image-card:close-context-menu";
 
@@ -256,9 +256,11 @@ const relevanceBadgeClass = computed(() => getRelevanceBadgeClass(props.image.sc
 
 const primaryReasonLabel = computed(() => {
   const route = debugInfo.value?.mainRoute;
+  const relevanceLevel = getRelevanceLevel(props.image.score);
   if (route === "ocr") return "命中文字";
   if (route === "privateRole") return "角色匹配";
   if (route === "tag") return "标签匹配";
+  if (relevanceLevel === "low") return "仅作候选";
   return "画面接近";
 });
 

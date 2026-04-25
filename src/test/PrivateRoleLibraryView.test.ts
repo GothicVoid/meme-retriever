@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { InvokeArgs } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -44,6 +45,7 @@ const mockState = {
 
 describe("PrivateRoleLibraryView", () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     mockInvoke.mockReset();
     mockOpen.mockReset();
     mockConvertFileSrc.mockClear();
@@ -63,7 +65,7 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.text()).toContain("阿布");
     expect(wrapper.text()).toContain("老板");
     expect(wrapper.text()).toContain("检测到潜在冲突词");
-    expect(wrapper.find("[data-action='back-to-library']").exists()).toBe(true);
+    expect(wrapper.find("[data-action='go-back']").exists()).toBe(true);
   });
 
   it("编辑后会自动触发校验并刷新报告", async () => {

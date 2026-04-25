@@ -350,6 +350,29 @@ describe("ImageCard", () => {
     expect(wrapper.find(".reason-evidence").exists()).toBe(false);
   });
 
+  it("低相关语义候选不再把主理由写成画面接近", () => {
+    const image: SearchResult = {
+      ...mockImage,
+      score: 0.41,
+      debugInfo: {
+        mainRoute: "semantic",
+        mainScore: 0.32,
+        auxScore: 0.08,
+        semScore: 0.44,
+        kwScore: 0.2,
+        tagScore: 0,
+        popularityBoost: 0,
+      },
+    };
+
+    const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
+    const reasonPanel = wrapper.find(".reason-panel");
+
+    expect(reasonPanel.text()).toContain("不太确定");
+    expect(reasonPanel.text()).toContain("仅作候选");
+    expect(reasonPanel.text()).not.toContain("画面接近");
+  });
+
   it("showDebugInfo=true 且 debugInfo 为 null 时不显示叠层", () => {
     const wrapper = mount(ImageCard, {
       props: { image: { ...mockImage, debugInfo: null }, showDebugInfo: true },

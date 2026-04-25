@@ -182,6 +182,19 @@ describe("SearchView — 结果展示体验", () => {
   });
 
   it("整批结果都低相关时优先显示改写建议，不直接灌出一堆图", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 1,
+          pendingTaskCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      return Promise.resolve([]);
+    });
+
     const wrapper = mount(SearchView);
     await flushPromises();
     const store = useSearchStore();
@@ -190,9 +203,9 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.findAll(".image-card").length).toBe(0);
-    expect(wrapper.text()).toContain("没找到足够相关的结果");
-    expect(wrapper.text()).toContain("先试试图里的原文");
-    expect(wrapper.findAll('[data-testid="search-guidance-item"]').length).toBeGreaterThanOrEqual(3);
+    expect(wrapper.text()).toContain("没找到这类图片");
+    expect(wrapper.text()).toContain("先确认目标图在不在库里");
+    expect(wrapper.find("[data-action='focus-query-input']").exists()).toBe(true);
   });
 
   it("整批结果都低相关时用户手动展开会显示全部候选", async () => {
@@ -210,7 +223,20 @@ describe("SearchView — 结果展示体验", () => {
     expect(wrapper.find("[data-action='show-less']").exists()).toBe(true);
   });
 
-  it("无结果时展示失败反馈区和多条下一步建议", async () => {
+  it("无结果时展示失败反馈区和新的补救路径", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          imageCount: 1,
+          pendingTaskCount: 0,
+          recentSearches: [],
+          recentUsed: [],
+          frequentUsed: [],
+        });
+      }
+      return Promise.resolve([]);
+    });
+
     const wrapper = mount(SearchView);
     await flushPromises();
     const store = useSearchStore();
@@ -219,9 +245,8 @@ describe("SearchView — 结果展示体验", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".result-feedback").exists()).toBe(true);
-    expect(wrapper.text()).toContain("换个说法再试试");
-    expect(wrapper.findAll('[data-testid="search-guidance-item"]').length).toBeGreaterThanOrEqual(3);
-    expect(wrapper.text()).toContain("试试图片里的原文");
-    expect(wrapper.text()).toContain("试试角色名 + 动作");
+    expect(wrapper.text()).toContain("没找到这类图片");
+    expect(wrapper.text()).toContain("去图库确认有没有这张图");
+    expect(wrapper.find("[data-action='focus-query-input']").exists()).toBe(true);
   });
 });

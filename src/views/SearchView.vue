@@ -121,15 +121,17 @@
           v-else
           class="search-state-banner search-state-banner--summary"
         >
-          <p class="search-state-banner__title">
-            {{ searchSummaryTitle }}
-          </p>
-          <p
-            v-if="searchSummaryMeta"
-            class="search-state-banner__text"
-          >
-            {{ searchSummaryMeta }}
-          </p>
+          <div class="search-state-banner__copy">
+            <p class="search-state-banner__title">
+              {{ searchSummaryTitle }}
+            </p>
+            <p
+              v-if="searchSummaryMeta"
+              class="search-state-banner__text"
+            >
+              {{ searchSummaryMeta }}
+            </p>
+          </div>
           <p
             v-if="showResultShortcutsHint"
             class="search-state-banner__meta"
@@ -244,35 +246,28 @@
           >
             {{ feedbackText }}
           </p>
-          <div
-            v-if="showGuidanceList"
-            class="result-feedback__guidance"
+          <p
+            v-if="taggingHintText"
+            class="result-feedback__footnote"
           >
-            <span
-              v-for="item in guidanceItems"
-              :key="item"
-              class="result-feedback__guidance-item"
-              data-testid="search-guidance-item"
-            >
-              {{ item }}
-            </span>
-          </div>
+            {{ taggingHintText }}
+          </p>
           <div class="result-feedback__actions">
             <button
-              v-if="showRecentUsedShortcut"
-              class="result-feedback__action"
-              data-action="show-recent-used"
-              @click="goBackToHome"
-            >
-              看看最近用过
-            </button>
-            <button
               v-if="primaryRecoveryAction"
-              class="result-feedback__action"
+              class="result-feedback__action result-feedback__action--primary"
               data-action="primary-recovery-action"
               @click="runPrimaryRecoveryAction"
             >
               {{ primaryRecoveryAction.label }}
+            </button>
+            <button
+              v-if="showQueryCorrectionAction"
+              class="result-feedback__action"
+              data-action="focus-query-input"
+              @click="focusSearchInput"
+            >
+              检查是不是词写偏了
             </button>
             <button
               v-if="canShowSecondaryResults"
@@ -280,7 +275,23 @@
               :data-action="showSecondaryResults ? 'show-less' : 'show-more-secondary'"
               @click="toggleSecondaryResults"
             >
-              {{ showSecondaryResults ? "收起补充结果" : `查看其余 ${secondaryResultsCount} 张` }}
+              {{ showSecondaryResults ? "收起低相关候选" : lowConfidenceActionLabel }}
+            </button>
+            <button
+              v-if="showRoleEnhancementAction"
+              class="result-feedback__action"
+              data-action="open-role-enhancement"
+              @click="goToPrivateRoleLibrary"
+            >
+              试试角色搜索增强
+            </button>
+            <button
+              v-if="secondaryRecoveryAction"
+              class="result-feedback__action"
+              data-action="secondary-recovery-action"
+              @click="runSecondaryRecoveryAction"
+            >
+              {{ secondaryRecoveryAction.label }}
             </button>
           </div>
         </div>
@@ -380,26 +391,9 @@
                   @mousedown.prevent
                   @click="removeRecentSearch(item.query)"
                 >
-                  删除
+                  ×
                 </button>
               </div>
-            </div>
-          </div>
-          <div class="search-assist-panel__section">
-            <p class="search-assist-panel__label">
-              可以直接试
-            </p>
-            <div class="search-assist-panel__row">
-              <button
-                v-for="example in exampleQueries"
-                :key="example"
-                type="button"
-                class="search-assist-panel__chip"
-                @mousedown.prevent
-                @click="applyExampleQuery(example)"
-              >
-                {{ example }}
-              </button>
             </div>
           </div>
         </div>
@@ -409,6 +403,7 @@
           class="search-view__search search-view__search--dock"
           :placeholder="searchPlaceholder"
           @update:model-value="onQueryChange"
+          @keydown="handleSearchBarKeydown"
           @focus="handleSearchFocus"
           @blur="handleSearchBlur"
         />
@@ -619,7 +614,7 @@ interface HomeState {
 }
 
 interface RecoveryAction {
-  kind: "gallery" | "role-library";
+  kind: "gallery" | "role-library" | "retry";
   label: string;
   targetView?: "recent" | "missing";
 }
@@ -688,7 +683,7 @@ const pendingTaskCount = computed(() =>
 const inProgressIndicator = computed(() => recoveryStore.inProgressIndicator);
 const galleryEntryLabel = computed(() => inProgressIndicator.value?.label ?? "图库");
 const showSearchAssistPanel = computed(() =>
-  searchFocused.value && isHomeMode.value && (recentSearches.value.length > 0 || exampleQueries.length > 0)
+  searchFocused.value && isHomeMode.value && recentSearches.value.length > 0
 );
 
 function getPendingPostImportFlag() {
@@ -882,25 +877,37 @@ const showIncompleteResultsHint = computed(() =>
 );
 
 const looksLikeRoleQuery = computed(() => isLikelyRoleQuery(store.query));
-
-const guidanceItems = [
-  "试试图片里的原文",
-  "试试角色名 + 动作",
-  "试试更短的关键词",
-  "试试更长一点的描述",
-];
-
-const showGuidanceList = computed(() => showZeroResultHint.value || showLowConfidenceHint.value);
-
-const showRecentUsedShortcut = computed(() =>
-  (showZeroResultHint.value || showLowConfidenceHint.value)
-  && recentUsedImages.value.length > 0
+const galleryKnownEmpty = computed(() =>
+  !homeLoading.value && !homeLoadFailed.value && (homeState.value?.imageCount ?? 0) === 0
 );
 
 const canShowSecondaryResults = computed(() =>
   secondaryResultsCount.value > 0
   || (showLowConfidenceHint.value && store.results.length > 0)
 );
+
+const lowConfidenceActionLabel = computed(() => {
+  if (showSecondaryResults.value) {
+    return "收起低相关候选";
+  }
+
+  const count = secondaryResultsCount.value > 0 ? secondaryResultsCount.value : store.results.length;
+  return count > 0 ? `看看低相关候选（${count}）` : "看看低相关候选";
+});
+
+const showQueryCorrectionAction = computed(() =>
+  !showSearchErrorHint.value && (showZeroResultHint.value || showLowConfidenceHint.value)
+);
+const showRoleEnhancementAction = computed(() =>
+  !showSearchErrorHint.value
+  && (showZeroResultHint.value || showLowConfidenceHint.value)
+  && looksLikeRoleQuery.value
+);
+const taggingHintText = computed(() => {
+  if (showSearchErrorHint.value) return "";
+  if (!(showZeroResultHint.value || showLowConfidenceHint.value)) return "";
+  return "这类图以后总是不好搜的话，可以补个标签。";
+});
 
 const showResultShortcutsHint = computed(() =>
   !isHomeMode.value && visibleResults.value.length > 0 && !previewImageId.value
@@ -923,13 +930,10 @@ const searchSummaryTitle = computed(() => {
     return `正在找“${query}”相关的图`;
   }
   if (showSearchErrorHint.value) {
-    return "这次没搜出来，换个词再试试";
+    return "这次搜索没成功";
   }
-  if (showZeroResultHint.value) {
-    return `没找到“${query}”相关的图`;
-  }
-  if (showLowConfidenceHint.value) {
-    return `没找到和“${query}”更接近的图`;
+  if (showZeroResultHint.value || showLowConfidenceHint.value) {
+    return "没找到这类图片";
   }
   if (visibleResults.value.length <= 2) {
     return `找到 ${visibleResults.value.length} 张更接近“${query}”的图`;
@@ -939,23 +943,16 @@ const searchSummaryTitle = computed(() => {
 
 const searchSummaryMeta = computed(() => {
   if (showSearchErrorHint.value) {
-    return pendingTaskCount.value > 0
-      ? "可以重试，或先去图库继续导入未完成任务。"
-      : "可以重试，或先查看失效图片。";
+    return "刚才这次搜索没有完成。";
   }
-  if (showZeroResultHint.value) {
+  if (showZeroResultHint.value || showLowConfidenceHint.value) {
+    if (galleryKnownEmpty.value) {
+      return "图库里还没有图片，先导入后再搜会更有结果。";
+    }
     if (pendingTaskCount.value > 0) {
-      return "换个说法试试，或先去图库继续导入未完成任务。";
+      return "你的图库还有图片没导完，当前结果可能不完整。";
     }
-    if (looksLikeRoleQuery.value) {
-      return "按角色名搜不到时，可以补几张示例图帮助系统认识这个角色。";
-    }
-    return "换个说法试试，先从图里的原文、角色名、动作或场景词开始搜。";
-  }
-  if (showLowConfidenceHint.value) {
-    return pendingTaskCount.value > 0
-      ? "先去图库继续导入未完成任务，或查看失效图片。"
-      : "先试试图里的原文、角色名或更短一点的关键词。";
+    return "先确认目标图在不在库里，再决定要不要继续换词。";
   }
   if (showLowRelevanceStopNotice.value) {
     return "";
@@ -965,13 +962,10 @@ const searchSummaryMeta = computed(() => {
 
 const feedbackTitle = computed(() => {
   if (showSearchErrorHint.value) {
-    return "这次搜索没成功";
+    return "可以这样继续";
   }
-  if (showZeroResultHint.value) {
-    return "换个说法再试试";
-  }
-  if (showLowConfidenceHint.value) {
-    return "先别急着翻不太像的结果";
+  if (showZeroResultHint.value || showLowConfidenceHint.value) {
+    return "可以这样继续";
   }
   if (mediumConfidenceCount.value > highConfidenceCount.value) {
     return `${mediumConfidenceCount.value} 张更接近的图已排在前面`;
@@ -981,23 +975,10 @@ const feedbackTitle = computed(() => {
 
 const feedbackText = computed(() => {
   if (showSearchErrorHint.value) {
-    return pendingTaskCount.value > 0
-      ? "可以重试，或先去图库继续导入未完成任务。"
-      : "可以重试，或先查看失效图片。";
+    return "";
   }
-  if (showZeroResultHint.value) {
-    if (pendingTaskCount.value > 0) {
-      return "可以先去图库继续导入未完成任务，再回来搜索。";
-    }
-    if (looksLikeRoleQuery.value) {
-      return "如果图片里没字、模型也认不出这个角色，可以补几张角色示例图。";
-    }
-    return "可以从图片里的原文、角色名、动作或场景词开始搜。";
-  }
-  if (showLowConfidenceHint.value) {
-    return pendingTaskCount.value > 0
-      ? "可以先去图库继续导入未完成任务，或先查看失效图片。"
-      : "如果你愿意，也可以展开看看其余候选，再决定要不要换词。";
+  if (showZeroResultHint.value || showLowConfidenceHint.value) {
+    return "";
   }
   if (showSecondaryResults.value) {
     return secondaryResultsCount.value > 0
@@ -1015,13 +996,11 @@ const loadMoreHint = computed(() =>
 );
 
 const emptyMessage = computed(() =>
-  showSearchErrorHint.value
-    ? "搜索暂时失败，请稍后重试"
-    : showLowConfidenceHint.value
-    ? "没找到足够相关的结果，试试更具体的描述"
+  (showSearchErrorHint.value || showZeroResultHint.value || showLowConfidenceHint.value)
+    ? ""
     : libraryStore.images.length === 0
       ? "还没有图片哦，点击添加开始使用吧"
-      : "没找到相关图片，试试其他描述？"
+      : "没找到这类图片"
 );
 
 function resetResultView() {
@@ -1074,12 +1053,6 @@ function applyExampleQuery(query: string) {
   onQueryChange(query);
 }
 
-function goBackToHome() {
-  searchFocused.value = false;
-  store.query = "";
-  onQueryChange("");
-}
-
 function goToGalleryManagement(targetView: "recent" | "missing") {
   if (showColdStart.value && targetView === "recent") {
     setPendingPostImportFlag();
@@ -1121,6 +1094,21 @@ const primaryRecoveryAction = computed<RecoveryAction | null>(() => {
     return null;
   }
 
+  if (showSearchErrorHint.value) {
+    return {
+      kind: "retry",
+      label: "重试",
+    };
+  }
+
+  if (galleryKnownEmpty.value) {
+    return {
+      kind: "gallery",
+      label: "去图库开始导入",
+      targetView: "recent",
+    };
+  }
+
   if (pendingTaskCount.value > 0) {
     return {
       kind: "gallery",
@@ -1129,26 +1117,34 @@ const primaryRecoveryAction = computed<RecoveryAction | null>(() => {
     };
   }
 
-  if (showSearchErrorHint.value || showLowConfidenceHint.value) {
+  if (showZeroResultHint.value || showLowConfidenceHint.value) {
+    return {
+      kind: "gallery",
+      label: "去图库确认有没有这张图",
+      targetView: "recent",
+    };
+  }
+
+  return null;
+});
+
+const secondaryRecoveryAction = computed<RecoveryAction | null>(() => {
+  if (!(showSearchErrorHint.value || showZeroResultHint.value || showLowConfidenceHint.value)) {
+    return null;
+  }
+
+  if (showSearchErrorHint.value) {
+    if (pendingTaskCount.value > 0) {
+      return {
+        kind: "gallery",
+        label: "去图库继续导入",
+        targetView: "recent",
+      };
+    }
     return {
       kind: "gallery",
       label: "查看失效图片",
       targetView: "missing",
-    };
-  }
-
-  if (showZeroResultHint.value && looksLikeRoleQuery.value) {
-    return {
-      kind: "role-library",
-      label: "维护角色示例图",
-    };
-  }
-
-  if (showZeroResultHint.value) {
-    return {
-      kind: "gallery",
-      label: "查看最近新增",
-      targetView: "recent",
     };
   }
 
@@ -1159,12 +1155,41 @@ function runPrimaryRecoveryAction() {
   const action = primaryRecoveryAction.value;
   if (!action) return;
 
+  if (action.kind === "retry") {
+    void retrySearch();
+    return;
+  }
+
   if (action.kind === "role-library") {
     goToPrivateRoleLibrary();
     return;
   }
 
   goToGalleryManagement(action.targetView ?? "recent");
+}
+
+function runSecondaryRecoveryAction() {
+  const action = secondaryRecoveryAction.value;
+  if (!action) return;
+
+  if (action.kind === "retry") {
+    void retrySearch();
+    return;
+  }
+
+  if (action.kind === "role-library") {
+    goToPrivateRoleLibrary();
+    return;
+  }
+
+  goToGalleryManagement(action.targetView ?? "recent");
+}
+
+async function retrySearch() {
+  const query = store.query.trim();
+  if (!query) return;
+  resetResultView();
+  await store.search(query, store.currentLimit);
 }
 
 function closeDevToolsPopover() {
@@ -1334,6 +1359,23 @@ function handlePointerDown(event: MouseEvent) {
   }
 }
 
+function handleSearchBarKeydown(event: KeyboardEvent) {
+  if (previewImageId.value || detailId.value || isHomeMode.value || !visibleResults.value.length) {
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveFocusedResult(1);
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveFocusedResult(-1);
+  }
+}
+
 function focusSearchInput() {
   searchBarRef.value?.focusAndSelect();
   searchFocused.value = true;
@@ -1457,6 +1499,10 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && showSearchAssistPanel.value) {
     event.preventDefault();
     searchFocused.value = false;
+    return;
+  }
+
+  if (isEditableTarget(event.target)) {
     return;
   }
 
@@ -1923,9 +1969,15 @@ onBeforeUnmount(() => {
 }
 
 .search-assist-panel__delete {
-  padding: 0.3rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
   border-radius: 999px;
   color: var(--ui-text-secondary);
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .search-assist-panel__delete:hover {
@@ -2231,18 +2283,11 @@ onBeforeUnmount(() => {
   line-height: 1.5;
   color: var(--ui-text-secondary);
 }
-.result-feedback__guidance {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-.result-feedback__guidance-item {
-  padding: 0.34rem 0.62rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(219, 205, 180, 0.86);
+.result-feedback__footnote {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
   color: var(--ui-text-secondary);
-  font-size: 0.8rem;
 }
 .result-feedback__actions {
   display: flex;
@@ -2258,8 +2303,17 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: 0.8rem;
 }
+.result-feedback__action--primary {
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, #b46a22);
+  background: color-mix(in srgb, var(--ui-accent) 88%, white);
+  color: #fffaf3;
+  font-weight: 600;
+}
 .result-feedback__action:hover {
   background: var(--ui-bg-hover);
+}
+.result-feedback__action--primary:hover {
+  background: color-mix(in srgb, var(--ui-accent) 82%, white);
 }
 .result-more-strip {
   display: flex;

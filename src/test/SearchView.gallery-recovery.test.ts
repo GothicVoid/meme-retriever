@@ -61,7 +61,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     mockListen.mockResolvedValue(() => {});
   });
 
-  it("无结果时默认推荐查看最近新增，并跳转到最近新增入口", async () => {
+  it("无结果时默认推荐去图库确认，并跳转到图库入口", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -89,7 +89,7 @@ describe("SearchView 搜索失败修复闭环", () => {
 
     const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
-    expect(action.text()).toContain("查看最近新增");
+    expect(action.text()).toContain("去图库确认有没有这张图");
 
     await action.trigger("click");
     await flushPromises();
@@ -100,7 +100,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     wrapper.unmount();
   });
 
-  it("低相关结果时默认推荐查看失效图片，并跳转到失效图片过滤态", async () => {
+  it("低相关结果时默认推荐去图库确认，并保留查看低相关候选入口", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -133,18 +133,19 @@ describe("SearchView 搜索失败修复闭环", () => {
 
     const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
-    expect(action.text()).toContain("查看失效图片");
+    expect(action.text()).toContain("去图库确认有没有这张图");
+    expect(wrapper.find("[data-action='show-more-secondary']").exists()).toBe(true);
 
     await action.trigger("click");
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
-    expect(router.currentRoute.value.query.fileStatus).toBe("missing");
+    expect(router.currentRoute.value.query.view).toBe("recent");
 
     wrapper.unmount();
   });
 
-  it("存在未完成任务时，搜索失败默认推荐去图库继续导入", async () => {
+  it("存在未完成任务时，搜索失败主动作仍是重试，次级入口去图库继续导入", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") {
         return Promise.resolve({
@@ -177,9 +178,13 @@ describe("SearchView 搜索失败修复闭环", () => {
 
     const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
-    expect(action.text()).toContain("去图库继续导入");
+    expect(action.text()).toContain("重试");
 
-    await action.trigger("click");
+    const secondaryAction = wrapper.find('[data-action="secondary-recovery-action"]');
+    expect(secondaryAction.exists()).toBe(true);
+    expect(secondaryAction.text()).toContain("去图库继续导入");
+
+    await secondaryAction.trigger("click");
     await flushPromises();
 
     expect(router.currentRoute.value.path).toBe("/library");
@@ -188,7 +193,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     wrapper.unmount();
   });
 
-  it("角色名搜不到时默认推荐维护角色示例图", async () => {
+  it("角色名搜不到时提供角色搜索增强入口", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -214,9 +219,9 @@ describe("SearchView 搜索失败修复闭环", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    const action = wrapper.find('[data-action="primary-recovery-action"]');
+    const action = wrapper.find('[data-action="open-role-enhancement"]');
     expect(action.exists()).toBe(true);
-    expect(action.text()).toContain("维护角色示例图");
+    expect(action.text()).toContain("角色搜索增强");
 
     await action.trigger("click");
     await flushPromises();
@@ -226,7 +231,7 @@ describe("SearchView 搜索失败修复闭环", () => {
     wrapper.unmount();
   });
 
-  it("角色名搜不到时不会误导去图库治理", async () => {
+  it("角色名搜不到时角色增强保持次级入口，不替代主动作", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -254,7 +259,8 @@ describe("SearchView 搜索失败修复闭环", () => {
 
     const action = wrapper.find('[data-action="primary-recovery-action"]');
     expect(action.exists()).toBe(true);
-    expect(action.text()).toContain("维护角色示例图");
+    expect(action.text()).toContain("去图库确认有没有这张图");
+    expect(wrapper.find('[data-action="open-role-enhancement"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain("查看最近新增");
     expect(wrapper.text()).not.toContain("查看异常图片");
 
