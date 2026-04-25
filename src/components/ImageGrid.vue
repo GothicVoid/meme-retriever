@@ -13,6 +13,8 @@
       :selectable="selectable"
       :selected="selectedIds?.has(img.id) ?? false"
       :focused="focusedIds?.has(img.id) || focusedId === img.id"
+      :keyboard-navigable="keyboardNavigable"
+      :tab-index="getCardTabIndex(img.id)"
       :status-badge-label="statusBadgeLabels?.[img.id]"
       :click-action="cardClickAction"
       :hover-preview="hoverPreview"
@@ -21,14 +23,16 @@
       @select="$emit('select', $event)"
       @open="$emit('open', $event)"
       @preview="$emit('preview', $event)"
+      @focus="$emit('focus', $event)"
     />
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import ImageCard from "./ImageCard.vue";
 import type { SearchResult } from "@/stores/search";
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   images: SearchResult[];
   loading: boolean;
   showDebugInfo: boolean;
@@ -42,6 +46,7 @@ withDefaults(defineProps<{
   layout?: "default" | "library";
   cardClickAction?: "copy" | "open" | "select";
   hoverPreview?: boolean;
+  keyboardNavigable?: boolean;
 }>(), {
   loadingMessage: undefined,
   emptyMessage: undefined,
@@ -53,8 +58,21 @@ withDefaults(defineProps<{
   layout: "default",
   cardClickAction: "copy",
   hoverPreview: true,
+  keyboardNavigable: false,
 });
-defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string]; preview: [id: string] }>();
+const activeFocusableId = computed(() => {
+  if (props.focusedIds?.size) {
+    return props.images.find((img) => props.focusedIds?.has(img.id))?.id ?? null;
+  }
+  return props.focusedId ?? null;
+});
+
+function getCardTabIndex(id: string) {
+  if (!props.keyboardNavigable) return -1;
+  return activeFocusableId.value === id ? 0 : -1;
+}
+
+defineEmits<{ delete: [id: string]; copied: [id: string]; select: [id: string]; open: [id: string]; preview: [id: string]; focus: [id: string] }>();
 </script>
 
 <style scoped>

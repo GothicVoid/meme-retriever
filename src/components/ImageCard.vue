@@ -9,8 +9,13 @@
     <div
       class="image-card ui-result-card"
       :class="{ 'image-card--focused': focused }"
+      :tabindex="tabIndex"
+      :data-image-id="image.id"
+      :data-result-card="keyboardNavigable ? 'true' : 'false'"
+      :role="keyboardNavigable ? 'button' : undefined"
       @click="handleClick"
       @dblclick="handleDoubleClick"
+      @focus="handleFocus"
     >
       <div class="image-media ui-result-card__media">
         <input
@@ -181,6 +186,8 @@ const props = withDefaults(defineProps<{
   selectable?: boolean;
   selected?: boolean;
   focused?: boolean;
+  keyboardNavigable?: boolean;
+  tabIndex?: number;
   statusBadgeLabel?: string;
   clickAction?: "copy" | "open" | "select";
   hoverPreview?: boolean;
@@ -188,6 +195,8 @@ const props = withDefaults(defineProps<{
   selectable: false,
   selected: false,
   focused: false,
+  keyboardNavigable: false,
+  tabIndex: -1,
   statusBadgeLabel: undefined,
   clickAction: "copy",
   hoverPreview: true,
@@ -198,6 +207,7 @@ const emit = defineEmits<{
   open: [id: string];
   preview: [id: string];
   copied: [id: string];
+  focus: [id: string];
 }>();
 const { copyImage } = useClipboard();
 
@@ -306,6 +316,10 @@ function handleDoubleClick() {
   if (clickAction.value === "copy") {
     emit("open", props.image.id);
   }
+}
+
+function handleFocus() {
+  emit("focus", props.image.id);
 }
 
 function handleOpen() {

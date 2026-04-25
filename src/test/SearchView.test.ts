@@ -572,6 +572,48 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
+  it("输入为空时可用上下键切换最近搜索，并用 Enter 应用", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") {
+        return Promise.resolve({
+          ...mockHomeState,
+          recentSearches: [
+            { query: "阿布 撇嘴", updatedAt: 2 },
+            { query: "猫猫 心虚", updatedAt: 1 },
+          ],
+        });
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.trigger("focus");
+    await flushPromises();
+
+    await input.trigger("keydown", { key: "ArrowDown" });
+    await flushPromises();
+    expect(wrapper.findAll('[data-active="true"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="search-history-dropdown-item"]')[0].attributes("data-active")).toBe("true");
+
+    await input.trigger("keydown", { key: "ArrowDown" });
+    await flushPromises();
+    expect(wrapper.findAll('[data-testid="search-history-dropdown-item"]')[1].attributes("data-active")).toBe("true");
+
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+
+    expect(wrapper.find("input").element.value).toBe("猫猫 心虚");
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "猫猫 心虚" }));
+
+    wrapper.unmount();
+  });
+
   it("搜索框有值时不展示最近搜索下拉", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
@@ -787,7 +829,7 @@ describe("SearchView", () => {
     wrapper.unmount();
   });
 
-  it("搜索结果支持键盘焦点移动，并用 Enter 触发复制", async () => {
+  it("搜索结果支持从搜索框按 Tab 进入结果区，并用 Enter 触发复制", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -803,19 +845,21 @@ describe("SearchView", () => {
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
+    await input.trigger("focus");
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
     expect(wrapper.findAll(".image-card--focused")).toHaveLength(1);
+    expect(document.activeElement?.getAttribute("data-result-card")).toBe("true");
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await flushPromises();
     expect(copyImageMock).toHaveBeenCalledWith("a");
 
     wrapper.unmount();
   });
 
-  it("搜索框保持焦点时按上下方向键也能切换结果焦点", async () => {
+  it("搜索框按 Tab 会进入结果区，Esc 可返回搜索框", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
@@ -832,14 +876,14 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    await input.trigger("keydown", { key: "ArrowDown" });
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
     expect(wrapper.findAll(".image-card--focused")).toHaveLength(1);
+    expect(document.activeElement?.getAttribute("data-result-card")).toBe("true");
 
-    await input.trigger("keydown", { key: "ArrowDown" });
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await flushPromises();
-    const focusedCards = wrapper.findAll(".image-card--focused");
-    expect(focusedCards).toHaveLength(1);
+    expect(document.activeElement).toBe(input.element);
 
     wrapper.unmount();
   });
@@ -860,6 +904,7 @@ describe("SearchView", () => {
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
+    await input.trigger("focus");
 
     await input.trigger("keydown", { key: "ArrowLeft" });
     await flushPromises();
@@ -886,9 +931,9 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
 
     expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(true);
@@ -974,10 +1019,12 @@ describe("SearchView", () => {
 
     const hint = wrapper.find('[data-testid="result-shortcuts-hint"]');
     expect(hint.exists()).toBe(true);
-    expect(hint.text()).toContain("Enter");
-    expect(hint.text()).toContain("复制");
-    expect(hint.text()).toContain("Space");
-    expect(hint.text()).toContain("预览");
+    expect(hint.text()).toContain("Tab");
+    expect(hint.text()).toContain("Ctrl+K");
+
+    await input.trigger("keydown", { key: "Tab" });
+    await flushPromises();
+    expect(wrapper.get('[data-testid="result-shortcuts-hint"]').text()).toContain("Esc 返回搜索");
 
     wrapper.unmount();
   });
@@ -1064,9 +1111,9 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
 
     const hint = wrapper.find('[data-testid="quick-preview-shortcuts-hint"]');
@@ -1166,9 +1213,9 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
 
     expect(wrapper.find(".quick-preview__image").attributes("src")).toContain("/a.jpg");
@@ -1184,6 +1231,7 @@ describe("SearchView", () => {
     expect(wrapper.find(".quick-preview-backdrop").exists()).toBe(false);
     const focusedCards = wrapper.findAll(".image-card--focused");
     expect(focusedCards).toHaveLength(1);
+    expect(document.activeElement?.getAttribute("data-result-card")).toBe("true");
     expect(focusedCards[0].attributes("alt") ?? focusedCards[0].text()).toBeDefined();
 
     wrapper.unmount();
@@ -1206,9 +1254,9 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
 
     await wrapper.get('[data-testid="quick-preview-reveal"]').trigger("click");
@@ -1238,9 +1286,9 @@ describe("SearchView", () => {
 
     expect(wrapper.find('[data-testid="result-shortcuts-hint"]').exists()).toBe(true);
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
 
     expect(wrapper.find('[data-testid="result-shortcuts-hint"]').exists()).toBe(false);
@@ -1280,9 +1328,9 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
 
     expect(wrapper.text()).toContain("原文件已丢失");
@@ -1312,9 +1360,9 @@ describe("SearchView", () => {
     await new Promise((resolve) => setTimeout(resolve, 350));
     await flushPromises();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await input.trigger("keydown", { key: "Tab" });
     await flushPromises();
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: " " }));
+    document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await flushPromises();
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
     await flushPromises();

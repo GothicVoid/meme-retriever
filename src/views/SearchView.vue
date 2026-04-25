@@ -137,7 +137,7 @@
             class="search-state-banner__meta"
             data-testid="result-shortcuts-hint"
           >
-            Enter 复制 · Space 预览 · Esc 关闭
+            {{ resultShortcutsHint }}
           </p>
         </div>
       </section>
@@ -223,10 +223,12 @@
           :show-debug-info="settings.devDebugMode"
           :empty-message="emptyMessage"
           :focused-id="focusedResultId"
+          :keyboard-navigable="true"
           card-click-action="copy"
           :hover-preview="true"
           @copied="handleSearchImageCopied"
           @delete="handleDeleteFromGrid"
+          @focus="syncFocusedResultFromPreview"
           @open="openDetail"
           @preview="openQuickPreview"
         />
@@ -370,14 +372,16 @@
             </p>
             <div class="search-assist-panel__row">
               <div
-                v-for="item in recentSearches"
+                v-for="(item, index) in recentSearches"
                 :key="item.query"
                 class="search-assist-panel__item"
               >
                 <button
                   type="button"
                   class="search-assist-panel__query"
+                  :class="{ 'search-assist-panel__query--active': activeHistoryIndex === index }"
                   data-testid="search-history-dropdown-item"
+                  :data-active="activeHistoryIndex === index ? 'true' : 'false'"
                   @mousedown.prevent
                   @click="applyExampleQuery(item.query)"
                 >
@@ -659,6 +663,7 @@ const homeState = ref<HomeState | null>(null);
 const homeLoading = ref(false);
 const homeLoadFailed = ref(false);
 const searchFocused = ref(false);
+const activeHistoryIndex = ref(-1);
 const showDevToolsPopover = ref(false);
 const showImportMenu = ref(false);
 const coldStartHint = ref("");
@@ -827,6 +832,7 @@ const visibleResults = computed(() => {
 });
 
 const focusedResultId = computed(() => visibleResults.value[focusedResultIndex.value]?.id ?? null);
+const hasFocusedResult = computed(() => focusedResultIndex.value !== -1 && !!focusedResultId.value);
 
 const previewSourceImages = computed<SearchResult[]>(() =>
   isHomeMode.value ? detailImages.value : visibleResults.value
@@ -925,6 +931,12 @@ const taggingHintText = computed(() => {
 const showResultShortcutsHint = computed(() =>
   !isHomeMode.value && visibleResults.value.length > 0 && !previewImageId.value
 );
+const resultShortcutsHint = computed(() => {
+  if (hasFocusedResult.value) {
+    return "方向键切换 · Enter 复制 · Space 预览 · Esc 返回搜索";
+  }
+  return "Tab 进入结果 · / 或 Ctrl+K 聚焦搜索";
+});
 const reindexProgressPercent = computed(() =>
   reindexTotal.value > 0 ? (reindexCurrent.value / reindexTotal.value) * 100 : 0
 );
@@ -1041,6 +1053,7 @@ async function fetchHomeState() {
 
 function onQueryChange(val: string) {
   resetResultView();
+  activeHistoryIndex.value = -1;
   const normalized = val.trim();
   if (confirmedSearchHistoryQuery.value && confirmedSearchHistoryQuery.value !== normalized) {
     confirmedSearchHistoryQuery.value = null;
@@ -1088,6 +1101,7 @@ function applyExampleQuery(query: string) {
   }
 
   searchFocused.value = false;
+  activeHistoryIndex.value = -1;
   store.query = query;
   onQueryChange(query);
 }
@@ -1369,11 +1383,13 @@ function handleSearchFocus() {
     searchBlurTimer = null;
   }
   searchFocused.value = true;
+  activeHistoryIndex.value = -1;
 }
 
 function handleSearchBlur() {
   searchBlurTimer = window.setTimeout(() => {
     searchFocused.value = false;
+    activeHistoryIndex.value = -1;
     searchBlurTimer = null;
   }, 120);
 }
@@ -1399,25 +1415,43 @@ function handlePointerDown(event: MouseEvent) {
 }
 
 function handleSearchBarKeydown(event: KeyboardEvent) {
+  if (showSearchAssistPanel.value) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveActiveHistoryIndex(1);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActiveHistoryIndex(-1);
+      return;
+    }
+
+    if (event.key === "Enter" && activeHistoryIndex.value !== -1) {
+      event.preventDefault();
+      const query = recentSearches.value[activeHistoryIndex.value]?.query;
+      if (query) {
+        applyExampleQuery(query);
+      }
+      return;
+    }
+  }
+
   if (previewImageId.value || detailId.value || isHomeMode.value || !visibleResults.value.length) {
     return;
   }
 
-  if (event.key === "ArrowDown") {
+  if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
     event.preventDefault();
-    moveFocusedResult(1);
-    return;
-  }
-
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    moveFocusedResult(-1);
+    void enterResultNavigation(0);
   }
 }
 
 function focusSearchInput() {
   searchBarRef.value?.focusAndSelect();
   searchFocused.value = true;
+  activeHistoryIndex.value = -1;
 }
 
 function dismissPostImportPrompt() {
@@ -1437,12 +1471,41 @@ async function removeRecentSearch(query: string) {
   await invoke("delete_search_history", { query });
   await fetchHomeState();
   searchFocused.value = true;
+  if (!recentSearches.value.length) {
+    activeHistoryIndex.value = -1;
+    return;
+  }
+  activeHistoryIndex.value = Math.min(activeHistoryIndex.value, recentSearches.value.length - 1);
 }
 
 async function clearRecentSearches() {
   await invoke("clear_search_history");
   await fetchHomeState();
   searchFocused.value = true;
+  activeHistoryIndex.value = -1;
+}
+
+function moveActiveHistoryIndex(step: 1 | -1) {
+  if (!recentSearches.value.length) {
+    activeHistoryIndex.value = -1;
+    return;
+  }
+
+  if (activeHistoryIndex.value === -1) {
+    activeHistoryIndex.value = step > 0 ? 0 : recentSearches.value.length - 1;
+    return;
+  }
+
+  const nextIndex = activeHistoryIndex.value + step;
+  if (nextIndex < 0) {
+    activeHistoryIndex.value = 0;
+    return;
+  }
+  if (nextIndex >= recentSearches.value.length) {
+    activeHistoryIndex.value = recentSearches.value.length - 1;
+    return;
+  }
+  activeHistoryIndex.value = nextIndex;
 }
 
 function handleHomeImageCopied() {
@@ -1457,24 +1520,110 @@ function handleSearchImageCopied() {
   void confirmCurrentSearchHistory();
 }
 
-function moveFocusedResult(step: 1 | -1) {
-  if (!visibleResults.value.length) return;
-
-  if (focusedResultIndex.value === -1) {
-    focusedResultIndex.value = step > 0 ? 0 : visibleResults.value.length - 1;
-    return;
-  }
-
-  const nextIndex = focusedResultIndex.value + step;
-  focusedResultIndex.value = Math.max(0, Math.min(visibleResults.value.length - 1, nextIndex));
-}
-
 function syncFocusedResultFromPreview(id: string) {
   if (isHomeMode.value) return;
   const nextIndex = visibleResults.value.findIndex((item) => item.id === id);
   if (nextIndex !== -1) {
     focusedResultIndex.value = nextIndex;
   }
+}
+
+function getResultCardElements() {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-result-card="true"]'));
+}
+
+function getFocusedResultCard() {
+  if (!focusedResultId.value) return null;
+  return getResultCardElements().find((card) => card.dataset.imageId === focusedResultId.value) ?? null;
+}
+
+interface ResultCardPosition {
+  id: string;
+  index: number;
+  top: number;
+  left: number;
+}
+
+function getResultCardRows() {
+  const cards = getResultCardElements();
+  const positionedCards: ResultCardPosition[] = cards.map((card, index) => {
+    const rect = card.getBoundingClientRect();
+    return {
+      id: card.dataset.imageId ?? "",
+      index,
+      top: rect.top,
+      left: rect.left,
+    };
+  });
+
+  const rows: ResultCardPosition[][] = [];
+  const rowThreshold = 12;
+  for (const card of positionedCards) {
+    const lastRow = rows[rows.length - 1];
+    if (!lastRow || Math.abs(lastRow[0].top - card.top) > rowThreshold) {
+      rows.push([card]);
+      continue;
+    }
+    lastRow.push(card);
+  }
+
+  for (const row of rows) {
+    row.sort((a, b) => a.left - b.left);
+  }
+
+  return rows;
+}
+
+function getVerticalNavigationIndex(step: 1 | -1) {
+  if (focusedResultIndex.value === -1) return null;
+
+  const rows = getResultCardRows();
+  const currentRowIndex = rows.findIndex((row) =>
+    row.some((card) => card.index === focusedResultIndex.value)
+  );
+  if (currentRowIndex === -1) return null;
+
+  const currentRow = rows[currentRowIndex];
+  const currentColumnIndex = currentRow.findIndex((card) => card.index === focusedResultIndex.value);
+  if (currentColumnIndex === -1) return null;
+
+  const targetRow = rows[currentRowIndex + step];
+  if (!targetRow) return focusedResultIndex.value;
+
+  const targetColumnIndex = Math.min(currentColumnIndex, targetRow.length - 1);
+  return targetRow[targetColumnIndex]?.index ?? focusedResultIndex.value;
+}
+
+async function focusResultCardAtIndex(index: number) {
+  if (index < 0 || index >= visibleResults.value.length) return;
+  focusedResultIndex.value = index;
+  await nextTick();
+  const target = getFocusedResultCard();
+  target?.focus({ preventScroll: true });
+  target?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+}
+
+async function enterResultNavigation(index = 0) {
+  if (!visibleResults.value.length) return;
+  await focusResultCardAtIndex(Math.max(0, Math.min(visibleResults.value.length - 1, index)));
+}
+
+async function moveFocusedResultByOffset(offset: number) {
+  if (!visibleResults.value.length) return;
+  const startIndex = focusedResultIndex.value === -1 ? 0 : focusedResultIndex.value;
+  const nextIndex = Math.max(0, Math.min(visibleResults.value.length - 1, startIndex + offset));
+  await focusResultCardAtIndex(nextIndex);
+}
+
+async function moveFocusedResultVertically(step: 1 | -1) {
+  if (!visibleResults.value.length) return;
+  const nextIndex = getVerticalNavigationIndex(step);
+  if (nextIndex === null) return;
+  await focusResultCardAtIndex(nextIndex);
+}
+
+function isResultCardTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && target.closest('[data-result-card="true"]') !== null;
 }
 
 function openQuickPreview(id: string) {
@@ -1484,6 +1633,9 @@ function openQuickPreview(id: string) {
 
 function closeQuickPreview() {
   previewImageId.value = null;
+  if (!isHomeMode.value && focusedResultIndex.value !== -1) {
+    void focusResultCardAtIndex(focusedResultIndex.value);
+  }
 }
 
 function moveQuickPreview(step: 1 | -1) {
@@ -1546,6 +1698,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && showSearchAssistPanel.value) {
     event.preventDefault();
     searchFocused.value = false;
+    activeHistoryIndex.value = -1;
     return;
   }
 
@@ -1555,21 +1708,39 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 
   if (isHomeMode.value) return;
 
-  if (event.key === "Escape") {
+  if (event.key === "Escape" && isResultCardTarget(event.target)) {
+    event.preventDefault();
+    focusSearchInput();
     return;
   }
 
   if (detailId.value || !visibleResults.value.length) return;
 
-  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-    event.preventDefault();
-    moveFocusedResult(1);
+  if (!isResultCardTarget(event.target)) {
     return;
   }
 
-  if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+  if (event.key === "ArrowRight") {
     event.preventDefault();
-    moveFocusedResult(-1);
+    void moveFocusedResultByOffset(1);
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    void moveFocusedResultByOffset(-1);
+    return;
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    void moveFocusedResultVertically(1);
+    return;
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    void moveFocusedResultVertically(-1);
     return;
   }
 
@@ -1579,7 +1750,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (event.key === "Enter") {
     event.preventDefault();
     void handleSearchImageCopied();
-    const target = document.querySelector<HTMLElement>(".image-card--focused");
+    const target = getFocusedResultCard();
     target?.click();
     return;
   }
@@ -1651,6 +1822,22 @@ watch(showColdStart, (nextColdStart) => {
 watch(() => store.results.length, (nextLen, prevLen) => {
   if (nextLen < prevLen) {
     visibleRelevantCount.value = HIGH_CONFIDENCE_BATCH_SIZE;
+  }
+});
+
+watch(showSearchAssistPanel, (visible) => {
+  if (!visible) {
+    activeHistoryIndex.value = -1;
+  }
+});
+
+watch(visibleResults, (nextResults) => {
+  if (!nextResults.length) {
+    focusedResultIndex.value = -1;
+    return;
+  }
+  if (focusedResultIndex.value >= nextResults.length) {
+    focusedResultIndex.value = nextResults.length - 1;
   }
 });
 
@@ -2026,6 +2213,10 @@ onBeforeUnmount(() => {
 .search-assist-panel__query:hover,
 .search-assist-panel__chip:hover {
   background: var(--ui-bg-hover);
+}
+
+.search-assist-panel__query--active {
+  background: rgba(183, 121, 31, 0.14);
 }
 
 .search-assist-panel__delete {
