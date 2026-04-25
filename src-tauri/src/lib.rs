@@ -115,6 +115,8 @@ pub fn run() {
             commands::get_latest_import_summary,
             commands::get_import_batch_failures,
             commands::delete_search_history,
+            commands::clear_search_history,
+            commands::record_search_history,
             commands::import_entries,
             commands::add_images,
             commands::add_folder,

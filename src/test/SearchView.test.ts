@@ -235,6 +235,143 @@ describe("SearchView", () => {
     expect(wrapper.findAll(".image-card")).toHaveLength(2);
   });
 
+  it("查询稳定 2 秒后才记录最近搜索", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      if (cmd === "record_search_history") return Promise.resolve(null);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+    expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "阿布" }));
+    expect(mockInvoke).not.toHaveBeenCalledWith("record_search_history", expect.anything());
+
+    await vi.advanceTimersByTimeAsync(1699);
+    await flushPromises();
+    expect(mockInvoke).not.toHaveBeenCalledWith("record_search_history", expect.anything());
+
+    await vi.advanceTimersByTimeAsync(1);
+    await flushPromises();
+    expect(mockInvoke).toHaveBeenCalledWith("record_search_history", { query: "阿布" });
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("2 秒内改写查询会取消前一个历史记录", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      if (cmd === "record_search_history") return Promise.resolve(null);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    const input = wrapper.find("input");
+    await input.setValue("shurufa");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+
+    await input.setValue("输入法");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+
+    expect(mockInvoke).not.toHaveBeenCalledWith("record_search_history", { query: "shurufa" });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushPromises();
+    expect(mockInvoke).toHaveBeenCalledWith("record_search_history", { query: "输入法" });
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("复制搜索结果会立即确认历史，且不会生成重复记录", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      if (cmd === "record_search_history") return Promise.resolve(null);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    await wrapper.find(".image-card").trigger("click");
+    await flushPromises();
+
+    const recordCalls = mockInvoke.mock.calls.filter(([cmd]) => cmd === "record_search_history");
+    expect(recordCalls).toHaveLength(1);
+    expect(recordCalls[0]).toEqual(["record_search_history", { query: "阿布" }]);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushPromises();
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "record_search_history")).toHaveLength(1);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("打开搜索结果详情会立即确认历史，且不会生成重复记录", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
+      if (cmd === "get_images") return Promise.resolve([]);
+      if (cmd === "search") return Promise.resolve(mockResults());
+      if (cmd === "record_search_history") return Promise.resolve(null);
+      if (cmd === "get_image_meta") return Promise.resolve(mockImage);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("阿布");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+    mockInvoke.mockClear();
+
+    await wrapper.find(".image-card").trigger("dblclick");
+    await flushPromises();
+
+    const recordCalls = mockInvoke.mock.calls.filter(([cmd]) => cmd === "record_search_history");
+    expect(recordCalls).toHaveLength(1);
+    expect(recordCalls[0]).toEqual(["record_search_history", { query: "阿布" }]);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushPromises();
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "record_search_history")).toHaveLength(1);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("拼音组合输入期间不会触发搜索，结束后才搜索", async () => {
     vi.useFakeTimers();
     mockInvoke.mockImplementation((cmd: string) => {
@@ -529,6 +666,44 @@ describe("SearchView", () => {
     const remainingDropdownItems = wrapper.findAll('[data-testid="search-history-dropdown-item"]');
     expect(remainingDropdownItems).toHaveLength(1);
     expect(remainingDropdownItems[0].text()).toContain("猫猫 心虚");
+
+    wrapper.unmount();
+  });
+
+  it("点击清除后会清空全部最近搜索并收起下拉", async () => {
+    let currentHomeState = {
+      ...mockHomeState,
+      recentSearches: [
+        { query: "阿布 撇嘴", updatedAt: 2 },
+        { query: "猫猫 心虚", updatedAt: 1 },
+      ],
+    };
+
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_home_state") return Promise.resolve(currentHomeState);
+      if (cmd === "clear_search_history") {
+        currentHomeState = {
+          ...currentHomeState,
+          recentSearches: [],
+        };
+        return Promise.resolve(null);
+      }
+      if (cmd === "get_images") return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+    const wrapper = mount(SearchView, { attachTo: document.body });
+    await flushPromises();
+
+    await wrapper.find("input").trigger("focus");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="search-history-dropdown-item"]')).toHaveLength(2);
+
+    await wrapper.find('[data-testid="search-history-clear"]').trigger("click");
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith("clear_search_history");
+    expect(wrapper.find('[data-testid="search-history-dropdown"]').exists()).toBe(false);
 
     wrapper.unmount();
   });
@@ -1255,11 +1430,23 @@ describe("SearchView", () => {
   });
 
   it("点击搜索结果后显示已复制提示", async () => {
+    vi.useFakeTimers();
     copyImageMock.mockResolvedValue(undefined);
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
-      if (cmd === "search") return Promise.resolve([]);
+      if (cmd === "search") {
+        return Promise.resolve([{
+          id: "uuid-1",
+          filePath: "/img.jpg",
+          thumbnailPath: "/thumb.jpg",
+          fileFormat: "jpg",
+          score: 1,
+          tags: [],
+          debugInfo: null,
+        }]);
+      }
+      if (cmd === "record_search_history") return Promise.resolve(null);
       return Promise.resolve([]);
     });
 
@@ -1269,18 +1456,10 @@ describe("SearchView", () => {
     }, { attachTo: document.body });
 
     await flushPromises();
-    const searchStore = useSearchStore();
-    searchStore.query = "阿布";
-    searchStore.results = [{
-      id: "uuid-1",
-      filePath: "/img.jpg",
-      thumbnailPath: "/thumb.jpg",
-      fileFormat: "jpg",
-      score: 1,
-      tags: [],
-      debugInfo: null,
-    }];
-    await wrapper.vm.$nextTick();
+    await wrapper.find("input").setValue("阿布");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
     await wrapper.find(".image-card").trigger("click");
     await flushPromises();
 
@@ -1289,6 +1468,7 @@ describe("SearchView", () => {
     expect(toast?.textContent).toContain("已复制");
 
     wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it("内部调试开关开启时仍会显示调试叠层", async () => {

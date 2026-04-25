@@ -8,5 +8,21 @@ export function useSearch() {
     store.search(q);
   }, 300);
 
-  return { store, debouncedSearch };
+  const debouncedRecordSearchHistory = useDebounceFn(async (
+    q: string,
+    onRecorded?: (query: string) => void,
+    shouldRecord?: (query: string) => boolean,
+  ) => {
+    const normalized = q.trim();
+    if (!normalized) {
+      return;
+    }
+    if (shouldRecord && !shouldRecord(normalized)) {
+      return;
+    }
+    await store.recordSearchHistory(normalized);
+    onRecorded?.(normalized);
+  }, 2000);
+
+  return { store, debouncedSearch, debouncedRecordSearchHistory };
 }

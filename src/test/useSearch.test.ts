@@ -12,9 +12,10 @@ describe("useSearch", () => {
   });
 
   it("返回 store 和 debouncedSearch", () => {
-    const { store, debouncedSearch } = useSearch();
+    const { store, debouncedSearch, debouncedRecordSearchHistory } = useSearch();
     expect(store).toBeDefined();
     expect(typeof debouncedSearch).toBe("function");
+    expect(typeof debouncedRecordSearchHistory).toBe("function");
   });
 
   it("debouncedSearch 延迟后调用 store.search", async () => {
@@ -46,6 +47,21 @@ describe("useSearch", () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(mockInvoke).toHaveBeenCalledTimes(1);
     expect(mockInvoke).toHaveBeenCalledWith("search", expect.objectContaining({ query: "abc" }));
+
+    vi.useRealTimers();
+  });
+
+  it("debouncedRecordSearchHistory 延迟后调用独立历史命令", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockResolvedValue(undefined);
+
+    const { debouncedRecordSearchHistory } = useSearch();
+    debouncedRecordSearchHistory("hello");
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(mockInvoke).toHaveBeenCalledWith("record_search_history", { query: "hello" });
 
     vi.useRealTimers();
   });

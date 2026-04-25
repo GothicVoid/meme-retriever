@@ -816,7 +816,7 @@ pub async fn search(
 async fn search_impl(
     query: String,
     limit: usize,
-    db: &DbPool,
+    _db: &DbPool,
     engine: &EngineState,
 ) -> Result<Vec<SearchResult>, String> {
     if limit == 0 {
@@ -836,11 +836,6 @@ async fn search_impl(
             tracing::error!("command search failed: {e}");
             e.to_string()
         })?;
-    if !query.trim().is_empty() {
-        repo::upsert_search_history(db, &query, now_secs())
-            .await
-            .map_err(|e| e.to_string())?;
-    }
     Ok(results)
 }
 
@@ -1247,6 +1242,28 @@ pub async fn get_import_batch_failures(
 #[tauri::command]
 pub async fn delete_search_history(query: String, db: State<'_, DbPool>) -> Result<(), String> {
     delete_search_history_impl(query, db.inner()).await
+}
+
+#[tauri::command]
+pub async fn clear_search_history(db: State<'_, DbPool>) -> Result<(), String> {
+    clear_search_history_impl(db.inner()).await
+}
+
+#[tauri::command]
+pub async fn record_search_history(query: String, db: State<'_, DbPool>) -> Result<(), String> {
+    record_search_history_impl(query, db.inner()).await
+}
+
+async fn record_search_history_impl(query: String, db: &DbPool) -> Result<(), String> {
+    repo::upsert_search_history(db, &query, now_secs())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn clear_search_history_impl(db: &DbPool) -> Result<(), String> {
+    repo::clear_search_history(db)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn delete_search_history_impl(query: String, db: &DbPool) -> Result<(), String> {
@@ -1936,7 +1953,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_search_impl_records_non_empty_query_history(pool: SqlitePool) {
+    async fn test_search_impl_does_not_record_query_history(pool: SqlitePool) {
         let dir = tempfile::tempdir().unwrap();
         let path = write_test_image(&dir, "search-history.png");
 
@@ -1976,8 +1993,7 @@ mod tests {
         let _ = search_impl("".into(), 10, &pool, &engine).await.unwrap();
 
         let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].query, "阿布 撇嘴");
+        assert!(history.is_empty());
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2161,6 +2177,33 @@ mod tests {
         let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].query, "猫猫 心虚");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_record_search_history_impl_records_non_empty_query(pool: SqlitePool) {
+        record_search_history_impl("阿布 撇嘴".into(), &pool)
+            .await
+            .unwrap();
+        record_search_history_impl("   ".into(), &pool).await.unwrap();
+
+        let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].query, "阿布 撇嘴");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_search_history_impl_removes_all_queries(pool: SqlitePool) {
+        repo::upsert_search_history(&pool, "阿布 撇嘴", 100)
+            .await
+            .unwrap();
+        repo::upsert_search_history(&pool, "猫猫 心虚", 200)
+            .await
+            .unwrap();
+
+        clear_search_history_impl(&pool).await.unwrap();
+
+        let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
+        assert!(history.is_empty());
     }
 
     #[sqlx::test(migrations = "./migrations")]

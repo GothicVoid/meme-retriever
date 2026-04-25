@@ -24,4 +24,17 @@ describe("useSearch — 不再透传权重", () => {
 
     vi.useRealTimers();
   });
+
+  it("debouncedRecordSearchHistory 仅透传裁剪后的 query", async () => {
+    vi.useFakeTimers();
+    mockInvoke.mockResolvedValue(undefined);
+
+    const { debouncedRecordSearchHistory } = useSearch();
+    debouncedRecordSearchHistory("hello");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mockInvoke).toHaveBeenCalledWith("record_search_history", { query: "hello" });
+
+    vi.useRealTimers();
+  });
 });

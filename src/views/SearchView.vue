@@ -395,6 +395,17 @@
                 </button>
               </div>
             </div>
+            <div class="search-assist-panel__footer">
+              <button
+                type="button"
+                class="search-assist-panel__clear"
+                data-testid="search-history-clear"
+                @mousedown.prevent
+                @click="clearRecentSearches"
+              >
+                清除
+              </button>
+            </div>
           </div>
         </div>
         <SearchBar
@@ -582,13 +593,14 @@ import coldStartPreview2 from "@/assets/cold-start-previews/preview-2.jpg";
 import coldStartPreview3 from "@/assets/cold-start-previews/preview-3.jpg";
 import coldStartPreview4 from "@/assets/cold-start-previews/preview-4.jpg";
 
-const { store, debouncedSearch } = useSearch();
+const { store, debouncedSearch, debouncedRecordSearchHistory } = useSearch();
 const { copyImage } = useClipboard();
 const settings = useSettingsStore();
 const libraryStore = useLibraryStore();
 const recoveryStore = useTaskRecoveryStore();
 const router = inject<Router | undefined>(routerKey, undefined);
 const cancelDebouncedSearch = debouncedSearch as typeof debouncedSearch & { cancel?: () => void };
+const cancelDebouncedRecordSearchHistory = debouncedRecordSearchHistory as typeof debouncedRecordSearchHistory & { cancel?: () => void };
 
 interface HomeImage {
   id: string;
@@ -656,6 +668,7 @@ const reindexCurrent = ref(0);
 const reindexTotal = ref(0);
 const reindexDone = ref(false);
 const isDevMode = isDevelopmentMode();
+const confirmedSearchHistoryQuery = ref<string | null>(null);
 let searchBlurTimer: number | null = null;
 let loadMoreObserver: IntersectionObserver | null = null;
 let unlistenReindexProgress: (() => void) | null = null;
@@ -1028,9 +1041,14 @@ async function fetchHomeState() {
 
 function onQueryChange(val: string) {
   resetResultView();
-  if (!val.trim()) {
+  const normalized = val.trim();
+  if (confirmedSearchHistoryQuery.value && confirmedSearchHistoryQuery.value !== normalized) {
+    confirmedSearchHistoryQuery.value = null;
+  }
+  if (!normalized) {
     searchFocused.value = false;
     cancelDebouncedSearch.cancel?.();
+    cancelDebouncedRecordSearchHistory.cancel?.();
     store.results = [];
     void fetchHomeState();
     return;
@@ -1039,6 +1057,27 @@ function onQueryChange(val: string) {
   showPostImportPrompt.value = false;
   clearPendingPostImportFlag();
   debouncedSearch(val);
+  debouncedRecordSearchHistory(val, (recordedQuery) => {
+    if (store.query.trim() === recordedQuery) {
+      confirmedSearchHistoryQuery.value = recordedQuery;
+    }
+  }, (pendingQuery) => (
+    store.query.trim() === pendingQuery
+    && confirmedSearchHistoryQuery.value !== pendingQuery
+  ));
+}
+
+async function confirmCurrentSearchHistory() {
+  const normalized = store.query.trim();
+  if (!normalized) {
+    return;
+  }
+  if (confirmedSearchHistoryQuery.value === normalized) {
+    return;
+  }
+  cancelDebouncedRecordSearchHistory.cancel?.();
+  await store.recordSearchHistory(normalized);
+  confirmedSearchHistoryQuery.value = normalized;
 }
 
 function applyExampleQuery(query: string) {
@@ -1400,6 +1439,12 @@ async function removeRecentSearch(query: string) {
   searchFocused.value = true;
 }
 
+async function clearRecentSearches() {
+  await invoke("clear_search_history");
+  await fetchHomeState();
+  searchFocused.value = true;
+}
+
 function handleHomeImageCopied() {
   void fetchHomeState();
 }
@@ -1407,7 +1452,9 @@ function handleHomeImageCopied() {
 function handleSearchImageCopied() {
   if (isHomeMode.value) {
     void fetchHomeState();
+    return;
   }
+  void confirmCurrentSearchHistory();
 }
 
 function moveFocusedResult(step: 1 | -1) {
@@ -1612,6 +1659,9 @@ const detailId = ref<string | null>(null);
 function openDetail(id: string) {
   detailId.value = id;
   previewImageId.value = null;
+  if (!isHomeMode.value) {
+    void confirmCurrentSearchHistory();
+  }
 }
 
 async function handleDeleteFromDetail(id: string) {
@@ -1659,6 +1709,8 @@ onBeforeUnmount(() => {
   if (searchBlurTimer !== null) {
     window.clearTimeout(searchBlurTimer);
   }
+  cancelDebouncedSearch.cancel?.();
+  cancelDebouncedRecordSearchHistory.cancel?.();
   cleanupReindexProgressListener();
   loadMoreObserver?.disconnect();
   document.removeEventListener("keydown", handleGlobalKeydown);
@@ -1933,6 +1985,14 @@ onBeforeUnmount(() => {
   gap: 0.45rem;
 }
 
+.search-assist-panel__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.15rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(120, 86, 32, 0.12);
+}
+
 .search-assist-panel__item {
   display: inline-flex;
   align-items: center;
@@ -1980,8 +2040,22 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 
+.search-assist-panel__clear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ui-text-secondary);
+  font-size: 0.82rem;
+  line-height: 1;
+  padding: 0.2rem 0;
+}
+
 .search-assist-panel__delete:hover {
   background: var(--ui-bg-hover);
+  color: var(--ui-text-primary);
+}
+
+.search-assist-panel__clear:hover {
   color: var(--ui-text-primary);
 }
 .home-landing {

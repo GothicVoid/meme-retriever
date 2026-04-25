@@ -669,6 +669,19 @@ pub async fn upsert_search_history(pool: &DbPool, query: &str, updated_at: i64) 
     .bind(updated_at)
     .execute(pool)
     .await?;
+
+    sqlx::query(
+        "DELETE FROM search_history
+         WHERE id NOT IN (
+             SELECT id
+             FROM search_history
+             ORDER BY updated_at DESC, id DESC
+             LIMIT ?1
+         )",
+    )
+    .bind(20_i64)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -702,6 +715,13 @@ pub async fn delete_search_history(pool: &DbPool, query: &str) -> anyhow::Result
 
     sqlx::query("DELETE FROM search_history WHERE query=?1")
         .bind(normalized)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn clear_search_history(pool: &DbPool) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM search_history")
         .execute(pool)
         .await?;
     Ok(())
@@ -986,6 +1006,29 @@ mod tests {
         let rows = get_recent_search_history(&pool, 10).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].query, "猫猫 心虚");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_search_history_keeps_latest_twenty(pool: SqlitePool) {
+        for i in 0..25 {
+            upsert_search_history(&pool, &format!("query-{i}"), i).await.unwrap();
+        }
+
+        let rows = get_recent_search_history(&pool, 30).await.unwrap();
+        assert_eq!(rows.len(), 20);
+        assert_eq!(rows[0].query, "query-24");
+        assert_eq!(rows[19].query, "query-5");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_clear_search_history_removes_all_rows(pool: SqlitePool) {
+        upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
+        upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+
+        clear_search_history(&pool).await.unwrap();
+
+        let rows = get_recent_search_history(&pool, 10).await.unwrap();
+        assert!(rows.is_empty());
     }
 
     #[sqlx::test(migrations = "./migrations")]

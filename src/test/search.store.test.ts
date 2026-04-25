@@ -58,4 +58,13 @@ describe("useSearchStore", () => {
     await searchPromise;
     expect(store.loading).toBe(false);
   });
+
+  it("recordSearchHistory 调用独立命令并裁剪空白", async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    const store = useSearchStore();
+    await store.recordSearchHistory("  hello  ");
+
+    expect(mockInvoke).toHaveBeenCalledWith("record_search_history", { query: "hello" });
+  });
 });

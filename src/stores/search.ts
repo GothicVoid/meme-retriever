@@ -48,5 +48,13 @@ export const useSearchStore = defineStore("search", () => {
     }
   }
 
-  return { query, results, loading, error, currentLimit, search };
+  async function recordSearchHistory(q: string) {
+    const normalized = q.trim();
+    if (!normalized) {
+      return;
+    }
+    await invoke("record_search_history", { query: normalized });
+  }
+
+  return { query, results, loading, error, currentLimit, search, recordSearchHistory };
 });
