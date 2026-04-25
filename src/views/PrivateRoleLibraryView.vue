@@ -174,9 +174,20 @@
                     :disabled="importingExample || !selectedEntry"
                     @click="importExampleImage"
                   >
-                    <span class="import-card-icon">{{ importingExample ? "…" : "+" }}</span>
-                    <span class="import-card-title">{{ importingExample ? "导入中" : "导入示例图" }}</span>
-                    <span class="import-card-copy">选择本地图片后自动复制到角色库目录</span>
+                    <span class="import-card-body">
+                      <span class="import-card-icon">
+                        <span
+                          v-if="importingExample"
+                          class="import-card-icon-text"
+                        >…</span>
+                        <span
+                          v-else
+                          class="import-card-plus"
+                          aria-hidden="true"
+                        />
+                      </span>
+                      <span class="import-card-title">{{ importingExample ? "导入中" : "导入示例图" }}</span>
+                    </span>
                   </button>
                 </div>
                 <span class="mini-note">补完示例图后直接保存，再回搜索页按你平时的叫法试试。</span>
@@ -874,21 +885,25 @@ function goBack() {
 }
 
 .import-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  display: grid;
+  place-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0.85rem;
-  text-align: left;
+  padding: 1rem;
+  text-align: center;
   cursor: pointer;
+  border-style: dashed;
+  border-color: rgba(187, 142, 101, 0.28);
+  background: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(248, 241, 233, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .import-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(208, 111, 58, 0.24);
-  box-shadow: 0 16px 28px rgba(97, 75, 48, 0.1);
+  border-color: rgba(208, 111, 58, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 12px 22px rgba(97, 75, 48, 0.08);
 }
 
 .import-card:disabled {
@@ -897,27 +912,67 @@ function goBack() {
   transform: none;
 }
 
+.import-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 1rem;
+}
+
 .import-card-icon {
-  width: 2.2rem;
-  height: 2.2rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 999px;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
-  color: #c4541d;
-  background: rgba(196, 84, 29, 0.12);
+  background: rgba(196, 84, 29, 0.1);
+  margin: 0 auto;
+}
+
+.import-card-icon-text {
+  font-size: 0.95rem;
+  line-height: 1;
+  font-weight: 500;
+  color: #b56a3a;
+}
+
+.import-card-plus {
+  position: absolute;
+  inset: 0;
+}
+
+.import-card-plus::before,
+.import-card-plus::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: #b56a3a;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+}
+
+.import-card-plus::before {
+  width: 0.7rem;
+  height: 1.5px;
+}
+
+.import-card-plus::after {
+  width: 1.5px;
+  height: 0.7rem;
 }
 
 .import-card-title {
-  font-weight: 700;
-  color: #4f3d30;
-}
-
-.import-card-copy {
-  font-size: 0.76rem;
-  line-height: 1.4;
-  color: #806b59;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #6a5444;
+  width: 100%;
+  text-align: center;
 }
 
 .extra-fields {
