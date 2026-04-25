@@ -294,8 +294,8 @@ describe("ImageCard", () => {
     expect(reasonPanel.exists()).toBe(true);
     expect(reasonPanel.text()).toContain("最像你要找的");
     expect(reasonPanel.text()).toContain("命中文字");
-    expect(reasonPanel.text()).toContain("命中文字：撤回");
-    expect(reasonPanel.text()).toContain("标签命中：聊天截图");
+    expect(reasonPanel.text()).not.toContain("撤回");
+    expect(reasonPanel.text()).not.toContain("聊天截图");
     expect(wrapper.find(".image-media").exists()).toBe(true);
     expect(reasonPanel.classes()).toContain("ui-result-card__info");
   });
@@ -319,12 +319,12 @@ describe("ImageCard", () => {
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
     const reasonPanel = wrapper.find(".reason-panel");
     expect(reasonPanel.text()).toContain("最像你要找的");
-    expect(reasonPanel.text()).toContain("角色命中");
-    expect(reasonPanel.text()).toContain("角色命中：阿布");
-    expect(reasonPanel.text()).not.toContain("角色匹配优先");
+    expect(reasonPanel.text()).toContain("角色匹配");
+    expect(reasonPanel.text()).not.toContain("撇嘴");
+    expect(reasonPanel.text()).not.toContain("角色命中");
   });
 
-  it("普通模式下语义主路显示图片内容接近，并限制为主理由加一条补充证据", () => {
+  it("普通模式下语义主路只显示单行主理由", () => {
     const image: SearchResult = {
       ...mockImage,
       score: 0.61,
@@ -343,13 +343,11 @@ describe("ImageCard", () => {
     };
     const wrapper = mount(ImageCard, { props: { image, showDebugInfo: false } });
     const reasonPanel = wrapper.find(".reason-panel");
-    const pills = wrapper.findAll(".reason-pill");
 
     expect(reasonPanel.text()).toContain("可能也对");
-    expect(reasonPanel.text()).toContain("图片内容接近");
-    expect(reasonPanel.text()).not.toContain("语义最接近");
-    expect(pills).toHaveLength(2);
-    expect(pills[0].text()).toContain("图片内容接近");
+    expect(reasonPanel.text()).toContain("画面接近");
+    expect(reasonPanel.text()).not.toContain("图片内容接近");
+    expect(wrapper.find(".reason-evidence").exists()).toBe(false);
   });
 
   it("showDebugInfo=true 且 debugInfo 为 null 时不显示叠层", () => {

@@ -133,6 +133,20 @@ impl MainRoute {
     }
 }
 
+fn choose_main_route(s_clip: f32, s_fts: f32, s_ocr: f32, s_kw: f32, s_role: f32) -> MainRoute {
+    let text_score = s_ocr.max(s_fts);
+    if s_kw >= 0.8 && s_kw >= text_score && s_kw >= s_role && s_kw >= s_clip {
+        return MainRoute::Tag;
+    }
+    if s_role > 0.0 && s_role >= text_score && s_role >= s_clip {
+        return MainRoute::PrivateRole;
+    }
+    if text_score > 0.0 && text_score >= s_role && text_score >= s_clip {
+        return MainRoute::Ocr;
+    }
+    MainRoute::Semantic
+}
+
 pub struct SearchEngine {
     pool: DbPool,
     vector_store: Arc<RwLock<VectorStore>>,
@@ -363,14 +377,6 @@ impl SearchEngine {
         let use_count_map = repo::get_use_counts(&self.pool, &all_candidate_ids).await?;
         let ocr_text_map = repo::get_ocr_texts(&self.pool, &all_candidate_ids).await?;
 
-        let main_route = if !fts_map.is_empty() {
-            MainRoute::Ocr
-        } else if !role_score_map.is_empty() {
-            MainRoute::PrivateRole
-        } else {
-            MainRoute::Semantic
-        };
-
         let mut score_map: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
         let mut debug_map: std::collections::HashMap<String, ScoreDebugInfo> =
@@ -394,11 +400,7 @@ impl SearchEngine {
             } else {
                 ((1.0 + use_count as f32).ln()) / ((1.0 + max_uc as f32).ln())
             };
-            let effective_route = if s_kw >= 0.8 && s_kw >= text_score && s_kw >= s_role {
-                MainRoute::Tag
-            } else {
-                main_route
-            };
+            let effective_route = choose_main_route(s_clip, s_fts, s_ocr, s_kw, s_role);
 
             let (main_score, aux_score) = match effective_route {
                 MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
@@ -1400,6 +1402,26 @@ mod tests {
             passes_result_filter(0.0, 0.0, 0.5, 0.0),
             "strong tag hit should pass filter"
         );
+    }
+
+    #[test]
+    fn test_choose_main_route_is_per_result() {
+        assert!(matches!(
+            choose_main_route(0.88, 0.0, 0.0, 0.0, 0.0),
+            MainRoute::Semantic
+        ));
+        assert!(matches!(
+            choose_main_route(0.52, 1.0, 0.5, 0.0, 0.0),
+            MainRoute::Ocr
+        ));
+        assert!(matches!(
+            choose_main_route(0.55, 0.0, 0.0, 0.91, 0.0),
+            MainRoute::Tag
+        ));
+        assert!(matches!(
+            choose_main_route(0.48, 0.0, 0.0, 0.0, 0.76),
+            MainRoute::PrivateRole
+        ));
     }
 
     #[test]

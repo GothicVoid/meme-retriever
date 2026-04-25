@@ -284,13 +284,6 @@
             </button>
           </div>
         </div>
-        <p
-          v-if="showIncompleteResultsHint"
-          class="result-feedback result-feedback--secondary"
-          data-testid="search-incomplete-hint"
-        >
-          当前结果可能不完整，处理完成后再搜一次会更稳。
-        </p>
         <div
           v-if="showLowRelevanceStopNotice"
           class="result-more-strip"
@@ -312,6 +305,13 @@
             {{ showSecondaryResults ? "收起补充结果" : `查看更多 ${secondaryResultsCount} 张` }}
           </button>
         </div>
+        <p
+          v-if="showIncompleteResultsHint"
+          class="result-feedback result-feedback--secondary"
+          data-testid="search-incomplete-hint"
+        >
+          当前结果可能不完整，处理完成后再搜一次会更稳。
+        </p>
         <div
           v-if="shouldAutoLoadMore"
           ref="loadMoreTrigger"

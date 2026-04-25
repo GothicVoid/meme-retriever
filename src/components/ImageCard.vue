@@ -92,15 +92,6 @@
           >{{ relevanceLabel }}</span>
           <span class="reason-title">{{ primaryReasonLabel }}</span>
         </div>
-        <div class="reason-evidence">
-          <span
-            v-for="item in evidenceList"
-            :key="item"
-            class="reason-pill"
-          >
-            {{ item }}
-          </span>
-        </div>
       </div>
     </div>
     <div
@@ -266,8 +257,9 @@ const relevanceBadgeClass = computed(() => getRelevanceBadgeClass(props.image.sc
 const primaryReasonLabel = computed(() => {
   const route = debugInfo.value?.mainRoute;
   if (route === "ocr") return "命中文字";
-  if (route === "privateRole") return "角色命中";
-  return "图片内容接近";
+  if (route === "privateRole") return "角色匹配";
+  if (route === "tag") return "标签匹配";
+  return "画面接近";
 });
 
 const debugRouteLabel = computed(() => {
@@ -275,45 +267,6 @@ const debugRouteLabel = computed(() => {
   if (route === "ocr") return "文字";
   if (route === "privateRole") return "角色";
   return "语义";
-});
-
-const evidenceList = computed(() => {
-  if (!debugInfo.value) return [];
-
-  const items: string[] = [];
-  const route = debugInfo.value.mainRoute;
-
-  if (route === "ocr") {
-    const term = props.image.matchedOcrTerms?.[0];
-    items.push(term ? `命中文字：${term}` : "命中文字");
-  } else if (route === "privateRole") {
-    items.push(props.image.matchedRoleName ? `角色命中：${props.image.matchedRoleName}` : "角色命中");
-  } else {
-    items.push("图片内容接近");
-  }
-
-  const supplemental: string[] = [];
-  if (route !== "ocr") {
-    const term = props.image.matchedOcrTerms?.[0];
-    if (term) supplemental.push(`命中文字：${term}`);
-  }
-  if (route !== "privateRole" && props.image.matchedRoleName) {
-    supplemental.push(`角色命中：${props.image.matchedRoleName}`);
-  }
-  const tag = props.image.matchedTags?.[0];
-  if (tag) {
-    supplemental.push(`标签命中：${tag}`);
-  }
-  if (debugInfo.value.popularityBoost >= 0.06) {
-    supplemental.push("最近常用");
-  }
-
-  const extra = supplemental.find((item) => item !== items[0]);
-  if (extra) {
-    items.push(extra);
-  }
-
-  return items.slice(0, 2);
 });
 
 const reasonSummary = computed(() => debugInfo.value ? `${relevanceLabel.value} ${primaryReasonLabel.value}` : "");
@@ -648,14 +601,12 @@ onUnmounted(() => {
 
 .reason-panel {
   color: #111827;
-  min-height: 74px;
 }
 
 .reason-header {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin-bottom: 0.35rem;
 }
 
 .relevance-badge {
@@ -691,24 +642,6 @@ onUnmounted(() => {
   font-weight: 700;
   line-height: 1.2;
   color: #111827;
-}
-
-.reason-evidence {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.28rem;
-}
-
-.reason-pill {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 0.18rem 0.38rem;
-  border-radius: 999px;
-  background: #f3f4f6;
-  color: #374151;
-  font-size: 0.64rem;
-  line-height: 1.2;
 }
 
 .debug-overlay {
