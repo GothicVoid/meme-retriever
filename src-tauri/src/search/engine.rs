@@ -18,6 +18,18 @@ fn char_coverage(query: &str, ocr_text: &str) -> f32 {
     q_chars.intersection(&o_chars).count() as f32 / q_chars.len() as f32
 }
 
+fn char_coverage_precomputed(
+    query_chars: &std::collections::HashSet<char>,
+    query_len: usize,
+    ocr_text: &str,
+) -> f32 {
+    if query_len == 0 {
+        return 0.0;
+    }
+    let o_chars: std::collections::HashSet<char> = ocr_text.chars().collect();
+    query_chars.intersection(&o_chars).count() as f32 / query_len as f32
+}
+
 fn passes_result_filter(raw_cosine: f32, s_ocr: f32, s_kw: f32, s_role: f32) -> bool {
     if s_role >= 0.9 {
         return true;
@@ -85,6 +97,32 @@ fn extract_text_matches(content: &str, candidates: &[String], limit: usize) -> V
     matches
 }
 
+fn extract_text_matches_precomputed(
+    content: &str,
+    candidates: &[(String, String)],
+    limit: usize,
+) -> Vec<String> {
+    if content.is_empty() {
+        return vec![];
+    }
+    let content_lower = content.to_lowercase();
+    let mut matches = Vec::new();
+    for (candidate, candidate_lower) in candidates {
+        if candidate_lower.is_empty() {
+            continue;
+        }
+        if content_lower.contains(candidate_lower)
+            && !matches.iter().any(|existing| existing == candidate)
+        {
+            matches.push(candidate.clone());
+        }
+        if matches.len() >= limit {
+            break;
+        }
+    }
+    matches
+}
+
 fn extract_tag_matches(
     tags: &[repo::TagRecord],
     candidates: &[String],
@@ -105,6 +143,42 @@ fn extract_tag_matches(
         }
     }
     matches
+}
+
+fn extract_tag_matches_precomputed(
+    tags: &[repo::TagRecord],
+    candidates: &[(String, String)],
+    limit: usize,
+) -> Vec<String> {
+    let mut matches = Vec::new();
+    for tag in tags {
+        let tag_lower = tag.tag_text.to_lowercase();
+        if candidates.iter().any(|(_, candidate_lower)| {
+            !candidate_lower.is_empty() && tag_lower.contains(candidate_lower)
+        }) && !matches.iter().any(|existing| existing == &tag.tag_text)
+        {
+            matches.push(tag.tag_text.clone());
+        }
+        if matches.len() >= limit {
+            break;
+        }
+    }
+    matches
+}
+
+struct QueryEvidence {
+    query_chars: std::collections::HashSet<char>,
+    query_len: usize,
+    lower_candidates: Vec<(String, String)>,
+}
+
+struct CandidateSignals {
+    id: String,
+    raw_cosine: f32,
+    s_fts: f32,
+    s_ocr: f32,
+    s_kw: f32,
+    s_role: f32,
 }
 
 fn now_secs() -> i64 {
@@ -221,6 +295,8 @@ impl SearchEngine {
         if query.is_empty() {
             // PRD §5.2.3: 展示使用频次最高的 N 张
             let images = repo::get_top_used_images(&self.pool, limit as i64).await?;
+            let ids = images.iter().map(|img| img.id.as_str()).collect::<Vec<_>>();
+            let tags_by_image = repo::get_tags_for_images(&self.pool, &ids).await?;
             let mut results = Vec::with_capacity(images.len());
             for img in images {
                 let actual_status = if Path::new(&img.file_path).exists() {
@@ -235,7 +311,7 @@ impl SearchEngine {
                 if actual_status == "missing" {
                     continue;
                 }
-                let tags = repo::get_tags_for_image(&self.pool, &img.id).await?;
+                let tags = tags_by_image.get(&img.id).cloned().unwrap_or_default();
                 results.push(SearchResult {
                     id: img.id,
                     file_path: img.file_path,
@@ -267,6 +343,15 @@ impl SearchEngine {
         };
         let evidence_candidates =
             collect_match_candidates(query, &normalized_query.tag_query, &related_terms);
+        let query_chars: std::collections::HashSet<char> = query.chars().collect();
+        let query_evidence = QueryEvidence {
+            query_len: query_chars.len(),
+            query_chars,
+            lower_candidates: evidence_candidates
+                .iter()
+                .map(|candidate| (candidate.clone(), candidate.to_lowercase()))
+                .collect(),
+        };
         if normalized_query.tag_query != query {
             tracing::info!(
                 "[KB] Tag query normalized: {:?} → {:?}",
@@ -354,6 +439,10 @@ impl SearchEngine {
         //    低相关过滤：relevance < 0.2 → 不计入结果
         let fts_map: std::collections::HashMap<String, f32> =
             fts_result.unwrap_or_default().into_iter().collect();
+        let semantic_map: std::collections::HashMap<String, f32> = semantic_hits
+            .iter()
+            .map(|(id, raw_cosine)| (id.clone(), *raw_cosine))
+            .collect();
 
         // 预查 max_use_count 及候选集的 use_count
         let max_use_count = repo::get_max_use_count(&self.pool).await?.max(1);
@@ -375,6 +464,8 @@ impl SearchEngine {
         };
         let use_count_map = repo::get_use_counts(&self.pool, &all_candidate_ids).await?;
         let ocr_text_map = repo::get_ocr_texts(&self.pool, &all_candidate_ids).await?;
+        let image_map = repo::get_images_by_ids(&self.pool, &all_candidate_ids).await?;
+        let tag_map = repo::get_tags_for_images(&self.pool, &all_candidate_ids).await?;
 
         let mut score_map: std::collections::HashMap<String, f32> =
             std::collections::HashMap::new();
@@ -431,30 +522,36 @@ impl SearchEngine {
             (final_score, dbg)
         };
 
-        for (id, raw_cosine) in &semantic_hits {
-            let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
-            let s_ocr = char_coverage(
-                query,
-                ocr_text_map
-                    .get(id.as_str())
-                    .map(|s| s.as_str())
-                    .unwrap_or(""),
-            );
-            let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-            let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
+        let candidate_signals = all_candidate_ids
+            .iter()
+            .map(|id| CandidateSignals {
+                id: (*id).to_string(),
+                raw_cosine: semantic_map.get(*id).copied().unwrap_or(-1.0),
+                s_fts: fts_map.get(*id).copied().unwrap_or(0.0),
+                s_ocr: char_coverage_precomputed(
+                    &query_evidence.query_chars,
+                    query_evidence.query_len,
+                    ocr_text_map.get(*id).map(|s| s.as_str()).unwrap_or(""),
+                ),
+                s_kw: tag_score_map.get(*id).copied().unwrap_or(0.0),
+                s_role: role_score_map.get(*id).copied().unwrap_or(0.0),
+            })
+            .collect::<Vec<_>>();
+
+        for candidate in candidate_signals {
             let (score, dbg) = merge_one(
-                id,
-                *raw_cosine,
-                s_fts,
-                s_ocr,
-                s_kw,
-                s_role,
+                &candidate.id,
+                candidate.raw_cosine,
+                candidate.s_fts,
+                candidate.s_ocr,
+                candidate.s_kw,
+                candidate.s_role,
                 &use_count_map,
                 max_use_count,
             );
             tracing::info!(
                 "[MERGE] {} route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
-                id,
+                candidate.id,
                 dbg.main_route,
                 dbg.main_score,
                 dbg.aux_score,
@@ -462,121 +559,8 @@ impl SearchEngine {
                 score
             );
             if score > 0.0 {
-                score_map.insert(id.clone(), score);
-                debug_map.insert(id.clone(), dbg);
-            }
-        }
-        // FTS 命中但语义未命中的也加入
-        for id in fts_map.keys() {
-            if !score_map.contains_key(id) {
-                let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
-                let s_ocr = char_coverage(
-                    query,
-                    ocr_text_map
-                        .get(id.as_str())
-                        .map(|s| s.as_str())
-                        .unwrap_or(""),
-                );
-                let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-                let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
-                let (score, dbg) = merge_one(
-                    id,
-                    -1.0,
-                    s_fts,
-                    s_ocr,
-                    s_kw,
-                    s_role,
-                    &use_count_map,
-                    max_use_count,
-                );
-                tracing::info!(
-                    "[MERGE] {} (no semantic) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
-                    id,
-                    dbg.main_route,
-                    dbg.main_score,
-                    dbg.aux_score,
-                    dbg.popularity_boost,
-                    score
-                );
-                if score > 0.0 {
-                    score_map.insert(id.clone(), score);
-                    debug_map.insert(id.clone(), dbg);
-                }
-            }
-        }
-        // 纯标签命中但既无语义命中、也无 OCR/FTS 命中的也应进入结果
-        for id in tag_score_map.keys() {
-            if !score_map.contains_key(id) {
-                let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
-                let s_ocr = char_coverage(
-                    query,
-                    ocr_text_map
-                        .get(id.as_str())
-                        .map(|s| s.as_str())
-                        .unwrap_or(""),
-                );
-                let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-                let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
-                let (score, dbg) = merge_one(
-                    id,
-                    -1.0,
-                    s_fts,
-                    s_ocr,
-                    s_kw,
-                    s_role,
-                    &use_count_map,
-                    max_use_count,
-                );
-                tracing::info!(
-                    "[MERGE] {} (tag only) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
-                    id,
-                    dbg.main_route,
-                    dbg.main_score,
-                    dbg.aux_score,
-                    dbg.popularity_boost,
-                    score
-                );
-                if score > 0.0 {
-                    score_map.insert(id.clone(), score);
-                    debug_map.insert(id.clone(), dbg);
-                }
-            }
-        }
-        for id in role_score_map.keys() {
-            if !score_map.contains_key(id) {
-                let s_fts = fts_map.get(id.as_str()).copied().unwrap_or(0.0);
-                let s_ocr = char_coverage(
-                    query,
-                    ocr_text_map
-                        .get(id.as_str())
-                        .map(|s| s.as_str())
-                        .unwrap_or(""),
-                );
-                let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
-                let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
-                let (score, dbg) = merge_one(
-                    id,
-                    -1.0,
-                    s_fts,
-                    s_ocr,
-                    s_kw,
-                    s_role,
-                    &use_count_map,
-                    max_use_count,
-                );
-                tracing::info!(
-                    "[MERGE] {} (private role) route={} main={:.4} aux={:.4} pop={:.4} final={:.4}",
-                    id,
-                    dbg.main_route,
-                    dbg.main_score,
-                    dbg.aux_score,
-                    dbg.popularity_boost,
-                    score
-                );
-                if score > 0.0 {
-                    score_map.insert(id.clone(), score);
-                    debug_map.insert(id.clone(), dbg);
-                }
+                score_map.insert(candidate.id.clone(), score);
+                debug_map.insert(candidate.id, dbg);
             }
         }
 
@@ -598,7 +582,7 @@ impl SearchEngine {
         // 7. 从 DB 查询元数据组装结果
         let mut results = Vec::with_capacity(ranked.len());
         for (rank, (id, score)) in ranked.into_iter().enumerate() {
-            if let Some(img) = repo::get_image(&self.pool, &id).await? {
+            if let Some(img) = image_map.get(&id) {
                 let actual_status = if Path::new(&img.file_path).exists() {
                     "normal"
                 } else {
@@ -611,25 +595,29 @@ impl SearchEngine {
                 if actual_status == "missing" {
                     continue;
                 }
-                let tags = repo::get_tags_for_image(&self.pool, &id).await?;
+                let tags = tag_map.get(&id).cloned().unwrap_or_default();
                 tracing::info!("[RESULT] #{} {} score={:.4}", rank + 1, id, score);
                 results.push(SearchResult {
                     id: id.clone(),
-                    file_path: img.file_path,
-                    thumbnail_path: img.thumbnail_path.unwrap_or_default(),
-                    file_format: img.format,
+                    file_path: img.file_path.clone(),
+                    thumbnail_path: img.thumbnail_path.clone().unwrap_or_default(),
+                    file_format: img.format.clone(),
                     file_status: actual_status.to_string(),
                     score,
                     tags: tags.iter().cloned().map(TagDto::from).collect(),
-                    matched_ocr_terms: extract_text_matches(
+                    matched_ocr_terms: extract_text_matches_precomputed(
                         ocr_text_map
                             .get(&id)
                             .map(|text| text.as_str())
                             .unwrap_or(""),
-                        &evidence_candidates,
+                        &query_evidence.lower_candidates,
                         2,
                     ),
-                    matched_tags: extract_tag_matches(&tags, &evidence_candidates, 2),
+                    matched_tags: extract_tag_matches_precomputed(
+                        &tags,
+                        &query_evidence.lower_candidates,
+                        2,
+                    ),
                     matched_role_name: private_role_match.as_ref().and_then(|role_match| {
                         if role_score_map.contains_key(&id) {
                             Some(role_match.name.clone())

@@ -163,6 +163,52 @@ pub async fn get_image(pool: &DbPool, id: &str) -> anyhow::Result<Option<ImageRe
     }))
 }
 
+pub async fn get_images_by_ids(
+    pool: &DbPool,
+    ids: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, ImageRecord>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+                file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at
+         FROM images
+         WHERE id IN (",
+    );
+    let mut separated = query.separated(", ");
+    for id in ids {
+        separated.push_bind(*id);
+    }
+    separated.push_unseparated(")");
+
+    let rows = query.build().fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let record = ImageRecord {
+                id: r.get("id"),
+                file_path: r.get("file_path"),
+                file_name: r.get("file_name"),
+                format: r.get("format"),
+                width: r.get("width"),
+                height: r.get("height"),
+                added_at: r.get("added_at"),
+                use_count: r.get("use_count"),
+                thumbnail_path: r.get("thumbnail_path"),
+                file_hash: r.get("file_hash"),
+                file_size: r.get("file_size"),
+                file_modified_time: r.get("file_modified_time"),
+                file_status: r.get("file_status"),
+                last_check_time: r.get("last_check_time"),
+                last_used_at: r.get("last_used_at"),
+            };
+            (record.id.clone(), record)
+        })
+        .collect())
+}
+
 pub async fn get_image_by_hash(pool: &DbPool, hash: &str) -> anyhow::Result<Option<ImageRecord>> {
     let row = sqlx::query(
         "SELECT id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
@@ -526,19 +572,23 @@ pub async fn get_use_counts(
     pool: &DbPool,
     ids: &[&str],
 ) -> anyhow::Result<std::collections::HashMap<String, i64>> {
-    // SQLite 不直接支持 IN (?) 参数化多值，逐条查询即可（候选集通常 < 200）
-    let mut map = std::collections::HashMap::new();
-    for id in ids {
-        let row = sqlx::query("SELECT use_count FROM images WHERE id=?1")
-            .bind(*id)
-            .fetch_optional(pool)
-            .await?;
-        if let Some(r) = row {
-            let uc: i64 = r.get("use_count");
-            map.insert(id.to_string(), uc);
-        }
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
     }
-    Ok(map)
+
+    let mut query =
+        sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id, use_count FROM images WHERE id IN (");
+    let mut separated = query.separated(", ");
+    for id in ids {
+        separated.push_bind(*id);
+    }
+    separated.push_unseparated(")");
+
+    let rows = query.build().fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.get("id"), row.get("use_count")))
+        .collect())
 }
 
 pub async fn has_any_usage(pool: &DbPool) -> anyhow::Result<bool> {
@@ -670,17 +720,24 @@ pub async fn get_ocr_texts(
     pool: &DbPool,
     ids: &[&str],
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let mut map = std::collections::HashMap::new();
-    for id in ids {
-        let row = sqlx::query("SELECT content FROM ocr_texts WHERE image_id=?1")
-            .bind(*id)
-            .fetch_optional(pool)
-            .await?;
-        if let Some(r) = row {
-            map.insert(id.to_string(), r.get("content"));
-        }
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
     }
-    Ok(map)
+
+    let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT image_id, content FROM ocr_texts WHERE image_id IN (",
+    );
+    let mut separated = query.separated(", ");
+    for id in ids {
+        separated.push_bind(*id);
+    }
+    separated.push_unseparated(")");
+
+    let rows = query.build().fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.get("image_id"), row.get("content")))
+        .collect())
 }
 
 pub async fn get_top_used_images(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<ImageRecord>> {
@@ -850,6 +907,43 @@ pub async fn get_tags_for_image(pool: &DbPool, image_id: &str) -> anyhow::Result
         .collect())
 }
 
+pub async fn get_tags_for_images(
+    pool: &DbPool,
+    ids: &[&str],
+) -> anyhow::Result<std::collections::HashMap<String, Vec<TagRecord>>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT image_id, tag_text, category, is_auto, source_strategy, confidence
+         FROM tags
+         WHERE image_id IN (",
+    );
+    let mut separated = query.separated(", ");
+    for id in ids {
+        separated.push_bind(*id);
+    }
+    separated.push_unseparated(") ORDER BY is_auto ASC, created_at ASC, id ASC");
+
+    let rows = query.build().fetch_all(pool).await?;
+    let mut map = std::collections::HashMap::<String, Vec<TagRecord>>::new();
+    for row in rows {
+        let image_id: String = row.get("image_id");
+        let tag = TagRecord {
+            tag_text: row.get("tag_text"),
+            category: TagCategory::from(row.get::<String, _>("category").as_str()),
+            is_auto: row.get::<i64, _>("is_auto") != 0,
+            source_strategy: TagSourceStrategy::from(
+                row.get::<String, _>("source_strategy").as_str(),
+            ),
+            confidence: row.get::<f64, _>("confidence") as f32,
+        };
+        map.entry(image_id).or_default().push(tag);
+    }
+    Ok(map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,6 +1066,36 @@ mod tests {
             .await
             .unwrap();
         assert!(!hits.is_empty());
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_batch_getters_for_search(pool: SqlitePool) {
+        insert_image(&pool, &make_image("img1")).await.unwrap();
+        insert_image(&pool, &make_image("img2")).await.unwrap();
+        insert_tags(&pool, "img1", &[manual_tag("搞笑")])
+            .await
+            .unwrap();
+        insert_tags(&pool, "img2", &[manual_tag("阿布")])
+            .await
+            .unwrap();
+        insert_ocr(&pool, "img1", "第一段文字").await.unwrap();
+        insert_ocr(&pool, "img2", "第二段文字").await.unwrap();
+        increment_use_count(&pool, "img1", 100).await.unwrap();
+
+        let ids = ["img1", "img2"];
+        let images = get_images_by_ids(&pool, &ids).await.unwrap();
+        let tags = get_tags_for_images(&pool, &ids).await.unwrap();
+        let ocr_texts = get_ocr_texts(&pool, &ids).await.unwrap();
+        let use_counts = get_use_counts(&pool, &ids).await.unwrap();
+
+        assert_eq!(images.len(), 2);
+        assert_eq!(images["img1"].file_name, "img1.jpg");
+        assert_eq!(tags["img1"][0].tag_text, "搞笑");
+        assert_eq!(tags["img2"][0].tag_text, "阿布");
+        assert_eq!(ocr_texts["img1"], "第一段文字");
+        assert_eq!(ocr_texts["img2"], "第二段文字");
+        assert_eq!(use_counts["img1"], 1);
+        assert_eq!(use_counts["img2"], 0);
     }
 
     #[sqlx::test(migrations = "./migrations")]
