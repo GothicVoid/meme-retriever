@@ -124,6 +124,14 @@ pub struct ClearGalleryProgress {
     pub total: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifReindexSummaryPayload {
+    pub total: usize,
+    pub succeeded: usize,
+    pub failed: Vec<crate::indexer::reindex::GifReindexFailure>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KbEntryPayload {
@@ -1460,38 +1468,38 @@ pub async fn reindex_all(
             let path = img.file_path.clone();
             let id = img.id.clone();
 
-            // 并行：CLIP 图像编码 + OCR 重跑
-            let (clip_result, ocr_result) = tokio::join!(
-                tokio::task::spawn_blocking({
-                    let p = path.clone();
-                    move || crate::ml::clip::ClipEncoder::encode_image(&p)
-                }),
-                tokio::task::spawn_blocking({
-                    let p = path.clone();
-                    move || crate::indexer::ocr::extract_text(&p)
-                }),
-            );
-
-            // 更新 embedding
-            match clip_result {
-                Ok(Ok(vec)) => {
-                    if let Err(e) = repo::insert_embedding(&pool, &id, &vec).await {
+            match crate::indexer::reindex::rebuild_index_features(&path).await {
+                Ok(rebuilt) => {
+                    if let Err(e) = repo::insert_embedding(&pool, &id, &rebuilt.embedding).await {
                         tracing::error!("reindex_all: failed to save embedding for {id}: {e}");
                     } else {
-                        engine.insert_vector(id.clone(), vec);
+                        engine.insert_vector(id.clone(), rebuilt.embedding);
                     }
-                }
-                Ok(Err(e)) => tracing::warn!("reindex_all: clip failed for {id}: {e}"),
-                Err(e) => tracing::warn!("reindex_all: clip task panicked for {id}: {e}"),
-            }
 
-            // 更新 OCR
-            match ocr_result {
-                Ok(Ok(text)) if !text.is_empty() => {
-                    if let Err(e) = repo::insert_ocr(&pool, &id, &text).await {
-                        tracing::error!("reindex_all: failed to save ocr for {id}: {e}");
+                    if !rebuilt.ocr_text.is_empty() {
+                        if let Err(e) = repo::insert_ocr(&pool, &id, &rebuilt.ocr_text).await {
+                            tracing::error!("reindex_all: failed to save ocr for {id}: {e}");
+                        } else {
+                            tracing::debug!(
+                                "reindex_all: ocr ok for {id} len={}",
+                                rebuilt.ocr_text.len()
+                            );
+                            let next_tags = repo::get_tags_for_image(&pool, &id)
+                                .await
+                                .unwrap_or_default()
+                                .into_iter()
+                                .filter(|tag| !tag.is_auto)
+                                .collect::<Vec<_>>();
+                            if let Err(e) = repo::delete_tags(&pool, &id).await {
+                                tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
+                            } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
+                                tracing::warn!("reindex_all: failed to write tags for {id}: {e}");
+                            }
+                        }
                     } else {
-                        tracing::debug!("reindex_all: ocr ok for {id} len={}", text.len());
+                        if let Err(e) = repo::delete_ocr_for_image(&pool, &id).await {
+                            tracing::warn!("reindex_all: failed to clear old ocr for {id}: {e}");
+                        }
                         let next_tags = repo::get_tags_for_image(&pool, &id)
                             .await
                             .unwrap_or_default()
@@ -1501,29 +1509,13 @@ pub async fn reindex_all(
                         if let Err(e) = repo::delete_tags(&pool, &id).await {
                             tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
                         } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
-                            tracing::warn!("reindex_all: failed to write tags for {id}: {e}");
+                            tracing::warn!(
+                                "reindex_all: failed to restore manual tags for {id}: {e}"
+                            );
                         }
                     }
                 }
-                Ok(Ok(_)) => {
-                    // 无文字，清除旧 OCR 数据
-                    if let Err(e) = repo::delete_ocr_for_image(&pool, &id).await {
-                        tracing::warn!("reindex_all: failed to clear old ocr for {id}: {e}");
-                    }
-                    let next_tags = repo::get_tags_for_image(&pool, &id)
-                        .await
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(|tag| !tag.is_auto)
-                        .collect::<Vec<_>>();
-                    if let Err(e) = repo::delete_tags(&pool, &id).await {
-                        tracing::warn!("reindex_all: failed to clear tags for {id}: {e}");
-                    } else if let Err(e) = repo::insert_tags(&pool, &id, &next_tags).await {
-                        tracing::warn!("reindex_all: failed to restore manual tags for {id}: {e}");
-                    }
-                }
-                Ok(Err(e)) => tracing::warn!("reindex_all: ocr failed for {id}: {e}"),
-                Err(e) => tracing::warn!("reindex_all: ocr task panicked for {id}: {e}"),
+                Err(e) => tracing::warn!("reindex_all: failed to rebuild index for {id}: {e}"),
             }
 
             tracing::debug!("reindex_all: done {id}");
@@ -1535,6 +1527,33 @@ pub async fn reindex_all(
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn reindex_gif_indexes(
+    app: tauri::AppHandle,
+    db: State<'_, DbPool>,
+    engine: State<'_, EngineState>,
+) -> Result<GifReindexSummaryPayload, String> {
+    let pool = db.inner().clone();
+    let engine = Arc::clone(engine.inner());
+    let summary =
+        crate::indexer::reindex::reindex_gif_images(&pool, engine, |current, total, id| {
+            let progress_event = serde_json::json!({
+                "current": current,
+                "total": total,
+                "id": id,
+            });
+            let _ = app.emit("reindex-progress", &progress_event);
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(GifReindexSummaryPayload {
+        total: summary.total,
+        succeeded: summary.succeeded,
+        failed: summary.failed,
+    })
 }
 
 // ── Phase C：文件状态管理 ────────────────────────────────────────────────────

@@ -123,6 +123,7 @@ pub fn run() {
             commands::reveal_in_finder,
             commands::increment_use_count,
             commands::reindex_all,
+            commands::reindex_gif_indexes,
             commands::check_file_statuses,
             commands::get_pending_tasks,
             commands::resume_pending_tasks,

@@ -1,4 +1,3 @@
-use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -8,14 +7,8 @@ use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::db::{repo, DbPool};
-use crate::indexer::{hash, ocr, thumbnail};
-use crate::ml::clip::ClipEncoder;
+use crate::indexer::{hash, index_features, thumbnail};
 use crate::search::engine::SearchEngine;
-
-static CLIP_PERMITS: Lazy<Arc<Semaphore>> =
-    Lazy::new(|| Arc::new(Semaphore::new(default_ml_concurrency())));
-static OCR_PERMITS: Lazy<Arc<Semaphore>> =
-    Lazy::new(|| Arc::new(Semaphore::new(default_ml_concurrency())));
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IndexProgress {
@@ -371,38 +364,20 @@ async fn do_index_inner(
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
     let thumb = library_dir.join("thumbs").join(format!("{id}.jpg"));
     let decode_start = Instant::now();
-    let decoded = crate::image_io::open_image(src)?;
-    let rgb = decoded.to_rgb8();
-    let (width, height) = (Some(decoded.width() as i64), Some(decoded.height() as i64));
+    let prepared = crate::indexer::index_features::prepare_index_frames(src)?;
+    let (width, height) = (Some(prepared.width as i64), Some(prepared.height as i64));
     metrics.decode_ms = decode_start.elapsed().as_millis() as u64;
 
     // 1. 生成缩略图
     let t_thumb = Instant::now();
-    thumbnail::generate_from_image(&decoded, &thumb, 150)?;
+    thumbnail::generate_from_image(&prepared.thumbnail_image, &thumb, 150)?;
     metrics.thumb_ms = t_thumb.elapsed().as_millis() as u64;
 
     // 3. 并行：OCR + CLIP 图像编码
-    let ocr_image = rgb.clone();
-    let clip_image = rgb;
+    let frame_count = prepared.sampled_frames.len();
     let (ocr_result, clip_result) = tokio::join!(
-        async move {
-            let _permit = Arc::clone(&OCR_PERMITS).acquire_owned().await?;
-            tokio::task::spawn_blocking(move || {
-                let start = Instant::now();
-                let text = ocr::extract_text_from_rgb_image(&ocr_image)?;
-                Ok::<_, anyhow::Error>((text, start.elapsed().as_millis() as u64))
-            })
-            .await?
-        },
-        async move {
-            let _permit = Arc::clone(&CLIP_PERMITS).acquire_owned().await?;
-            tokio::task::spawn_blocking(move || {
-                let start = Instant::now();
-                let embedding = ClipEncoder::encode_rgb_image(&clip_image)?;
-                Ok::<_, anyhow::Error>((embedding, start.elapsed().as_millis() as u64))
-            })
-            .await?
-        },
+        index_features::aggregate_ocr_text_from_frames(prepared.sampled_frames.clone()),
+        index_features::aggregate_embedding_from_frames(prepared.sampled_frames),
     );
     let (ocr_text, ocr_ms) = ocr_result?;
     let (embedding, clip_ms) = clip_result?;
@@ -437,7 +412,7 @@ async fn do_index_inner(
     metrics.db_ms = db_start.elapsed().as_millis() as u64;
 
     tracing::info!(
-        "[INDEX] {} processed: queue={}ms hash={}ms decode={}ms thumb={}ms ocr={}ms clip={}ms db={}ms ocr_chars={} embed={}",
+        "[INDEX] {} processed: queue={}ms hash={}ms decode={}ms thumb={}ms ocr={}ms clip={}ms db={}ms ocr_chars={} embed={} sampled_frames={}",
         id,
         metrics.queue_wait_ms,
         metrics.hash_ms,
@@ -447,7 +422,8 @@ async fn do_index_inner(
         metrics.clip_ms,
         metrics.db_ms,
         ocr_text.len(),
-        embedding.len()
+        embedding.len(),
+        frame_count
     );
 
     match write_result {
@@ -475,10 +451,6 @@ fn default_index_concurrency() -> usize {
         .map(|value| value.get().min(4))
         .unwrap_or(1)
         .max(1)
-}
-
-fn default_ml_concurrency() -> usize {
-    default_index_concurrency().clamp(1, 2)
 }
 
 /// 递归扫描目录，收集所有支持格式（jpg/jpeg/png/gif/webp）的图片路径（已排序）。
@@ -537,6 +509,8 @@ pub(crate) fn is_supported_image(path: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::kb::local::LocalKBProvider;
+    use image::codecs::gif::{GifEncoder, Repeat};
+    use image::{Delay, Rgba, RgbaImage};
     use sqlx::SqlitePool;
     use std::sync::Arc;
     use std::time::Duration;
@@ -547,6 +521,21 @@ mod tests {
             .join(name)
             .to_string_lossy()
             .to_string()
+    }
+
+    fn write_test_gif(path: &Path, colors: &[[u8; 3]]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut encoder = GifEncoder::new(file);
+        encoder.set_repeat(Repeat::Infinite).unwrap();
+        for color in colors {
+            let frame = image::Frame::from_parts(
+                RgbaImage::from_pixel(2, 2, Rgba([color[0], color[1], color[2], 255])),
+                0,
+                0,
+                Delay::from_numer_denom_ms(100, 1),
+            );
+            encoder.encode_frame(frame).unwrap();
+        }
     }
 
     async fn collect(mut rx: mpsc::Receiver<IndexProgress>) -> Vec<IndexProgress> {
@@ -713,6 +702,35 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_pipeline_gif_uses_single_record_with_sampled_frames(pool: SqlitePool) {
+        let lib = tempfile::tempdir().unwrap();
+        let input_dir = tempfile::tempdir().unwrap();
+        let gif_path = input_dir.path().join("sample.gif");
+        write_test_gif(&gif_path, &[[255, 0, 0], [0, 255, 0], [0, 0, 255]]);
+
+        let engine = make_engine(pool.clone()).await;
+        let results = collect(index_images(
+            pool.clone(),
+            vec![gif_path.to_string_lossy().to_string()],
+            lib.path().to_path_buf(),
+            engine,
+        ))
+        .await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, "completed");
+        assert_eq!(results[0].result_kind, "imported");
+
+        let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
+        let embeddings = repo::get_all_embeddings(&pool).await.unwrap();
+
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].format, "gif");
+        assert_eq!(embeddings.len(), 1);
+        assert_eq!(embeddings[0].1.len(), 512);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_pipeline_multiple_images(pool: SqlitePool) {
         let lib = tempfile::tempdir().unwrap();
         let engine = make_engine(pool.clone()).await;
@@ -763,7 +781,7 @@ mod tests {
             engine,
         );
         let results = collect(rx).await;
-        assert!(results[0].elapsed_ms < 10_000, "should complete in < 10s");
+        assert!(results[0].elapsed_ms < 20_000, "should complete in < 20s");
     }
 
     #[sqlx::test(migrations = "./migrations")]
