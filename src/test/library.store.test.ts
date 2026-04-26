@@ -213,6 +213,45 @@ describe("useLibraryStore", () => {
     expect(store.importState).toBe("completed");
   });
 
+  it("import_entries 返回前收到的进度事件不会丢失", async () => {
+    vi.useFakeTimers();
+
+    let progressHandler!: (e: Event<unknown>) => void;
+    mockListen.mockImplementation((_event, handler) => {
+      progressHandler = handler as (e: Event<unknown>) => void;
+      return Promise.resolve(() => {});
+    });
+
+    let resolveInvoke!: (v: unknown) => void;
+    mockInvoke.mockReturnValueOnce(new Promise((r) => { resolveInvoke = r; }));
+    mockInvoke.mockResolvedValueOnce(mockImages);
+    mockInvoke.mockResolvedValueOnce(mockImages.length);
+
+    const store = useLibraryStore();
+    const promise = store.addImages(["/tmp/a.jpg", "/tmp/b.jpg"]);
+
+    await flushPromises();
+    expect(store.importState).toBe("preparing");
+
+    progressHandler({ payload: { id: "uuid-1", status: "completed" } } as Event<unknown>);
+    expect(store.indexCurrent).toBe(1);
+
+    resolveInvoke(2);
+    await flushPromises();
+    expect(store.importState).toBe("importing");
+    expect(store.indexTotal).toBe(2);
+    expect(store.indexCurrent).toBe(1);
+
+    progressHandler({ payload: { id: "uuid-2", status: "completed" } } as Event<unknown>);
+
+    await vi.runAllTimersAsync();
+    await promise;
+    vi.useRealTimers();
+
+    expect(store.importState).toBe("completed");
+    expect(store.indexCurrent).toBe(2);
+  });
+
   it("addFolder 过程中 indexing 为 true 且 indexCurrent 随进度递增", async () => {
     vi.useFakeTimers();
 
@@ -250,11 +289,11 @@ describe("useLibraryStore", () => {
     expect(store.importState).toBe("completed");
   });
 
-  it("addFolder 目录为空时（total=0）不监听进度事件", async () => {
+  it("addFolder 目录为空时（total=0）会提前挂进度监听但保持 idle", async () => {
     mockInvoke.mockResolvedValueOnce(0);
     const store = useLibraryStore();
     await store.addFolder("/tmp/empty");
-    expect(mockListen).not.toHaveBeenCalled();
+    expect(mockListen).toHaveBeenCalledWith("index-progress", expect.any(Function));
     expect(store.images).toEqual([]);
     expect(store.importState).toBe("idle");
   });

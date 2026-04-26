@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(() => new Promise(() => {})), // 永不 resolve，进度永远不完成
+  listen: vi.fn(async () => () => {}), // 只建立监听，不主动派发完成事件
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({

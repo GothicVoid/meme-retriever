@@ -294,9 +294,15 @@ async fn test_import_batch_summary_with_imported_duplicated_and_failed_results(
     let mixed_results = collect(mixed_rx).await;
 
     assert_eq!(mixed_results.len(), 3);
-    assert!(mixed_results.iter().any(|item| item.result_kind == "duplicated"));
-    assert!(mixed_results.iter().any(|item| item.result_kind == "imported"));
-    assert!(mixed_results.iter().any(|item| item.result_kind == "failed"));
+    assert!(mixed_results
+        .iter()
+        .any(|item| item.result_kind == "duplicated"));
+    assert!(mixed_results
+        .iter()
+        .any(|item| item.result_kind == "imported"));
+    assert!(mixed_results
+        .iter()
+        .any(|item| item.result_kind == "failed"));
 
     let summary = task_repo::get_latest_import_batch_summary(&pool)
         .await
@@ -315,12 +321,10 @@ async fn test_import_batch_summary_with_imported_duplicated_and_failed_results(
     assert_eq!(failures[0].failure_kind, "file_missing");
     assert!(!failures[0].retryable);
     assert_eq!(failures[0].user_message, "原文件不存在，已跳过这张图片。");
-    assert!(
-        failures[0]
-            .error_message
-            .as_deref()
-            .is_some_and(|message| message.contains("file not found"))
-    );
+    assert!(failures[0]
+        .error_message
+        .as_deref()
+        .is_some_and(|message| message.contains("file not found")));
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -346,7 +350,9 @@ async fn test_resume_unfinished_import_after_app_restart(pool: sqlx::SqlitePool)
     task_repo::reset_stale_tasks(&pool).await.unwrap();
     let pending_before_resume = task_repo::get_pending_tasks(&pool).await.unwrap();
     assert_eq!(pending_before_resume.len(), 2);
-    assert!(pending_before_resume.iter().all(|task| task.status == "pending"));
+    assert!(pending_before_resume
+        .iter()
+        .all(|task| task.status == "pending"));
 
     let resume_tasks = pending_before_resume
         .into_iter()
@@ -356,12 +362,8 @@ async fn test_resume_unfinished_import_after_app_restart(pool: sqlx::SqlitePool)
         })
         .collect();
 
-    let rx = pipeline::resume_index_images(
-        pool.clone(),
-        resume_tasks,
-        lib.path().to_path_buf(),
-        engine,
-    );
+    let rx =
+        pipeline::resume_index_images(pool.clone(), resume_tasks, lib.path().to_path_buf(), engine);
     let resumed = collect(rx).await;
 
     assert_eq!(resumed.len(), 2);
@@ -404,7 +406,8 @@ async fn test_interrupted_import_keeps_all_remaining_tasks_in_queue(pool: sqlx::
     assert_eq!(task_repo::get_pending_task_count(&pool).await.unwrap(), 3);
 
     let first_task = vec![tasks[0].clone()];
-    let rx = pipeline::resume_index_images(pool.clone(), first_task, lib.path().to_path_buf(), engine);
+    let rx =
+        pipeline::resume_index_images(pool.clone(), first_task, lib.path().to_path_buf(), engine);
     let resumed = collect(rx).await;
 
     assert_eq!(resumed.len(), 1);
@@ -413,6 +416,55 @@ async fn test_interrupted_import_keeps_all_remaining_tasks_in_queue(pool: sqlx::
     let pending = task_repo::get_pending_tasks(&pool).await.unwrap();
     assert_eq!(pending.len(), 2);
     assert!(pending.iter().all(|task| task.status == "pending"));
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn test_concurrent_resume_deduplicates_same_content(pool: sqlx::SqlitePool) {
+    let lib = tempfile::tempdir().unwrap();
+    let engine = make_engine(pool.clone()).await;
+
+    let dup_a = lib.path().join("dup-a.jpg");
+    let dup_b = lib.path().join("dup-b.jpg");
+    std::fs::copy(fixture("sample.jpg"), &dup_a).unwrap();
+    std::fs::copy(fixture("sample.jpg"), &dup_b).unwrap();
+
+    let tasks = pipeline::create_index_tasks(
+        &pool,
+        vec![
+            dup_a.to_string_lossy().to_string(),
+            dup_b.to_string_lossy().to_string(),
+        ],
+        Some("batch-dup"),
+    )
+    .await
+    .unwrap();
+
+    let results = collect(pipeline::resume_index_images(
+        pool.clone(),
+        tasks,
+        lib.path().to_path_buf(),
+        engine,
+    ))
+    .await;
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|item| item.result_kind == "imported")
+            .count(),
+        1
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|item| item.result_kind == "duplicated")
+            .count(),
+        1
+    );
+
+    let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
+    assert_eq!(images.len(), 1);
 }
 
 #[sqlx::test(migrations = "./migrations")]

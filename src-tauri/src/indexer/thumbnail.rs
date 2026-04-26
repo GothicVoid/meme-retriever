@@ -2,10 +2,14 @@ use std::path::Path;
 
 pub fn generate(src: &Path, dst: &Path, size: u32) -> anyhow::Result<()> {
     tracing::debug!("thumbnail: {:?} -> {:?} ({}px)", src, dst, size);
+    let img = crate::image_io::open_image(src)?;
+    generate_from_image(&img, dst, size)
+}
+
+pub fn generate_from_image(img: &image::DynamicImage, dst: &Path, size: u32) -> anyhow::Result<()> {
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let img = crate::image_io::open_image(src)?;
     img.thumbnail(size, size).save(dst)?;
     Ok(())
 }

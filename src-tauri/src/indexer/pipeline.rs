@@ -1,12 +1,21 @@
+use once_cell::sync::Lazy;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::db::{repo, DbPool};
 use crate::indexer::{hash, ocr, thumbnail};
 use crate::ml::clip::ClipEncoder;
 use crate::search::engine::SearchEngine;
+
+static CLIP_PERMITS: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(default_ml_concurrency())));
+static OCR_PERMITS: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(default_ml_concurrency())));
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IndexProgress {
@@ -16,6 +25,10 @@ pub struct IndexProgress {
     pub result_kind: String, // "imported" | "duplicated" | "failed"
     pub message: Option<String>,
     pub elapsed_ms: u64,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub embedding: Option<Vec<f32>>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub(crate) metrics: Option<StageMetrics>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,8 +38,25 @@ pub struct ResumeIndexTask {
 }
 
 enum IndexResult {
-    Imported(String),
+    Imported(ImportedImage),
     Duplicated(String),
+}
+
+struct ImportedImage {
+    id: String,
+    embedding: Vec<f32>,
+    metrics: StageMetrics,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StageMetrics {
+    pub queue_wait_ms: u64,
+    pub hash_ms: u64,
+    pub decode_ms: u64,
+    pub thumb_ms: u64,
+    pub ocr_ms: u64,
+    pub clip_ms: u64,
+    pub db_ms: u64,
 }
 
 /// 入库流水线。返回进度接收端，调用方可监听每张图的处理结果。
@@ -45,17 +75,38 @@ pub async fn create_index_tasks(
     paths: Vec<String>,
     batch_id: Option<&str>,
 ) -> anyhow::Result<Vec<ResumeIndexTask>> {
-    let mut tasks = Vec::with_capacity(paths.len());
-    for path in paths {
-        let id = Uuid::new_v4().to_string();
-        crate::db::task_repo::insert_task_with_batch(pool, &id, &path, batch_id.unwrap_or(""))
-            .await?;
-        tasks.push(ResumeIndexTask {
-            id,
+    let tasks = paths
+        .into_iter()
+        .map(|path| ResumeIndexTask {
+            id: Uuid::new_v4().to_string(),
             file_path: path,
-        });
-    }
+        })
+        .collect::<Vec<_>>();
+    let task_rows = tasks
+        .iter()
+        .map(|task| (task.id.clone(), task.file_path.clone()))
+        .collect::<Vec<_>>();
+    crate::db::task_repo::insert_tasks_with_batch(pool, &task_rows, batch_id.unwrap_or("")).await?;
     Ok(tasks)
+}
+
+pub async fn create_index_task(
+    pool: &DbPool,
+    path: String,
+    batch_id: Option<&str>,
+) -> anyhow::Result<ResumeIndexTask> {
+    let task = ResumeIndexTask {
+        id: Uuid::new_v4().to_string(),
+        file_path: path,
+    };
+    crate::db::task_repo::insert_task_with_batch(
+        pool,
+        &task.id,
+        &task.file_path,
+        batch_id.unwrap_or(""),
+    )
+    .await?;
+    Ok(task)
 }
 
 pub fn index_images_with_batch(
@@ -65,24 +116,15 @@ pub fn index_images_with_batch(
     engine: std::sync::Arc<SearchEngine>,
     batch_id: Option<String>,
 ) -> mpsc::Receiver<IndexProgress> {
-    let (tx, rx) = mpsc::channel(64);
+    let (task_tx, rx) = start_index_task_stream(pool.clone(), library_dir.clone(), engine.clone());
     tokio::spawn(async move {
         let Ok(tasks) = create_index_tasks(&pool, paths, batch_id.as_deref()).await else {
             tracing::error!("index_images_with_batch: failed to create task queue");
             return;
         };
         for task in tasks {
-            let progress = process_one(
-                &pool,
-                &task.file_path,
-                &library_dir,
-                &engine,
-                None,
-                Some(&task.id),
-            )
-            .await;
-            if tx.send(progress).await.is_err() {
-                break; // 接收端已关闭
+            if task_tx.send(task).await.is_err() {
+                break;
             }
         }
     });
@@ -95,19 +137,10 @@ pub fn resume_index_images(
     library_dir: PathBuf,
     engine: std::sync::Arc<SearchEngine>,
 ) -> mpsc::Receiver<IndexProgress> {
-    let (tx, rx) = mpsc::channel(64);
+    let (task_tx, rx) = start_index_task_stream(pool, library_dir, engine);
     tokio::spawn(async move {
         for task in tasks {
-            let progress = process_one(
-                &pool,
-                &task.file_path,
-                &library_dir,
-                &engine,
-                None,
-                Some(&task.id),
-            )
-            .await;
-            if tx.send(progress).await.is_err() {
+            if task_tx.send(task).await.is_err() {
                 break;
             }
         }
@@ -115,27 +148,109 @@ pub fn resume_index_images(
     rx
 }
 
+pub fn start_index_task_stream(
+    pool: DbPool,
+    library_dir: PathBuf,
+    engine: Arc<SearchEngine>,
+) -> (mpsc::Sender<ResumeIndexTask>, mpsc::Receiver<IndexProgress>) {
+    let (task_tx, task_rx) = mpsc::channel(64);
+    let (progress_tx, progress_rx) = mpsc::channel(64);
+    tokio::spawn(async move {
+        run_task_stream(pool, task_rx, library_dir, engine, progress_tx).await;
+    });
+    (task_tx, progress_rx)
+}
+
+async fn run_task_stream(
+    pool: DbPool,
+    mut task_rx: mpsc::Receiver<ResumeIndexTask>,
+    library_dir: PathBuf,
+    engine: Arc<SearchEngine>,
+    progress_tx: mpsc::Sender<IndexProgress>,
+) {
+    let semaphore = Arc::new(Semaphore::new(default_index_concurrency()));
+    let mut join_set = JoinSet::new();
+
+    while let Some(task) = task_rx.recv().await {
+        let permit_pool = Arc::clone(&semaphore);
+        let tx = progress_tx.clone();
+        let worker_pool = pool.clone();
+        let worker_library_dir = library_dir.clone();
+        let worker_engine = Arc::clone(&engine);
+        let queued_at = Instant::now();
+
+        join_set.spawn(async move {
+            let _permit = permit_pool.acquire_owned().await?;
+            let progress = process_one(
+                &worker_pool,
+                task.file_path,
+                worker_library_dir,
+                worker_engine,
+                None,
+                Some(task.id),
+                Some(queued_at),
+            )
+            .await;
+            let _ = tx.send(progress).await;
+            Ok::<_, anyhow::Error>(())
+        });
+    }
+
+    drop(progress_tx);
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                tracing::warn!("index worker failed before processing: {err}");
+            }
+            Err(err) => {
+                tracing::warn!("index worker join failed: {err}");
+            }
+        }
+    }
+}
+
 async fn process_one(
     pool: &DbPool,
-    src_path: &str,
-    library_dir: &Path,
-    engine: &SearchEngine,
+    src_path: String,
+    library_dir: PathBuf,
+    engine: Arc<SearchEngine>,
     batch_id: Option<&str>,
-    existing_task_id: Option<&str>,
+    existing_task_id: Option<String>,
+    queued_at: Option<Instant>,
 ) -> IndexProgress {
     let start = Instant::now();
-    let src = Path::new(src_path);
+    let src = Path::new(&src_path);
     let file_name = src
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| src_path.to_string());
+        .unwrap_or_else(|| src_path.clone());
 
-    match do_index(pool, src, library_dir, engine, batch_id, existing_task_id).await {
+    match do_index(
+        pool,
+        src,
+        &library_dir,
+        &engine,
+        batch_id,
+        existing_task_id.as_deref(),
+        queued_at,
+    )
+    .await
+    {
         Ok(result) => {
-            let (id, result_kind) = match result {
-                IndexResult::Imported(id) => (id, "imported"),
-                IndexResult::Duplicated(id) => (id, "duplicated"),
+            let (id, result_kind, embedding, metrics) = match result {
+                IndexResult::Imported(imported) => (
+                    imported.id,
+                    "imported",
+                    Some(imported.embedding),
+                    Some(imported.metrics),
+                ),
+                IndexResult::Duplicated(id) => (id, "duplicated", None, None),
             };
+            if let Some(vec) = embedding.as_ref() {
+                engine.insert_vector(id.clone(), vec.clone());
+            }
             IndexProgress {
                 id,
                 file_name,
@@ -143,6 +258,8 @@ async fn process_one(
                 result_kind: result_kind.into(),
                 message: None,
                 elapsed_ms: start.elapsed().as_millis() as u64,
+                embedding,
+                metrics,
             }
         }
         Err(e) => {
@@ -154,6 +271,8 @@ async fn process_one(
                 result_kind: "failed".into(),
                 message: Some(e.to_string()),
                 elapsed_ms: start.elapsed().as_millis() as u64,
+                embedding: None,
+                metrics: None,
             }
         }
     }
@@ -166,6 +285,7 @@ async fn do_index(
     engine: &SearchEngine,
     batch_id: Option<&str>,
     existing_task_id: Option<&str>,
+    queued_at: Option<Instant>,
 ) -> anyhow::Result<IndexResult> {
     // 2.3 任务队列：记录任务进度，支持断点续传
     let task_id = if let Some(task_id) = existing_task_id {
@@ -183,19 +303,16 @@ async fn do_index(
     };
     crate::db::task_repo::update_task_status(pool, &task_id, "processing", None).await?;
 
-    let result = do_index_inner(pool, src, library_dir, engine).await;
+    let result = do_index_inner(pool, src, library_dir, engine, &task_id, queued_at).await;
 
     match &result {
-        Ok((_, outcome)) => {
-            let result_kind = match outcome {
-                IndexResult::Imported(_) => Some("imported"),
-                IndexResult::Duplicated(_) => Some("duplicated"),
-            };
+        Ok(IndexResult::Imported(_)) => {}
+        Ok(IndexResult::Duplicated(_)) => {
             let _ = crate::db::task_repo::update_task_status_with_result(
                 pool,
                 &task_id,
                 "completed",
-                result_kind,
+                Some("duplicated"),
                 None,
             )
             .await;
@@ -211,21 +328,27 @@ async fn do_index(
             .await;
         }
     }
-    result.map(|(_, outcome)| outcome)
+    result
 }
 
 async fn do_index_inner(
     pool: &DbPool,
     src: &Path,
     library_dir: &Path,
-    engine: &SearchEngine,
-) -> anyhow::Result<(String, IndexResult)> {
+    _engine: &SearchEngine,
+    task_id: &str,
+    queued_at: Option<Instant>,
+) -> anyhow::Result<IndexResult> {
     if !src.exists() {
         anyhow::bail!("file not found: {:?}", src);
     }
 
-    // 2.1 SHA-256 去重：内容相同的文件直接返回已有 ID
-    let file_hash = hash::compute_sha256(src)?;
+    let mut metrics = StageMetrics {
+        queue_wait_ms: queued_at
+            .map(|queued_at| queued_at.elapsed().as_millis() as u64)
+            .unwrap_or(0),
+        ..StageMetrics::default()
+    };
     let meta = std::fs::metadata(src)?;
     let file_size = meta.len() as i64;
     let file_modified_time = meta
@@ -234,45 +357,57 @@ async fn do_index_inner(
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64);
 
+    // 2.1 SHA-256 去重：内容相同的文件直接返回已有 ID
+    let hash_start = Instant::now();
+    let file_hash = hash::compute_sha256(src)?;
+    metrics.hash_ms = hash_start.elapsed().as_millis() as u64;
+
     if let Some(existing) = repo::get_image_by_hash(pool, &file_hash).await? {
         let id = existing.id;
-        return Ok((id.clone(), IndexResult::Duplicated(id)));
+        return Ok(IndexResult::Duplicated(id));
     }
 
     let id = Uuid::new_v4().to_string();
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
     let thumb = library_dir.join("thumbs").join(format!("{id}.jpg"));
+    let decode_start = Instant::now();
+    let decoded = crate::image_io::open_image(src)?;
+    let rgb = decoded.to_rgb8();
+    let (width, height) = (Some(decoded.width() as i64), Some(decoded.height() as i64));
+    metrics.decode_ms = decode_start.elapsed().as_millis() as u64;
 
     // 1. 生成缩略图
     let t_thumb = Instant::now();
-    thumbnail::generate(src, &thumb, 150)?;
-    let thumb_ms = t_thumb.elapsed().as_millis();
+    thumbnail::generate_from_image(&decoded, &thumb, 150)?;
+    metrics.thumb_ms = t_thumb.elapsed().as_millis() as u64;
 
     // 3. 并行：OCR + CLIP 图像编码
-    let src_str = src.to_string_lossy().to_string();
+    let ocr_image = rgb.clone();
+    let clip_image = rgb;
     let (ocr_result, clip_result) = tokio::join!(
-        tokio::task::spawn_blocking({
-            let s = src_str.clone();
-            move || ocr::extract_text(&s)
-        }),
-        tokio::task::spawn_blocking({
-            let s = src_str.clone();
-            move || ClipEncoder::encode_image(&s)
-        }),
+        async move {
+            let _permit = Arc::clone(&OCR_PERMITS).acquire_owned().await?;
+            tokio::task::spawn_blocking(move || {
+                let start = Instant::now();
+                let text = ocr::extract_text_from_rgb_image(&ocr_image)?;
+                Ok::<_, anyhow::Error>((text, start.elapsed().as_millis() as u64))
+            })
+            .await?
+        },
+        async move {
+            let _permit = Arc::clone(&CLIP_PERMITS).acquire_owned().await?;
+            tokio::task::spawn_blocking(move || {
+                let start = Instant::now();
+                let embedding = ClipEncoder::encode_rgb_image(&clip_image)?;
+                Ok::<_, anyhow::Error>((embedding, start.elapsed().as_millis() as u64))
+            })
+            .await?
+        },
     );
-    let ocr_text = ocr_result??;
-    let embedding = clip_result??;
-
-    tracing::info!(
-        "[INDEX] {} processed: thumb={}ms ocr={}chars embed={}",
-        id,
-        thumb_ms,
-        ocr_text.len(),
-        embedding.len()
-    );
-
-    // 4. 读取图片尺寸
-    let (width, height) = image_dimensions(src);
+    let (ocr_text, ocr_ms) = ocr_result?;
+    let (embedding, clip_ms) = clip_result?;
+    metrics.ocr_ms = ocr_ms;
+    metrics.clip_ms = clip_ms;
 
     // 5. 写入数据库
     let rec = repo::ImageRecord {
@@ -296,19 +431,35 @@ async fn do_index_inner(
         last_check_time: None,
         last_used_at: None,
     };
-    repo::insert_image(pool, &rec).await?;
-    repo::insert_embedding(pool, &id, &embedding).await?;
-    engine.insert_vector(id.clone(), embedding.clone());
-    if !ocr_text.is_empty() {
-        repo::insert_ocr(pool, &id, &ocr_text).await?;
-    }
-    Ok((id.clone(), IndexResult::Imported(id)))
-}
+    let db_start = Instant::now();
+    let write_result =
+        repo::insert_indexed_image(pool, &rec, &embedding, &ocr_text, Some(task_id)).await?;
+    metrics.db_ms = db_start.elapsed().as_millis() as u64;
 
-fn image_dimensions(path: &Path) -> (Option<i64>, Option<i64>) {
-    match crate::image_io::image_dimensions(path) {
-        Ok((w, h)) => (Some(w as i64), Some(h as i64)),
-        Err(_) => (None, None),
+    tracing::info!(
+        "[INDEX] {} processed: queue={}ms hash={}ms decode={}ms thumb={}ms ocr={}ms clip={}ms db={}ms ocr_chars={} embed={}",
+        id,
+        metrics.queue_wait_ms,
+        metrics.hash_ms,
+        metrics.decode_ms,
+        metrics.thumb_ms,
+        metrics.ocr_ms,
+        metrics.clip_ms,
+        metrics.db_ms,
+        ocr_text.len(),
+        embedding.len()
+    );
+
+    match write_result {
+        repo::IndexedImageWriteResult::Inserted => Ok(IndexResult::Imported(ImportedImage {
+            id,
+            embedding,
+            metrics,
+        })),
+        repo::IndexedImageWriteResult::Duplicated(existing_id) => {
+            let _ = std::fs::remove_file(&thumb);
+            Ok(IndexResult::Duplicated(existing_id))
+        }
     }
 }
 
@@ -319,12 +470,30 @@ fn now_secs() -> i64 {
         .as_secs() as i64
 }
 
+fn default_index_concurrency() -> usize {
+    std::thread::available_parallelism()
+        .map(|value| value.get().min(4))
+        .unwrap_or(1)
+        .max(1)
+}
+
+fn default_ml_concurrency() -> usize {
+    default_index_concurrency().clamp(1, 2)
+}
+
 /// 递归扫描目录，收集所有支持格式（jpg/jpeg/png/gif/webp）的图片路径（已排序）。
 pub fn scan_images_in_dir(dir: &Path) -> anyhow::Result<Vec<String>> {
     let mut result = Vec::new();
     scan_recursive(dir, &mut result)?;
     result.sort();
     Ok(result)
+}
+
+pub fn scan_images_in_dir_stream<F>(dir: &Path, visit: &mut F) -> anyhow::Result<()>
+where
+    F: FnMut(String) -> anyhow::Result<()>,
+{
+    scan_recursive_stream(dir, visit)
 }
 
 fn scan_recursive(dir: &Path, result: &mut Vec<String>) -> anyhow::Result<()> {
@@ -339,7 +508,22 @@ fn scan_recursive(dir: &Path, result: &mut Vec<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_supported_image(path: &Path) -> bool {
+fn scan_recursive_stream<F>(dir: &Path, visit: &mut F) -> anyhow::Result<()>
+where
+    F: FnMut(String) -> anyhow::Result<()>,
+{
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            scan_recursive_stream(&path, visit)?;
+        } else if is_supported_image(&path) {
+            visit(path.to_string_lossy().to_string())?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn is_supported_image(path: &Path) -> bool {
     matches!(
         path.extension()
             .and_then(|e| e.to_str())
@@ -371,6 +555,123 @@ mod tests {
             results.push(p);
         }
         results
+    }
+
+    #[derive(Debug)]
+    struct PercentileSummary {
+        p50: u64,
+        p95: u64,
+    }
+
+    #[derive(Debug)]
+    struct BenchmarkReport {
+        total_elapsed_ms: PercentileSummary,
+        queue_wait_ms: PercentileSummary,
+        hash_ms: PercentileSummary,
+        decode_ms: PercentileSummary,
+        thumb_ms: PercentileSummary,
+        ocr_ms: PercentileSummary,
+        clip_ms: PercentileSummary,
+        db_ms: PercentileSummary,
+        throughput_images_per_sec: f64,
+        image_count: usize,
+    }
+
+    fn percentile(values: &[u64], numer: usize, denom: usize) -> u64 {
+        if values.is_empty() {
+            return 0;
+        }
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        let idx = ((sorted.len() - 1) * numer) / denom;
+        sorted[idx]
+    }
+
+    fn summarize(values: &[u64]) -> PercentileSummary {
+        PercentileSummary {
+            p50: percentile(values, 50, 100),
+            p95: percentile(values, 95, 100),
+        }
+    }
+
+    fn build_benchmark_report(results: &[IndexProgress], wall_clock_ms: u64) -> BenchmarkReport {
+        let completed = results
+            .iter()
+            .filter(|result| result.status == "completed")
+            .collect::<Vec<_>>();
+        let elapsed = completed
+            .iter()
+            .map(|item| item.elapsed_ms)
+            .collect::<Vec<_>>();
+        let queue_wait = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.queue_wait_ms))
+            .collect::<Vec<_>>();
+        let hash = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.hash_ms))
+            .collect::<Vec<_>>();
+        let decode = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.decode_ms))
+            .collect::<Vec<_>>();
+        let thumb = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.thumb_ms))
+            .collect::<Vec<_>>();
+        let ocr = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.ocr_ms))
+            .collect::<Vec<_>>();
+        let clip = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.clip_ms))
+            .collect::<Vec<_>>();
+        let db = completed
+            .iter()
+            .filter_map(|item| item.metrics.as_ref().map(|metrics| metrics.db_ms))
+            .collect::<Vec<_>>();
+        let throughput_images_per_sec = if wall_clock_ms == 0 {
+            0.0
+        } else {
+            completed.len() as f64 / (wall_clock_ms as f64 / 1000.0)
+        };
+
+        BenchmarkReport {
+            total_elapsed_ms: summarize(&elapsed),
+            queue_wait_ms: summarize(&queue_wait),
+            hash_ms: summarize(&hash),
+            decode_ms: summarize(&decode),
+            thumb_ms: summarize(&thumb),
+            ocr_ms: summarize(&ocr),
+            clip_ms: summarize(&clip),
+            db_ms: summarize(&db),
+            throughput_images_per_sec,
+            image_count: completed.len(),
+        }
+    }
+
+    fn benchmark_fixtures(dir: &Path, count: usize, duplicate_ratio: usize) -> Vec<String> {
+        let seeds = [
+            fixture("sample.jpg"),
+            fixture("sample_blank.jpg"),
+            fixture("sample_wide.jpg"),
+        ];
+        let duplicate_every = duplicate_ratio.max(1);
+        let mut paths = Vec::with_capacity(count);
+
+        for idx in 0..count {
+            let source = if idx > 0 && idx % duplicate_every == 0 {
+                &seeds[0]
+            } else {
+                &seeds[idx % seeds.len()]
+            };
+            let dest = dir.join(format!("bench-{idx}.jpg"));
+            std::fs::copy(source, &dest).unwrap();
+            paths.push(dest.to_string_lossy().to_string());
+        }
+
+        paths
     }
 
     async fn make_engine(pool: SqlitePool) -> Arc<SearchEngine> {
@@ -443,8 +744,8 @@ mod tests {
         let results = collect(rx).await;
 
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].status, "error");
-        assert_eq!(results[1].status, "completed");
+        assert!(results.iter().any(|item| item.status == "error"));
+        assert!(results.iter().any(|item| item.status == "completed"));
 
         // 只有 1 张成功入库
         let images = repo::get_images_paged(&pool, 0, 10).await.unwrap();
@@ -463,6 +764,38 @@ mod tests {
         );
         let results = collect(rx).await;
         assert!(results[0].elapsed_ms < 10_000, "should complete in < 10s");
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    #[ignore = "用于手动性能基线采样"]
+    async fn bench_pipeline_small_batch_reports_percentiles(pool: SqlitePool) {
+        let lib = tempfile::tempdir().unwrap();
+        let inputs = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
+        let paths = benchmark_fixtures(inputs.path(), 10, 4);
+        let started_at = Instant::now();
+
+        let results = collect(index_images(pool, paths, lib.path().to_path_buf(), engine)).await;
+
+        let report = build_benchmark_report(&results, started_at.elapsed().as_millis() as u64);
+        println!("bench small batch: {report:#?}");
+        assert_eq!(report.image_count, 10);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    #[ignore = "用于手动性能基线采样"]
+    async fn bench_pipeline_mixed_batch_reports_percentiles(pool: SqlitePool) {
+        let lib = tempfile::tempdir().unwrap();
+        let inputs = tempfile::tempdir().unwrap();
+        let engine = make_engine(pool.clone()).await;
+        let paths = benchmark_fixtures(inputs.path(), 100, 3);
+        let started_at = Instant::now();
+
+        let results = collect(index_images(pool, paths, lib.path().to_path_buf(), engine)).await;
+
+        let report = build_benchmark_report(&results, started_at.elapsed().as_millis() as u64);
+        println!("bench mixed batch: {report:#?}");
+        assert_eq!(report.image_count, 100);
     }
 
     // ── scan_images_in_dir 测试 ─────────────────────────────────────────────

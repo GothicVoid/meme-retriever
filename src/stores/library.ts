@@ -57,11 +57,7 @@ export const useLibraryStore = defineStore("library", () => {
   async function waitForImportProgress(expectedTotal: number) {
     indexing.value = true;
     indexTotal.value = expectedTotal;
-    indexCurrent.value = 0;
     importState.value = "importing";
-    const unlistenPromise = listen("index-progress", () => {
-      indexCurrent.value++;
-    });
     try {
       await new Promise<void>((resolve) => {
         const check = setInterval(() => {
@@ -74,8 +70,6 @@ export const useLibraryStore = defineStore("library", () => {
       importState.value = "completed";
       await Promise.all([fetchImages(), fetchImageCount()]);
     } finally {
-      const unlisten = await unlistenPromise;
-      unlisten();
       indexing.value = false;
     }
   }
@@ -87,6 +81,11 @@ export const useLibraryStore = defineStore("library", () => {
     }
 
     importState.value = "preparing";
+    indexCurrent.value = 0;
+    indexTotal.value = 0;
+    const unlisten = await listen("index-progress", () => {
+      indexCurrent.value++;
+    });
     try {
       const nextTotal = await invoke<number>("import_entries", { entries });
       if (nextTotal === 0) {
@@ -97,6 +96,10 @@ export const useLibraryStore = defineStore("library", () => {
     } catch (error) {
       importState.value = "failed";
       throw error;
+    } finally {
+      if (typeof unlisten === "function") {
+        unlisten();
+      }
     }
   }
 

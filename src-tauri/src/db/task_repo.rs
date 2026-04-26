@@ -131,6 +131,35 @@ pub async fn insert_task_with_batch(
     Ok(())
 }
 
+pub async fn insert_tasks_with_batch(
+    pool: &DbPool,
+    tasks: &[(String, String)],
+    batch_id: &str,
+) -> anyhow::Result<()> {
+    const CHUNK_SIZE: usize = 500;
+
+    for chunk in tasks.chunks(CHUNK_SIZE) {
+        let now = now_secs();
+        let mut tx = pool.begin().await?;
+        for (id, file_path) in chunk {
+            sqlx::query(
+                "INSERT OR IGNORE INTO task_queue(id,file_path,status,batch_id,created_at,updated_at)
+                 VALUES(?1,?2,'pending',NULLIF(?3, ''),?4,?5)",
+            )
+            .bind(id)
+            .bind(file_path)
+            .bind(batch_id)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+    }
+
+    Ok(())
+}
+
 pub async fn update_task_status(
     pool: &DbPool,
     id: &str,
@@ -196,8 +225,8 @@ pub async fn reset_stale_tasks(pool: &DbPool) -> anyhow::Result<()> {
 
 pub async fn clear_task_queue(pool: &DbPool) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM task_queue WHERE status IN ('pending','processing')")
-    .execute(pool)
-    .await?;
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -316,6 +345,25 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn test_insert_tasks_with_batch_chunks(pool: SqlitePool) {
+        let tasks = (0..1200)
+            .map(|idx| (format!("task-{idx}"), format!("/tmp/{idx}.jpg")))
+            .collect::<Vec<_>>();
+
+        insert_tasks_with_batch(&pool, &tasks, "batch-chunked")
+            .await
+            .unwrap();
+
+        let count: i64 =
+            sqlx::query("SELECT COUNT(*) AS cnt FROM task_queue WHERE batch_id='batch-chunked'")
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .get("cnt");
+        assert_eq!(count, 1200);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn test_clear_task_queue_only_removes_unfinished_tasks(pool: SqlitePool) {
         insert_task(&pool, "t1", "/tmp/a.jpg").await.unwrap();
         insert_task(&pool, "t2", "/tmp/b.jpg").await.unwrap();
@@ -395,8 +443,12 @@ mod tests {
 
         let pending = get_pending_tasks(&pool).await.unwrap();
         assert_eq!(pending.len(), 2);
-        assert!(pending.iter().any(|task| task.id == "t2" && task.status == "processing"));
-        assert!(pending.iter().any(|task| task.id == "t3" && task.status == "pending"));
+        assert!(pending
+            .iter()
+            .any(|task| task.id == "t2" && task.status == "processing"));
+        assert!(pending
+            .iter()
+            .any(|task| task.id == "t3" && task.status == "pending"));
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -481,7 +533,10 @@ mod tests {
         assert_eq!(failures[0].error_message.as_deref(), Some("损坏"));
         assert_eq!(failures[0].failure_kind, "file_damaged");
         assert!(!failures[0].retryable);
-        assert_eq!(failures[0].user_message, "图片文件可能已损坏，暂时无法导入。");
+        assert_eq!(
+            failures[0].user_message,
+            "图片文件可能已损坏，暂时无法导入。"
+        );
     }
 
     #[test]
@@ -489,7 +544,10 @@ mod tests {
         let classification = classify_failure(Some("file not found: /tmp/a.jpg"));
         assert_eq!(classification.failure_kind, "file_missing");
         assert!(!classification.retryable);
-        assert_eq!(classification.user_message, "原文件不存在，已跳过这张图片。");
+        assert_eq!(
+            classification.user_message,
+            "原文件不存在，已跳过这张图片。"
+        );
     }
 
     #[test]
@@ -497,7 +555,10 @@ mod tests {
         let classification = classify_failure(Some("unexpected boom"));
         assert_eq!(classification.failure_kind, "unknown");
         assert!(!classification.retryable);
-        assert_eq!(classification.user_message, "处理这张图片时出错了，已先跳过。");
+        assert_eq!(
+            classification.user_message,
+            "处理这张图片时出错了，已先跳过。"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]

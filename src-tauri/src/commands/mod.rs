@@ -9,9 +9,7 @@ use uuid::Uuid;
 use crate::db::{repo, DbPool};
 use crate::kb::example_index::ExampleImageIndex;
 use crate::kb::local::LocalKBProvider;
-use crate::kb::maintenance::{
-    KnowledgeBaseEntry, KnowledgeBaseFile, ValidationReport,
-};
+use crate::kb::maintenance::{KnowledgeBaseEntry, KnowledgeBaseFile, ValidationReport};
 use crate::kb::provider::KnowledgeBaseProvider;
 use crate::search::engine::SearchEngine;
 
@@ -338,7 +336,9 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     if mode == "sidebar" {
         window.unmaximize().ok();
     } else {
-        window.set_max_size::<Size>(None).map_err(|e| e.to_string())?;
+        window
+            .set_max_size::<Size>(None)
+            .map_err(|e| e.to_string())?;
         window.set_maximizable(true).map_err(|e| e.to_string())?;
     }
 
@@ -734,22 +734,7 @@ fn spawn_index_task(
     engine: Arc<crate::search::engine::SearchEngine>,
     app_handle: tauri::AppHandle,
 ) {
-    tokio::spawn(async move {
-        let mut rx = crate::indexer::pipeline::resume_index_images(
-            pool,
-            tasks,
-            library_dir,
-            Arc::clone(&engine),
-        );
-        while let Some(progress) = rx.recv().await {
-            if progress.status == "completed" && !progress.id.is_empty() {
-                if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
-                    engine.insert_vector(progress.id.clone(), vec);
-                }
-            }
-            let _ = app_handle.emit("index-progress", &progress);
-        }
-    });
+    spawn_pipeline_progress(tasks, library_dir, pool, engine, app_handle);
 }
 
 fn spawn_resume_index_task(
@@ -759,19 +744,28 @@ fn spawn_resume_index_task(
     engine: Arc<crate::search::engine::SearchEngine>,
     app_handle: tauri::AppHandle,
 ) {
+    spawn_pipeline_progress(tasks, library_dir, pool, engine, app_handle);
+}
+
+fn spawn_pipeline_progress(
+    tasks: Vec<crate::indexer::pipeline::ResumeIndexTask>,
+    library_dir: PathBuf,
+    pool: crate::db::DbPool,
+    engine: Arc<crate::search::engine::SearchEngine>,
+    app_handle: tauri::AppHandle,
+) {
+    let rx = crate::indexer::pipeline::resume_index_images(pool, tasks, library_dir, engine);
+    spawn_pipeline_progress_receiver(rx, app_handle);
+}
+
+fn spawn_pipeline_progress_receiver(
+    mut rx: tokio::sync::mpsc::Receiver<crate::indexer::pipeline::IndexProgress>,
+    app_handle: tauri::AppHandle,
+) {
     tokio::spawn(async move {
-        let mut rx = crate::indexer::pipeline::resume_index_images(
-            pool,
-            tasks,
-            library_dir,
-            Arc::clone(&engine),
-        );
-        while let Some(progress) = rx.recv().await {
-            if progress.status == "completed" && !progress.id.is_empty() {
-                if let Ok(Some(vec)) = repo::get_embedding(engine.pool(), &progress.id).await {
-                    engine.insert_vector(progress.id.clone(), vec);
-                }
-            }
+        while let Some(mut progress) = rx.recv().await {
+            progress.embedding = None;
+            progress.metrics = None;
             let _ = app_handle.emit("index-progress", &progress);
         }
     });
@@ -801,6 +795,46 @@ fn resolve_import_paths(entries: Vec<ImportEntry>) -> Result<Vec<String>, String
     }
 
     Ok(deduped.into_iter().collect())
+}
+
+async fn enqueue_directory_tasks(
+    root: &Path,
+    deduped: &mut std::collections::HashSet<String>,
+    task_tx: &tokio::sync::mpsc::Sender<crate::indexer::pipeline::ResumeIndexTask>,
+    db: &DbPool,
+    batch_id: &str,
+) -> Result<usize, String> {
+    let mut total = 0usize;
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !crate::indexer::pipeline::is_supported_image(&path) {
+                continue;
+            }
+
+            let path_string = path.to_string_lossy().to_string();
+            if !deduped.insert(path_string.clone()) {
+                continue;
+            }
+
+            let task = crate::indexer::pipeline::create_index_task(db, path_string, Some(batch_id))
+                .await
+                .map_err(|e| e.to_string())?;
+            task_tx
+                .send(task)
+                .await
+                .map_err(|_| "index pipeline stopped".to_string())?;
+            total += 1;
+        }
+    }
+
+    Ok(total)
 }
 
 #[tauri::command]
@@ -886,34 +920,57 @@ pub async fn import_entries(
         return Ok(0);
     }
 
-    let paths = resolve_import_paths(entries)?;
-    let total = paths.len();
-    if total == 0 {
-        return Ok(0);
-    }
-
     let library_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("library");
     let batch_id = Uuid::new_v4().to_string();
-    let tasks = crate::indexer::pipeline::create_index_tasks(
-        db.inner(),
-        paths,
-        Some(batch_id.as_str()),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    spawn_index_task(
-        tasks,
-        library_dir,
+    let (task_tx, progress_rx) = crate::indexer::pipeline::start_index_task_stream(
         db.inner().clone(),
+        library_dir,
         Arc::clone(engine.inner()),
-        app,
     );
+    spawn_pipeline_progress_receiver(progress_rx, app);
 
+    let mut deduped = std::collections::HashSet::new();
+    let mut total = 0usize;
+
+    for entry in entries {
+        match entry.kind.as_str() {
+            "file" => {
+                if !entry.path.is_empty() && deduped.insert(entry.path.clone()) {
+                    let task = crate::indexer::pipeline::create_index_task(
+                        db.inner(),
+                        entry.path,
+                        Some(batch_id.as_str()),
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    task_tx
+                        .send(task)
+                        .await
+                        .map_err(|_| "index pipeline stopped".to_string())?;
+                    total += 1;
+                }
+            }
+            "directory" => {
+                total += enqueue_directory_tasks(
+                    std::path::Path::new(&entry.path),
+                    &mut deduped,
+                    &task_tx,
+                    db.inner(),
+                    batch_id.as_str(),
+                )
+                .await?;
+            }
+            other => {
+                return Err(format!("unsupported import entry kind: {other}"));
+            }
+        }
+    }
+
+    drop(task_tx);
     Ok(total)
 }
 
@@ -2138,7 +2195,10 @@ mod tests {
         assert_eq!(failures[0].error_message.as_deref(), Some("损坏"));
         assert_eq!(failures[0].failure_kind, "file_damaged");
         assert!(!failures[0].retryable);
-        assert_eq!(failures[0].user_message, "图片文件可能已损坏，暂时无法导入。");
+        assert_eq!(
+            failures[0].user_message,
+            "图片文件可能已损坏，暂时无法导入。"
+        );
     }
 
     #[test]
@@ -2184,7 +2244,9 @@ mod tests {
         record_search_history_impl("阿布 撇嘴".into(), &pool)
             .await
             .unwrap();
-        record_search_history_impl("   ".into(), &pool).await.unwrap();
+        record_search_history_impl("   ".into(), &pool)
+            .await
+            .unwrap();
 
         let history = repo::get_recent_search_history(&pool, 10).await.unwrap();
         assert_eq!(history.len(), 1);

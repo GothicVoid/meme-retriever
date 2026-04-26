@@ -110,6 +110,12 @@ pub struct TagRecord {
     pub confidence: f32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexedImageWriteResult {
+    Inserted,
+    Duplicated(String),
+}
+
 pub async fn insert_image(pool: &DbPool, rec: &ImageRecord) -> anyhow::Result<()> {
     tracing::debug!("insert_image: id={}", rec.id);
     sqlx::query(
@@ -275,6 +281,97 @@ pub async fn insert_embedding(pool: &DbPool, image_id: &str, vector: &[f32]) -> 
         .execute(pool)
         .await?;
     Ok(())
+}
+
+pub async fn insert_indexed_image(
+    pool: &DbPool,
+    rec: &ImageRecord,
+    embedding: &[f32],
+    ocr_text: &str,
+    task_id: Option<&str>,
+) -> anyhow::Result<IndexedImageWriteResult> {
+    let blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+    let task_updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+
+    let mut tx = pool.begin().await?;
+
+    let insert_result = sqlx::query(
+        "INSERT INTO images(id,file_path,file_name,format,width,height,added_at,use_count,thumbnail_path,
+                            file_hash,file_size,file_modified_time,file_status,last_check_time,last_used_at)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+    )
+    .bind(&rec.id)
+    .bind(&rec.file_path)
+    .bind(&rec.file_name)
+    .bind(&rec.format)
+    .bind(rec.width)
+    .bind(rec.height)
+    .bind(rec.added_at)
+    .bind(rec.use_count)
+    .bind(&rec.thumbnail_path)
+    .bind(&rec.file_hash)
+    .bind(rec.file_size)
+    .bind(rec.file_modified_time)
+    .bind(&rec.file_status)
+    .bind(rec.last_check_time)
+    .bind(rec.last_used_at)
+    .execute(&mut *tx)
+    .await;
+
+    if let Err(err) = insert_result {
+        tx.rollback().await?;
+        if let Some(file_hash) = rec.file_hash.as_deref() {
+            if let Some(existing) = get_image_by_hash(pool, file_hash).await? {
+                return Ok(IndexedImageWriteResult::Duplicated(existing.id));
+            }
+        }
+        return Err(err.into());
+    }
+
+    sqlx::query("INSERT OR REPLACE INTO embeddings(image_id,vector) VALUES(?1,?2)")
+        .bind(&rec.id)
+        .bind(&blob)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM ocr_fts WHERE image_id=?1")
+        .bind(&rec.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM ocr_texts WHERE image_id=?1")
+        .bind(&rec.id)
+        .execute(&mut *tx)
+        .await?;
+
+    if !ocr_text.is_empty() {
+        sqlx::query("INSERT OR REPLACE INTO ocr_texts(image_id,content) VALUES(?1,?2)")
+            .bind(&rec.id)
+            .bind(ocr_text)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO ocr_fts(image_id,content) VALUES(?1,?2)")
+            .bind(&rec.id)
+            .bind(ocr_text)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if let Some(task_id) = task_id {
+        sqlx::query(
+            "UPDATE task_queue
+             SET status='completed', result_kind='imported', error_message=NULL, updated_at=?1
+             WHERE id=?2",
+        )
+        .bind(task_updated_at)
+        .bind(task_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(IndexedImageWriteResult::Inserted)
 }
 
 pub async fn get_all_embeddings(pool: &DbPool) -> anyhow::Result<Vec<(String, Vec<f32>)>> {
@@ -654,7 +751,11 @@ pub async fn get_recently_used_images(
         .collect())
 }
 
-pub async fn upsert_search_history(pool: &DbPool, query: &str, updated_at: i64) -> anyhow::Result<()> {
+pub async fn upsert_search_history(
+    pool: &DbPool,
+    query: &str,
+    updated_at: i64,
+) -> anyhow::Result<()> {
     let normalized = query.trim();
     if normalized.is_empty() {
         return Ok(());
@@ -812,6 +913,45 @@ mod tests {
         assert_eq!(all[0].1.len(), 512);
         assert!((all[0].1[0] - 0.0).abs() < 1e-5);
         assert!((all[0].1[1] - 0.001).abs() < 1e-4);
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_insert_indexed_image_updates_task_and_ocr(pool: SqlitePool) {
+        sqlx::query(
+            "INSERT INTO task_queue(id,file_path,status,created_at,updated_at)
+             VALUES('task-indexed','/tmp/img1.jpg','processing',1,1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut rec = make_image("img1");
+        rec.thumbnail_path = Some("/tmp/thumb.jpg".into());
+        rec.file_hash = Some("hash-indexed".into());
+        rec.file_size = Some(123);
+        rec.file_modified_time = Some(456);
+
+        let result = insert_indexed_image(&pool, &rec, &[0.1; 8], "有字", Some("task-indexed"))
+            .await
+            .unwrap();
+        assert_eq!(result, IndexedImageWriteResult::Inserted);
+
+        let task =
+            sqlx::query("SELECT status, result_kind FROM task_queue WHERE id='task-indexed'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(task.get::<String, _>("status"), "completed");
+        assert_eq!(
+            task.get::<Option<String>, _>("result_kind").as_deref(),
+            Some("imported")
+        );
+
+        let ocr_row = sqlx::query("SELECT content FROM ocr_texts WHERE image_id='img1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(ocr_row.get::<String, _>("content"), "有字");
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -984,9 +1124,15 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_search_history_upsert_and_order(pool: SqlitePool) {
-        upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
-        upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
-        upsert_search_history(&pool, "阿布 撇嘴", 300).await.unwrap();
+        upsert_search_history(&pool, "阿布 撇嘴", 100)
+            .await
+            .unwrap();
+        upsert_search_history(&pool, "猫猫 心虚", 200)
+            .await
+            .unwrap();
+        upsert_search_history(&pool, "阿布 撇嘴", 300)
+            .await
+            .unwrap();
         upsert_search_history(&pool, "   ", 400).await.unwrap();
 
         let rows = get_recent_search_history(&pool, 10).await.unwrap();
@@ -998,8 +1144,12 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_delete_search_history_removes_only_target(pool: SqlitePool) {
-        upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
-        upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+        upsert_search_history(&pool, "阿布 撇嘴", 100)
+            .await
+            .unwrap();
+        upsert_search_history(&pool, "猫猫 心虚", 200)
+            .await
+            .unwrap();
 
         delete_search_history(&pool, "阿布 撇嘴").await.unwrap();
 
@@ -1011,7 +1161,9 @@ mod tests {
     #[sqlx::test(migrations = "./migrations")]
     async fn test_search_history_keeps_latest_twenty(pool: SqlitePool) {
         for i in 0..25 {
-            upsert_search_history(&pool, &format!("query-{i}"), i).await.unwrap();
+            upsert_search_history(&pool, &format!("query-{i}"), i)
+                .await
+                .unwrap();
         }
 
         let rows = get_recent_search_history(&pool, 30).await.unwrap();
@@ -1022,8 +1174,12 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_clear_search_history_removes_all_rows(pool: SqlitePool) {
-        upsert_search_history(&pool, "阿布 撇嘴", 100).await.unwrap();
-        upsert_search_history(&pool, "猫猫 心虚", 200).await.unwrap();
+        upsert_search_history(&pool, "阿布 撇嘴", 100)
+            .await
+            .unwrap();
+        upsert_search_history(&pool, "猫猫 心虚", 200)
+            .await
+            .unwrap();
 
         clear_search_history(&pool).await.unwrap();
 

@@ -1,3 +1,4 @@
+use image::RgbImage;
 use once_cell::sync::OnceCell;
 use std::path::Path;
 use std::sync::Mutex;
@@ -38,9 +39,43 @@ pub fn extract_text(image_path: &str) -> anyhow::Result<String> {
     }
 
     let start = std::time::Instant::now();
-    let text = run_pipeline(path, &det_path, &rec_path, &dict_path)?;
+    let image = crate::image_io::open_image(path)?.to_rgb8();
+    let text = run_pipeline(&image, &det_path, &rec_path, &dict_path)?;
     tracing::debug!(
         "ocr: {}ms, text_len={}",
+        start.elapsed().as_millis(),
+        text.len()
+    );
+    Ok(text)
+}
+
+pub fn extract_text_from_rgb_image(image: &RgbImage) -> anyhow::Result<String> {
+    let det_path = match find_model(&["ch_PP-OCRv4_det_infer.onnx"]) {
+        Some(p) => p,
+        None => {
+            tracing::debug!("ocr: det model not found, skipping");
+            return Ok(String::new());
+        }
+    };
+
+    let rec_path = match find_model(&["ocr.onnx", "ch_PP-OCRv4_rec_infer.onnx"]) {
+        Some(p) => p,
+        None => {
+            tracing::debug!("ocr: rec model not found, skipping");
+            return Ok(String::new());
+        }
+    };
+
+    let dict_path = model_dir().join("ppocr_keys_v1.txt");
+    if !dict_path.exists() {
+        tracing::debug!("ocr: dict not found ({:?}), skipping", dict_path);
+        return Ok(String::new());
+    }
+
+    let start = std::time::Instant::now();
+    let text = run_pipeline(image, &det_path, &rec_path, &dict_path)?;
+    tracing::debug!(
+        "ocr_rgb: {}ms, text_len={}",
         start.elapsed().as_millis(),
         text.len()
     );
@@ -292,7 +327,7 @@ fn run_rec(line_img: &image::RgbImage, rec_path: &Path, dict: &[String]) -> anyh
 // ── 主流水线 ────────────────────────────────────────────────────────────────
 
 fn run_pipeline(
-    image_path: &Path,
+    image: &RgbImage,
     det_path: &Path,
     rec_path: &Path,
     dict_path: &Path,
@@ -300,14 +335,13 @@ fn run_pipeline(
     use ort::value::Tensor;
 
     let dict = load_dict(dict_path)?;
-    let img = crate::image_io::open_image(image_path)?.to_rgb8();
-    let (orig_w, orig_h) = img.dimensions();
+    let (orig_w, orig_h) = image.dimensions();
     if orig_w == 0 || orig_h == 0 {
         return Ok(String::new());
     }
 
     // 1. Det 预处理
-    let (scale, pad_w, pad_h, det_data) = preprocess_det(&img);
+    let (scale, pad_w, pad_h, det_data) = preprocess_det(image);
     let det_tensor = Tensor::from_array((
         [1usize, 3, pad_h as usize, pad_w as usize],
         det_data.into_boxed_slice(),
@@ -347,7 +381,7 @@ fn run_pipeline(
     // 4. 逐框裁剪 + Rec 推理
     let mut texts: Vec<String> = Vec::new();
     for [x0, y0, x1, y1] in &boxes {
-        let crop = image::imageops::crop_imm(&img, *x0, *y0, x1 - x0, y1 - y0).to_image();
+        let crop = image::imageops::crop_imm(image, *x0, *y0, x1 - x0, y1 - y0).to_image();
         let text = run_rec(&crop, rec_path, &dict)?;
         if !text.is_empty() {
             texts.push(text);

@@ -1,3 +1,4 @@
+use image::RgbImage;
 use once_cell::sync::OnceCell;
 use std::path::Path;
 use std::sync::Mutex;
@@ -54,7 +55,8 @@ impl ClipEncoder {
             Some(model_path) => {
                 let session =
                     IMAGE_SESSION.get_or_try_init(|| load_session(&model_path).map(Mutex::new))?;
-                run_image_inference(&mut session.lock().unwrap(), path)?
+                let image = crate::image_io::open_image(path)?.to_rgb8();
+                run_image_inference(&mut session.lock().unwrap(), &image)?
             }
             None => {
                 tracing::debug!("clip: image model not found, using mock");
@@ -66,6 +68,36 @@ impl ClipEncoder {
         };
 
         tracing::debug!("encode_image: {}ms", start.elapsed().as_millis());
+        Ok(result)
+    }
+
+    pub fn encode_rgb_image(image: &RgbImage) -> anyhow::Result<Vec<f32>> {
+        let start = std::time::Instant::now();
+
+        let result = match find_model(&[
+            "clip_image.onnx",
+            "vit-b-16.img.fp32.onnx",
+            "vit-b-16.img.fp16.onnx",
+        ]) {
+            Some(model_path) => {
+                let session =
+                    IMAGE_SESSION.get_or_try_init(|| load_session(&model_path).map(Mutex::new))?;
+                run_image_inference(&mut session.lock().unwrap(), image)?
+            }
+            None => {
+                tracing::debug!("clip: image model not found, using mock");
+                let seed = image
+                    .pixels()
+                    .flat_map(|pixel| pixel.0)
+                    .take(1024)
+                    .fold(0usize, |acc, channel| {
+                        acc.wrapping_mul(131).wrapping_add(channel as usize)
+                    });
+                mock_vector(seed)
+            }
+        };
+
+        tracing::debug!("encode_rgb_image: {}ms", start.elapsed().as_millis());
         Ok(result)
     }
 }
@@ -108,12 +140,11 @@ fn run_text_inference(session: &mut ort::session::Session, text: &str) -> anyhow
 
 fn run_image_inference(
     session: &mut ort::session::Session,
-    image_path: &Path,
+    image: &RgbImage,
 ) -> anyhow::Result<Vec<f32>> {
     use ort::value::Tensor;
     // 1. 加载图像：短边缩放到 224，再中心裁剪 224×224（Chinese-CLIP 标准预处理）
-    let img = crate::image_io::open_image(image_path)?.to_rgb8();
-    let (orig_w, orig_h) = img.dimensions();
+    let (orig_w, orig_h) = image.dimensions();
     let (new_w, new_h) = if orig_w <= orig_h {
         (
             224u32,
@@ -125,7 +156,7 @@ fn run_image_inference(
             224u32,
         )
     };
-    let img = image::imageops::resize(&img, new_w, new_h, image::imageops::FilterType::Triangle);
+    let img = image::imageops::resize(image, new_w, new_h, image::imageops::FilterType::Triangle);
     let x = (new_w - 224) / 2;
     let y = (new_h - 224) / 2;
     let img = image::imageops::crop_imm(&img, x, y, 224, 224).to_image();
