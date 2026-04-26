@@ -686,21 +686,62 @@ onUnmounted(() => {
 .context-menu {
   position: absolute;
   list-style: none;
-  padding: 0.25rem 0;
-  min-width: 140px;
+  padding: 0.45rem;
+  min-width: 176px;
   z-index: 120;
+  display: grid;
+  gap: 0.2rem;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 251, 245, 0.98), rgba(247, 239, 227, 0.96));
+  border: 1px solid rgba(187, 154, 111, 0.28);
+  box-shadow:
+    0 14px 30px rgba(83, 55, 23, 0.18),
+    0 3px 10px rgba(83, 55, 23, 0.08);
+  backdrop-filter: blur(12px);
+}
+.context-menu li {
+  margin: 0;
 }
 .context-menu__button {
   width: 100%;
   justify-content: flex-start;
-  padding: 0 1rem;
+  min-height: 2.35rem;
+  padding: 0.65rem 0.9rem;
   text-align: left;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: #4b3620;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
 }
-.context-menu__button:hover {
-  background: var(--ui-bg-hover);
+.context-menu__button:hover,
+.context-menu__button:focus-visible {
+  background: rgba(191, 145, 79, 0.14);
+  color: #2d1d0f;
+  box-shadow: inset 0 0 0 1px rgba(191, 145, 79, 0.16);
+  outline: none;
+}
+.context-menu__button:active {
+  transform: translateY(1px);
 }
 .context-menu__button--danger,
 .context-menu li button.danger {
-  color: #c0392b;
+  color: #b53a2d;
+}
+.context-menu__button--danger:hover,
+.context-menu__button--danger:focus-visible,
+.context-menu li button.danger:hover,
+.context-menu li button.danger:focus-visible {
+  background: rgba(197, 67, 49, 0.12);
+  color: #8e241b;
+  box-shadow: inset 0 0 0 1px rgba(197, 67, 49, 0.14);
 }
 </style>
