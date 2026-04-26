@@ -308,10 +308,9 @@ pub fn resolve_default_kb_path() -> PathBuf {
         std::env::current_dir()
             .ok()
             .map(|cwd| cwd.join(&default_relative)),
-        std::env::current_dir().ok().and_then(|cwd| {
-            cwd.parent()
-                .map(|parent| parent.join(&default_relative))
-        }),
+        std::env::current_dir()
+            .ok()
+            .and_then(|cwd| cwd.parent().map(|parent| parent.join(&default_relative))),
     ];
 
     for candidate in candidates.into_iter().flatten() {
@@ -327,7 +326,8 @@ pub fn resolve_default_kb_path() -> PathBuf {
 }
 
 fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
-    let mut entry: KnowledgeBaseEntry = serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;
+    let mut entry: KnowledgeBaseEntry =
+        serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;
     if entry.example_images.is_empty() {
         entry.example_images = value["example_images"]
             .as_array()
@@ -343,11 +343,7 @@ fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
     Ok(entry)
 }
 
-fn validate_example_images(
-    entry: &KnowledgeBaseEntry,
-    name: &str,
-    errors: &mut Vec<String>,
-) {
+fn validate_example_images(entry: &KnowledgeBaseEntry, name: &str, errors: &mut Vec<String>) {
     let mut seen = BTreeSet::new();
     for value in &entry.example_images {
         let trimmed = value.trim();
@@ -364,13 +360,15 @@ fn validate_example_images(
         let extension_ok = path
             .extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif"))
+            .map(|ext| {
+                matches!(
+                    ext.to_ascii_lowercase().as_str(),
+                    "jpg" | "jpeg" | "png" | "webp" | "gif"
+                )
+            })
             .unwrap_or(false);
         if !extension_ok {
-            errors.push(format!(
-                "示例图格式不受支持：{} -> {}",
-                name, trimmed
-            ));
+            errors.push(format!("示例图格式不受支持：{} -> {}", name, trimmed));
         }
     }
 
@@ -492,7 +490,7 @@ fn is_noise_punctuation(ch: char) -> bool {
             | '）'
             | '【'
             | '】'
-        )
+    )
 }
 
 fn is_ambiguous_short_term(term: &str) -> bool {
@@ -542,8 +540,14 @@ mod tests {
         let report = kb.validate();
 
         assert!(!report.is_valid());
-        assert!(report.errors.iter().any(|error| error.contains("name 已存在")));
-        assert!(report.errors.iter().any(|error| error.contains("检测到重复 aliases")));
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error.contains("name 已存在")));
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error.contains("检测到重复 aliases")));
         assert_eq!(report.conflicts.len(), 1);
         assert_eq!(report.conflicts[0].term, "皇上");
     }
@@ -618,7 +622,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(kb.entries[0].name, "阿布");
-        assert_eq!(kb.entries[0].example_images, vec!["kb_examples/abu/sample-1.jpg"]);
+        assert_eq!(
+            kb.entries[0].example_images,
+            vec!["kb_examples/abu/sample-1.jpg"]
+        );
     }
 
     #[test]
@@ -641,16 +648,13 @@ mod tests {
 
         let report = kb.validate();
 
-        assert!(
-            report
-                .errors
-                .iter()
-                .any(|error| error == "缺少示例图：阿布")
-        );
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error == "缺少示例图：阿布"));
         assert!(!report
             .warnings
             .iter()
             .any(|warning| warning.contains("当前条目不是私有角色卡片")));
     }
-
 }

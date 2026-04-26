@@ -303,13 +303,13 @@ impl SearchEngine {
         let tag_score_map: std::collections::HashMap<String, f32> = {
             let mut m = std::collections::HashMap::new();
             for (id, score) in keyword::tag_search(
-                    &self.pool,
-                    query,
-                    &normalized_query.tag_query,
-                    &related_terms,
-                    limit_i64,
-                )
-                .await?
+                &self.pool,
+                query,
+                &normalized_query.tag_query,
+                &related_terms,
+                limit_i64,
+            )
+            .await?
             {
                 m.insert(id, score);
             }
@@ -327,26 +327,25 @@ impl SearchEngine {
             .query(&text_vec, limit * 2);
         tracing::info!("[VEC] Found {} semantic matches", semantic_hits.len());
 
-        let role_score_map: std::collections::HashMap<String, f32> = if let Some(role_match) =
-            &private_role_match
-        {
-            let store = self.vector_store.read().unwrap();
-            let role_hits = self
-                .example_image_index
-                .read()
-                .unwrap()
-                .query_role_candidates(&role_match.name, &store, limit * 2);
-            if !role_hits.is_empty() {
-                tracing::info!(
-                    "[ROLE] {} matched private role {}",
-                    role_hits.len(),
-                    role_match.name
-                );
-            }
-            role_hits.into_iter().collect()
-        } else {
-            std::collections::HashMap::new()
-        };
+        let role_score_map: std::collections::HashMap<String, f32> =
+            if let Some(role_match) = &private_role_match {
+                let store = self.vector_store.read().unwrap();
+                let role_hits = self
+                    .example_image_index
+                    .read()
+                    .unwrap()
+                    .query_role_candidates(&role_match.name, &store, limit * 2);
+                if !role_hits.is_empty() {
+                    tracing::info!(
+                        "[ROLE] {} matched private role {}",
+                        role_hits.len(),
+                        role_match.name
+                    );
+                }
+                role_hits.into_iter().collect()
+            } else {
+                std::collections::HashMap::new()
+            };
 
         // 5. 按 PRD §5.2.3 公式合并得分
         //    Final_Score = 0.75·Relevance + 0.25·Popularity
@@ -405,7 +404,9 @@ impl SearchEngine {
             let (main_score, aux_score) = match effective_route {
                 MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
                 MainRoute::Semantic => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
-                MainRoute::PrivateRole => (0.7 * s_role, 0.15 * s_clip + 0.1 * text_score + 0.05 * s_kw),
+                MainRoute::PrivateRole => {
+                    (0.7 * s_role, 0.15 * s_clip + 0.1 * text_score + 0.05 * s_kw)
+                }
                 MainRoute::Tag => (0.75 * s_kw, 0.1 * s_clip + 0.1 * text_score),
             };
             let relevance_score = main_score + aux_score;
@@ -474,7 +475,7 @@ impl SearchEngine {
                     ocr_text_map
                         .get(id.as_str())
                         .map(|s| s.as_str())
-                    .unwrap_or(""),
+                        .unwrap_or(""),
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
                 let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
@@ -512,7 +513,7 @@ impl SearchEngine {
                     ocr_text_map
                         .get(id.as_str())
                         .map(|s| s.as_str())
-                    .unwrap_or(""),
+                        .unwrap_or(""),
                 );
                 let s_kw = tag_score_map.get(id).copied().unwrap_or(0.0);
                 let s_role = role_score_map.get(id).copied().unwrap_or(0.0);
@@ -621,7 +622,10 @@ impl SearchEngine {
                     score,
                     tags: tags.iter().cloned().map(TagDto::from).collect(),
                     matched_ocr_terms: extract_text_matches(
-                        ocr_text_map.get(&id).map(|text| text.as_str()).unwrap_or(""),
+                        ocr_text_map
+                            .get(&id)
+                            .map(|text| text.as_str())
+                            .unwrap_or(""),
                         &evidence_candidates,
                         2,
                     ),
@@ -645,9 +649,9 @@ impl SearchEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kb::example_index::ExampleImageIndex;
     use crate::kb::local::LocalKBProvider;
     use crate::kb::maintenance::{KnowledgeBaseEntry, KnowledgeBaseFile};
-    use crate::kb::example_index::ExampleImageIndex;
     use sqlx::SqlitePool;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -966,7 +970,10 @@ mod tests {
             result.score
         );
         assert_eq!(
-            result.debug_info.as_ref().map(|debug| debug.main_route.as_str()),
+            result
+                .debug_info
+                .as_ref()
+                .map(|debug| debug.main_route.as_str()),
             Some("tag")
         );
     }
@@ -1000,7 +1007,10 @@ mod tests {
             result.score
         );
         assert_eq!(
-            result.debug_info.as_ref().map(|debug| debug.main_route.as_str()),
+            result
+                .debug_info
+                .as_ref()
+                .map(|debug| debug.main_route.as_str()),
             Some("tag")
         );
     }
@@ -1071,7 +1081,10 @@ mod tests {
 
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "abu-role");
-        assert_eq!(results[0].debug_info.as_ref().unwrap().main_route, "privateRole");
+        assert_eq!(
+            results[0].debug_info.as_ref().unwrap().main_route,
+            "privateRole"
+        );
         assert_eq!(results[0].matched_role_name.as_deref(), Some("阿布"));
     }
 
@@ -1266,11 +1279,17 @@ mod tests {
             );
         }
         assert!(
-            results[0].matched_ocr_terms.iter().any(|term| term == "test"),
+            results[0]
+                .matched_ocr_terms
+                .iter()
+                .any(|term| term == "test"),
             "should include matched OCR term"
         );
         assert!(
-            results[0].matched_tags.iter().any(|term| term == "test-tag"),
+            results[0]
+                .matched_tags
+                .iter()
+                .any(|term| term == "test-tag"),
             "should include matched tag"
         );
     }
@@ -1339,7 +1358,10 @@ mod tests {
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "ocr-strong");
         assert_eq!(
-            results[0].debug_info.as_ref().map(|di| di.main_route.as_str()),
+            results[0]
+                .debug_info
+                .as_ref()
+                .map(|di| di.main_route.as_str()),
             Some("ocr")
         );
     }
@@ -1353,7 +1375,10 @@ mod tests {
         let results = engine.search("你礼貌吗", 10, 0.3, 0.4, 0.3).await.unwrap();
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "exact-new");
-        let exact = results.iter().find(|result| result.id == "exact-new").unwrap();
+        let exact = results
+            .iter()
+            .find(|result| result.id == "exact-new")
+            .unwrap();
         let weak = results.iter().find(|result| result.id == "weak-hot");
         if let Some(weak) = weak {
             assert!(

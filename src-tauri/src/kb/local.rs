@@ -48,7 +48,6 @@ impl LocalKBProvider {
             alias_to_canonical,
         }
     }
-
 }
 
 impl KnowledgeBaseProvider for LocalKBProvider {
@@ -106,7 +105,8 @@ impl KnowledgeBaseProvider for LocalKBProvider {
                     .into_iter()
                     .filter_map(|term| {
                         let normalized_term = normalize(term);
-                        if normalized_term.is_empty() || !normalized_query.contains(&normalized_term)
+                        if normalized_term.is_empty()
+                            || !normalized_query.contains(&normalized_term)
                         {
                             return None;
                         }
@@ -193,7 +193,10 @@ mod tests {
         let matched = provider.detect_private_role("我想找阿布撇嘴那张").unwrap();
         assert_eq!(matched.name, "阿布");
         assert_eq!(matched.matched_term, "阿布");
-        assert_eq!(matched.related_terms, vec!["布布".to_string(), "阿布".to_string()]);
+        assert_eq!(
+            matched.related_terms,
+            vec!["布布".to_string(), "阿布".to_string()]
+        );
     }
 
     #[test]
@@ -240,7 +243,9 @@ mod tests {
         )
         .unwrap();
 
-        let normalized = LocalKBProvider::load(&path).unwrap().normalize_query("绷不住了");
+        let normalized = LocalKBProvider::load(&path)
+            .unwrap()
+            .normalize_query("绷不住了");
 
         assert_eq!(normalized.tag_query, "蚌埠住了");
         assert_eq!(normalized.expanded_query, "蚌埠住了");
@@ -265,7 +270,9 @@ mod tests {
         )
         .unwrap();
 
-        let normalized = LocalKBProvider::load(&path).unwrap().normalize_query("甄嬛");
+        let normalized = LocalKBProvider::load(&path)
+            .unwrap()
+            .normalize_query("甄嬛");
 
         assert_eq!(normalized.tag_query, "甄嬛传");
         assert_eq!(normalized.expanded_query, "甄嬛传");

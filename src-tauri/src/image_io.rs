@@ -1,5 +1,5 @@
-use std::path::Path;
 use image::GenericImageView;
+use std::path::Path;
 
 pub fn open_image(path: &Path) -> anyhow::Result<image::DynamicImage> {
     let reader = image::ImageReader::open(path)?.with_guessed_format()?;

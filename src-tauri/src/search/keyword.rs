@@ -322,9 +322,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "./migrations")]
-    async fn test_tag_search_manual_beats_auto_and_ignores_category_confidence(
-        pool: SqlitePool,
-    ) {
+    async fn test_tag_search_manual_beats_auto_and_ignores_category_confidence(pool: SqlitePool) {
         insert_image(&pool, "manual").await;
         insert_image(&pool, "auto").await;
         sqlx::query(
