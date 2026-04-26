@@ -49,6 +49,14 @@ fn popularity_gate(relevance_score: f32) -> f32 {
     }
 }
 
+fn semantic_main_score(raw_cosine: f32) -> f32 {
+    let threshold = crate::search::vector_store::VectorStore::semantic_threshold();
+    let normalized =
+        ((raw_cosine - threshold) / (1.0 - threshold)).clamp(0.0, 1.0);
+    // 保留明确的低相关区间，只把更明显的语义命中抬进默认可见结果。
+    0.45 + 0.35 * normalized
+}
+
 fn collect_match_candidates(
     raw_query: &str,
     normalized_query: &str,
@@ -494,7 +502,9 @@ impl SearchEngine {
 
             let (main_score, aux_score) = match effective_route {
                 MainRoute::Ocr => (0.7 * text_score, 0.15 * s_clip + 0.05 * s_kw),
-                MainRoute::Semantic => (0.7 * s_clip, 0.15 * text_score + 0.05 * s_kw),
+                MainRoute::Semantic => {
+                    (semantic_main_score(raw_cosine), 0.15 * text_score + 0.05 * s_kw)
+                }
                 MainRoute::PrivateRole => {
                     (0.7 * s_role, 0.15 * s_clip + 0.1 * text_score + 0.05 * s_kw)
                 }
@@ -1394,6 +1404,15 @@ mod tests {
             }),
             "results should use semantic route when no OCR main signal exists"
         );
+        let semantic_hit = results
+            .iter()
+            .find(|result| result.id == "semantic-hit")
+            .unwrap();
+        assert!(
+            semantic_hit.score >= 0.55,
+            "clear semantic hit should be visible by default, got {}",
+            semantic_hit.score
+        );
     }
 
     #[test]
@@ -1446,6 +1465,19 @@ mod tests {
     fn test_popularity_gate_keeps_medium_relevance_and_above() {
         assert_eq!(popularity_gate(0.55), 1.0);
         assert_eq!(popularity_gate(0.8), 1.0);
+    }
+
+    #[test]
+    fn test_semantic_main_score_keeps_borderline_hits_below_medium() {
+        let threshold = crate::search::vector_store::VectorStore::semantic_threshold();
+        assert!(semantic_main_score(threshold) < 0.55);
+        assert!(semantic_main_score(0.3) < 0.55);
+    }
+
+    #[test]
+    fn test_semantic_main_score_promotes_clear_semantic_hits_to_medium() {
+        assert!(semantic_main_score(0.4) >= 0.55);
+        assert!(semantic_main_score(0.4) > semantic_main_score(0.3));
     }
 
     #[sqlx::test(migrations = "./migrations")]

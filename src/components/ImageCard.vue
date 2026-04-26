@@ -70,19 +70,19 @@
           </div>
           <div class="debug-row">
             <span>主路 {{ debugRouteLabel }}</span>
-            <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(0) }}%</span>
+            <span class="dim">{{ (image.debugInfo.mainScore * 100).toFixed(1) }}%</span>
           </div>
           <div class="debug-row">
             <span>辅路补充</span>
-            <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(0) }}%</span>
+            <span class="dim">{{ (image.debugInfo.auxScore * 100).toFixed(1) }}%</span>
           </div>
           <div class="debug-row">
             <span>标签贡献</span>
-            <span class="dim">{{ (image.debugInfo.tagScore * 100).toFixed(0) }}%</span>
+            <span class="dim">{{ (image.debugInfo.tagScore * 100).toFixed(1) }}%</span>
           </div>
           <div class="debug-row">
             <span>热度加成</span>
-            <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(0) }}%</span>
+            <span class="dim">{{ (image.debugInfo.popularityBoost * 100).toFixed(1) }}%</span>
           </div>
         </div>
       </div>
