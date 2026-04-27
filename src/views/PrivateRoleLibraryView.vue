@@ -18,6 +18,7 @@
 
       <div class="topbar-actions">
         <button
+          v-if="!isLibraryEmpty"
           class="primary-btn small"
           data-action="save-kb"
           :disabled="loading || saving"
@@ -28,7 +29,10 @@
       </div>
     </header>
 
-    <div class="meta-row">
+    <div
+      v-if="!isLibraryEmpty"
+      class="meta-row"
+    >
       <span class="meta-pill">角色数：{{ entries.length }}</span>
       <span
         class="meta-pill"
@@ -45,8 +49,14 @@
       {{ statusMessage }}
     </p>
 
-    <div class="workspace">
-      <aside class="entry-rail">
+    <div
+      class="workspace"
+      :class="{ 'workspace--empty': isLibraryEmpty }"
+    >
+      <aside
+        v-if="!isLibraryEmpty"
+        class="entry-rail"
+      >
         <div class="entry-panel">
           <div class="panel-head panel-head--stacked">
             <div class="panel-head-row">
@@ -221,10 +231,22 @@
 
         <div
           v-else
-          class="empty-state large"
+          class="empty-state large empty-state--onboarding"
         >
           <template v-if="entries.length === 0">
-            这里还没有你要找的角色。点左上角“新建”，填上角色名，放 1-2 张最像的图，保存后就可以回来按名字搜索了。
+            <div class="empty-onboarding">
+              <h2>还没有角色</h2>
+              <p>
+                先新建一个角色，填上名字，再放几张最像的图。以后搜这个名字时，就更容易找到对应表情。
+              </p>
+              <button
+                class="primary-btn"
+                data-action="create-first-entry-main"
+                @click="createEntry"
+              >
+                新建角色
+              </button>
+            </div>
           </template>
           <template v-else>
             先从左侧选择一个角色，或者新建角色开始编辑。
@@ -291,6 +313,7 @@ const form = reactive<EntryForm>({
 });
 
 const selectedEntry = computed(() => entries.value.find((entry) => entry.id === selectedEntryId.value) || null);
+const isLibraryEmpty = computed(() => entries.value.length === 0);
 
 const filteredEntries = computed(() => {
   const keyword = filterKeyword.value.trim().toLowerCase();
@@ -1050,6 +1073,33 @@ function goBack() {
   background: rgba(255, 252, 247, 0.94);
   border: 1px solid rgba(104, 76, 48, 0.12);
   border-radius: 16px;
+}
+
+.empty-state--onboarding {
+  padding: 1.4rem;
+}
+
+.empty-onboarding {
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.workspace--empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.empty-onboarding h2 {
+  font-size: 1.24rem;
+  color: #433327;
+}
+
+.empty-onboarding p {
+  font-size: 0.96rem;
+  line-height: 1.8;
+  color: #6f5a48;
 }
 
 .report-item.error {

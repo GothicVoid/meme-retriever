@@ -90,10 +90,34 @@ describe("PrivateRoleLibraryView", () => {
     const wrapper = mount(PrivateRoleLibraryView);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("这里还没有你要找的角色");
-    expect(wrapper.text()).toContain("点左上角“新建”");
-    expect(wrapper.text()).toContain("保存后就可以回来按名字搜索了");
-    expect(wrapper.text()).not.toContain("已有就直接选，没有再新建");
+    expect(wrapper.text()).toContain("还没有角色");
+    expect(wrapper.text()).toContain("先新建一个角色");
+    expect(wrapper.text()).toContain("就更容易找到对应表情");
+    expect(wrapper.find("[data-action='save-kb']").exists()).toBe(false);
+    expect(wrapper.find(".entry-rail").exists()).toBe(false);
+    expect(wrapper.find(".filter-input").exists()).toBe(false);
+    expect(wrapper.find("[data-action='create-first-entry-main']").exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("当前筛选下没有角色");
+  });
+
+  it("空角色库时可以从主空态直接新建第一个角色", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "kb_get_state") return Promise.resolve(emptyState);
+      if (cmd === "kb_validate_entries") {
+        return Promise.resolve({ errors: [], warnings: [], conflicts: [] });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const wrapper = mount(PrivateRoleLibraryView);
+    await flushPromises();
+
+    await wrapper.get("[data-action='create-first-entry-main']").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find("[data-field='name']").exists()).toBe(true);
+    expect(wrapper.text()).toContain("已新建空白角色，填写后记得保存。");
+    expect(wrapper.find("[data-action='save-kb']").exists()).toBe(true);
   });
 
   it("编辑后会自动触发校验并刷新报告", async () => {
