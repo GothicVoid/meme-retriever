@@ -59,9 +59,6 @@
                 新建
               </button>
             </div>
-            <p class="panel-copy">
-              已有就直接选，没有再新建。
-            </p>
           </div>
 
           <input
@@ -226,7 +223,12 @@
           v-else
           class="empty-state large"
         >
-          先从左侧选择一个角色，或者新建角色开始编辑。
+          <template v-if="entries.length === 0">
+            这里还没有你要找的角色。点左上角“新建”，填上角色名，放 1-2 张最像的图，保存后就可以回来按名字搜索了。
+          </template>
+          <template v-else>
+            先从左侧选择一个角色，或者新建角色开始编辑。
+          </template>
         </div>
       </section>
     </div>

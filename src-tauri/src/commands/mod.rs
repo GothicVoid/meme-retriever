@@ -378,8 +378,9 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     Ok(())
 }
 
-fn resolve_kb_path() -> Result<PathBuf, String> {
-    Ok(crate::kb::maintenance::resolve_default_kb_path())
+fn resolve_kb_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(crate::runtime_paths::runtime_kb_path(&app_data_dir))
 }
 
 fn load_runtime_knowledge_base(
@@ -1642,8 +1643,8 @@ pub async fn clear_task_queue(db: State<'_, DbPool>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn kb_get_state() -> Result<KbStatePayload, String> {
-    let path = resolve_kb_path()?;
+pub async fn kb_get_state(app: tauri::AppHandle) -> Result<KbStatePayload, String> {
+    let path = resolve_kb_path(&app)?;
     let kb = if path.exists() {
         KnowledgeBaseFile::load(&path).map_err(|e| e.to_string())?
     } else {
@@ -1664,8 +1665,9 @@ pub async fn kb_validate_entries(
 pub async fn kb_save_entries(
     knowledge_base: KbFilePayload,
     engine: State<'_, EngineState>,
+    app: tauri::AppHandle,
 ) -> Result<KbStatePayload, String> {
-    let path = resolve_kb_path()?;
+    let path = resolve_kb_path(&app)?;
     let mut store =
         crate::kb::maintenance::KnowledgeBaseStore::open(&path).map_err(|e| e.to_string())?;
     store
@@ -1679,8 +1681,12 @@ pub async fn kb_save_entries(
 }
 
 #[tauri::command]
-pub async fn kb_import_example_image(source_path: String, name: String) -> Result<String, String> {
-    let kb_path = resolve_kb_path()?;
+pub async fn kb_import_example_image(
+    source_path: String,
+    name: String,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let kb_path = resolve_kb_path(&app)?;
     import_example_image_impl(&source_path, &name, &kb_path)
 }
 

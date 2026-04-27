@@ -83,9 +83,7 @@ pub fn extract_text_from_rgb_image(image: &RgbImage) -> anyhow::Result<String> {
 }
 
 fn model_dir() -> std::path::PathBuf {
-    std::env::var("CLIP_MODEL_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("./models"))
+    crate::runtime_paths::model_dir()
 }
 
 fn find_model(candidates: &[&str]) -> Option<std::path::PathBuf> {

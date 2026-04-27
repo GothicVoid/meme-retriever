@@ -7,6 +7,7 @@ pub mod image_io;
 pub mod indexer;
 pub mod kb;
 pub mod ml;
+pub mod runtime_paths;
 pub mod search;
 
 use std::sync::Arc;
@@ -25,13 +26,14 @@ pub fn run() {
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;
+            runtime_paths::init_model_dir(app.handle());
 
             tauri::async_runtime::block_on(async {
                 // 初始化数据库
                 let pool = db::init(&app_data).await.expect("db init failed");
 
                 // 初始化知识库
-                let kb_path = kb::maintenance::resolve_default_kb_path();
+                let kb_path = runtime_paths::runtime_kb_path(&app_data);
                 let kb_file =
                     kb::maintenance::KnowledgeBaseFile::load(&kb_path).unwrap_or_default();
                 let kb = kb::local::LocalKBProvider::load(&kb_path)

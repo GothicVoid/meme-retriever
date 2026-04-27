@@ -294,37 +294,6 @@ impl KnowledgeBaseStore {
     }
 }
 
-pub fn default_kb_path() -> PathBuf {
-    PathBuf::from("app_data/knowledge_base.json")
-}
-
-pub fn resolve_default_kb_path() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let default_relative = default_kb_path();
-    let candidates = [
-        manifest_dir
-            .parent()
-            .map(|parent| parent.join(&default_relative)),
-        std::env::current_dir()
-            .ok()
-            .map(|cwd| cwd.join(&default_relative)),
-        std::env::current_dir()
-            .ok()
-            .and_then(|cwd| cwd.parent().map(|parent| parent.join(&default_relative))),
-    ];
-
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-
-    manifest_dir
-        .parent()
-        .map(|parent| parent.join(default_relative))
-        .unwrap_or_else(default_kb_path)
-}
-
 fn parse_entry(value: serde_json::Value) -> anyhow::Result<KnowledgeBaseEntry> {
     let mut entry: KnowledgeBaseEntry =
         serde_json::from_value(value.clone()).context("私有角色条目格式错误")?;

@@ -105,9 +105,7 @@ impl ClipEncoder {
 // ── 内部实现 ────────────────────────────────────────────────────────────────
 
 fn model_dir() -> std::path::PathBuf {
-    std::env::var("CLIP_MODEL_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("./models"))
+    crate::runtime_paths::model_dir()
 }
 
 /// 按候选文件名顺序查找第一个存在的模型文件

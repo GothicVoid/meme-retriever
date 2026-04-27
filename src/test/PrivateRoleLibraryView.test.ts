@@ -43,6 +43,19 @@ const mockState = {
   },
 };
 
+const emptyState = {
+  path: "app_data/knowledge_base.json",
+  knowledgeBase: {
+    version: 1,
+    entries: [],
+  },
+  validationReport: {
+    errors: [],
+    warnings: [],
+    conflicts: [],
+  },
+};
+
 describe("PrivateRoleLibraryView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -66,6 +79,21 @@ describe("PrivateRoleLibraryView", () => {
     expect(wrapper.text()).toContain("老板");
     expect(wrapper.text()).toContain("检测到潜在冲突词");
     expect(wrapper.find("[data-action='go-back']").exists()).toBe(true);
+  });
+
+  it("首次没有任何角色时展示本地空库提示", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "kb_get_state") return Promise.resolve(emptyState);
+      return Promise.resolve(undefined);
+    });
+
+    const wrapper = mount(PrivateRoleLibraryView);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("这里还没有你要找的角色");
+    expect(wrapper.text()).toContain("点左上角“新建”");
+    expect(wrapper.text()).toContain("保存后就可以回来按名字搜索了");
+    expect(wrapper.text()).not.toContain("已有就直接选，没有再新建");
   });
 
   it("编辑后会自动触发校验并刷新报告", async () => {

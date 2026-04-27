@@ -43,9 +43,7 @@ fn get_tokenizer() -> &'static BertTokenizer {
 }
 
 fn model_dir() -> std::path::PathBuf {
-    std::env::var("CLIP_MODEL_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("./models"))
+    crate::runtime_paths::model_dir()
 }
 
 struct BertTokenizer {
