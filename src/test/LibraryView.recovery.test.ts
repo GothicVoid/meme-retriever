@@ -74,9 +74,10 @@ describe("LibraryView 入库恢复提示", () => {
   });
 
   it("点击继续导入后隐藏恢复提示，并接入入库进度状态", async () => {
-    let progressHandler: ((event: { payload: { id: string; status: string } }) => void) | null = null;
+    type ProgressHandler = (event: { payload: { id: string; status: string } }) => void;
+    let progressHandler: ProgressHandler | null = null;
     mockListen.mockImplementation(async (_event, handler) => {
-      progressHandler = handler as typeof progressHandler;
+      progressHandler = handler as ProgressHandler;
       return () => {};
     });
 
@@ -101,7 +102,8 @@ describe("LibraryView 入库恢复提示", () => {
     expect(wrapper.find(".main-task-card--progress").exists()).toBe(true);
     expect(wrapper.text()).toContain("0/2");
 
-    progressHandler?.({ payload: { id: "a", status: "completed" } });
+    expect(progressHandler).not.toBeNull();
+    progressHandler!({ payload: { id: "a", status: "completed" } });
     await flushPromises();
     expect(wrapper.text()).toContain("1/2");
 

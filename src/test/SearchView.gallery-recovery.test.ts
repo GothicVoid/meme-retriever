@@ -313,9 +313,10 @@ describe("SearchView 搜索失败修复闭环", () => {
   });
 
   it("恢复进行中时首页图库入口显示处理中承接文案，不再显示待恢复角标", async () => {
-    let progressHandler: ((event: { payload: { id?: string; status: string; resultKind?: string } }) => void) | null = null;
+    type ProgressHandler = (event: { payload: { id?: string; status: string; resultKind?: string } }) => void;
+    let progressHandler: ProgressHandler | null = null;
     mockListen.mockImplementation(async (_event, handler) => {
-      progressHandler = handler as typeof progressHandler;
+      progressHandler = handler as ProgressHandler;
       return () => {};
     });
 
@@ -359,7 +360,8 @@ describe("SearchView 搜索失败修复闭环", () => {
     expect(wrapper.find('[data-testid="gallery-pending-badge"]').exists()).toBe(false);
     expect(wrapper.get('[data-action="open-gallery-management"]').text()).toContain("正在继续导入");
 
-    progressHandler?.({ payload: { id: "task-1", status: "completed", resultKind: "imported" } });
+    expect(progressHandler).not.toBeNull();
+    progressHandler!({ payload: { id: "task-1", status: "completed", resultKind: "imported" } });
     await flushPromises();
 
     expect(wrapper.get('[data-action="open-gallery-management"]').text()).toContain("1/2");

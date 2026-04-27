@@ -301,8 +301,8 @@ describe("LibraryView 管理视图", () => {
     await wrapper.get("[data-action='show-import-failures']").trigger("click");
     await flushPromises();
 
-    expect(wrapper.get("[data-action='retry-import-failures']").exists()).toBe(true);
-    expect(wrapper.get("[data-action='dismiss-import-summary']").exists()).toBe(true);
+    expect(wrapper.find("[data-action='retry-import-failures']").exists()).toBe(true);
+    expect(wrapper.find("[data-action='dismiss-import-summary']").exists()).toBe(true);
 
     wrapper.unmount();
   });

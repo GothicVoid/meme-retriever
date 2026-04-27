@@ -89,7 +89,8 @@ describe("SearchBar", () => {
     expect(wrapper.emitted("update:modelValue")).toBeFalsy();
 
     await input.trigger("compositionend");
-    expect(wrapper.emitted("update:modelValue")).toBeTruthy();
-    expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual(["阿"]);
+    const emitted = wrapper.emitted("update:modelValue");
+    expect(emitted).toBeTruthy();
+    expect(emitted?.[emitted.length - 1]).toEqual(["阿"]);
   });
 });

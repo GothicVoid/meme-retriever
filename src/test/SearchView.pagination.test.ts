@@ -44,7 +44,7 @@ class MockIntersectionObserver {
 }
 
 function triggerLoadMore() {
-  const observer = MockIntersectionObserver.instances.at(-1);
+  const observer = MockIntersectionObserver.instances[MockIntersectionObserver.instances.length - 1];
   expect(observer).toBeDefined();
   observer?.trigger(true);
 }

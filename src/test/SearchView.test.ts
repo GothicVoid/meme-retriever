@@ -3,6 +3,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { invoke } from "@tauri-apps/api/core";
+import type { InvokeArgs } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import SearchView from "@/views/SearchView.vue";
 import Toast from "@/components/Toast.vue";
@@ -114,8 +115,8 @@ describe("SearchView", () => {
     expect(wrapper.find(".search-view__summary").exists()).toBe(false);
     expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search");
     expect(wrapper.getComponent({ name: "SearchBar" }).classes()).toContain("search-view__search--dock");
-    expect(wrapper.get(".search-dock").exists()).toBe(true);
-    expect(wrapper.get(".search-view__dock-meta").exists()).toBe(true);
+    expect(wrapper.find(".search-dock").exists()).toBe(true);
+    expect(wrapper.find(".search-view__dock-meta").exists()).toBe(true);
     expect(wrapper.get('[data-action="open-gallery-management"]').attributes("aria-label")).toBe("打开图库管理");
     expect(wrapper.text()).toContain("最近常用");
   });
@@ -679,12 +680,13 @@ describe("SearchView", () => {
       ],
     };
 
-    mockInvoke.mockImplementation((cmd: string, payload?: Record<string, unknown>) => {
+    mockInvoke.mockImplementation((cmd: string, payload?: InvokeArgs) => {
       if (cmd === "get_home_state") return Promise.resolve(currentHomeState);
       if (cmd === "delete_search_history") {
+        const query = typeof payload === "object" && payload !== null && "query" in payload ? payload.query : undefined;
         currentHomeState = {
           ...currentHomeState,
-          recentSearches: currentHomeState.recentSearches.filter((item) => item.query !== payload?.query),
+          recentSearches: currentHomeState.recentSearches.filter((item) => item.query !== query),
         };
         return Promise.resolve(null);
       }
@@ -749,7 +751,7 @@ describe("SearchView", () => {
 
   it("搜索结果右键删除会调用删除逻辑并从结果中移除", async () => {
     mockConfirm.mockResolvedValue(true);
-    mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+    mockInvoke.mockImplementation((cmd: string, args?: InvokeArgs) => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
       if (cmd === "search") return Promise.resolve(mockResults());
@@ -1032,8 +1034,8 @@ describe("SearchView", () => {
       if (cmd === "get_home_state") return Promise.resolve(mockHomeState);
       if (cmd === "get_images") return Promise.resolve([]);
       if (cmd === "search") {
-        return new Promise((resolve) => {
-          resolveSearch = resolve as typeof resolveSearch;
+        return new Promise<ReturnType<typeof mockResults>>((resolve) => {
+          resolveSearch = resolve;
         });
       }
       return Promise.resolve([]);
@@ -1050,7 +1052,8 @@ describe("SearchView", () => {
 
     expect(wrapper.text()).toContain("正在搜索相关图片");
 
-    resolveSearch?.(mockResults());
+    expect(resolveSearch).not.toBeNull();
+    resolveSearch!(mockResults());
     await flushPromises();
 
     wrapper.unmount();
