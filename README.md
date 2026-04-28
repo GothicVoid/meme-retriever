@@ -1,7 +1,18 @@
-# Tauri + Vue + TypeScript
+# meme-retriever
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+本项目是一个基于 Tauri + Vue 3 + TypeScript 的本地表情包检索工具。
 
-## Recommended IDE Setup
+## 开发入口
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- 前端开发：`npm run dev`
+- 桌面联调：`npm run tauri dev`
+- 前端测试：`npm test`
+- Rust 测试：`cargo test --manifest-path src-tauri/Cargo.toml`
+
+## 大文件与发布
+
+模型文件、ONNX Runtime 动态库和用户运行时数据不会直接进入源码仓库。
+
+- Windows 初始化说明：`docs/SETUP_WINDOWS.md`
+- 发布约定：`docs/RELEASE.md`
+- 模型打包命令：`npm run package:models -- 2026.04.28`

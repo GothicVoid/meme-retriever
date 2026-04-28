@@ -27,6 +27,7 @@ pub fn run() {
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;
             runtime_paths::init_model_dir(app.handle());
+            runtime_paths::init_runtime_library_dir(app.handle());
 
             tauri::async_runtime::block_on(async {
                 // 初始化数据库

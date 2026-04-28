@@ -1,0 +1,42 @@
+{
+  "version": "2026.04.28",
+  "generatedAt": "2026-04-28T11:52:36Z",
+  "selectedModels": {
+    "text": "vit-b-16.txt.fp32.onnx",
+    "image": "vit-b-16.img.fp32.onnx"
+  },
+  "files": [
+    {
+      "name": "vit-b-16.txt.fp32.onnx",
+      "sha256": "6749910d49da693bdc7201252324ff942750d20e63d06bca940bd89654e0d4f2"
+    },
+    {
+      "name": "vit-b-16.img.fp32.onnx",
+      "sha256": "9d57086be189cd10947d409f73f241098745ab8b8a8136bdfb2bba051a005d19"
+    },
+    {
+      "name": "vocab.txt",
+      "sha256": "45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c"
+    },
+    {
+      "name": "ch_PP-OCRv4_det_infer.onnx",
+      "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9"
+    },
+    {
+      "name": "ch_PP-OCRv4_rec_infer.onnx",
+      "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b"
+    },
+    {
+      "name": "ppocr_keys_v1.txt",
+      "sha256": "a1c84d9bdb9ab29043c58896224d32941783eb821629618416dcb08f12886492"
+    },
+    {
+      "name": "vit-b-16.txt.fp32.onnx.data",
+      "sha256": "686d3d4a748c6a2b507ef24d98b12bae9b81c741e5cf8a739dacfb32aca3fd3f"
+    },
+    {
+      "name": "vit-b-16.img.fp32.onnx.data",
+      "sha256": "b213d956af9931d6f663b9b8b71f2c160d7de7ae4785bc093ae128270f701507"
+    }
+  ]
+}

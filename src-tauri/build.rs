@@ -1,10 +1,24 @@
 fn main() {
-    // 将项目内的 libonnxruntime.so 路径设置为编译时环境变量，
-    // 使 ort load-dynamic 在运行时能找到它，无需手动设置 ORT_DYLIB_PATH。
+    println!("cargo::rerun-if-changed=libs");
+
+    // 开发环境下优先指向仓库内的 ONNX Runtime 动态库；
+    // 打包后的正式应用会在运行时改写 ORT_DYLIB_PATH 到资源目录。
     let libs_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("libs");
-    let so_path = libs_dir.join("libonnxruntime.so");
-    if so_path.exists() {
-        println!("cargo::rustc-env=ORT_DYLIB_PATH={}", so_path.display());
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let dylib_name = if target_os == "windows" {
+        "onnxruntime.dll"
+    } else if target_os == "macos" {
+        "libonnxruntime.dylib"
+    } else {
+        "libonnxruntime.so"
+    };
+
+    let dylib_path = libs_dir.join(dylib_name);
+    if dylib_path.exists() {
+        println!(
+            "cargo::rustc-env=ORT_DYLIB_PATH={}",
+            dylib_path.display()
+        );
     }
 
     tauri_build::build()

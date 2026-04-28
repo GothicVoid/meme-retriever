@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "prepare": "husky",
     "tauri": "tauri",
+    "package:models": "bash scripts/package-models.sh",
     "lint": "eslint src --ext .ts,.vue",
     "test": "vitest --run",
     "test:watch": "vitest"
