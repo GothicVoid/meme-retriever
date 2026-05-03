@@ -237,6 +237,14 @@ struct WorkAreaMetrics {
     y: f64,
 }
 
+pub fn physical_to_logical(value: f64, scale_factor: f64) -> f64 {
+    if scale_factor <= 0.0 {
+        value
+    } else {
+        value / scale_factor
+    }
+}
+
 fn clamp_snapshot_to_work_area(
     snapshot: &WindowSnapshot,
     min_width: f64,
@@ -310,6 +318,10 @@ fn resolve_window_metrics(
     )
 }
 
+fn should_use_primary_monitor_for_layout(mode: &str, prefs: &WindowPreferences) -> bool {
+    mode == "sidebar" && prefs.sidebar_snapshot.is_none()
+}
+
 pub fn update_window_snapshot_in_dir(
     app_data_dir: &Path,
     mode: &str,
@@ -335,12 +347,20 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     mode: &str,
     prefs: &WindowPreferences,
 ) -> Result<(), String> {
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .or_else(|| window.primary_monitor().ok().flatten())
-        .ok_or_else(|| "未找到可用显示器".to_string())?;
+    let monitor = if should_use_primary_monitor_for_layout(mode, prefs) {
+        window
+            .primary_monitor()
+            .map_err(|e| e.to_string())?
+            .or_else(|| window.current_monitor().ok().flatten())
+    } else {
+        window
+            .current_monitor()
+            .map_err(|e| e.to_string())?
+            .or_else(|| window.primary_monitor().ok().flatten())
+    }
+    .ok_or_else(|| "未找到可用显示器".to_string())?;
 
+    let scale_factor = monitor.scale_factor();
     if mode == "sidebar" {
         window.unmaximize().ok();
     } else {
@@ -354,10 +374,10 @@ pub fn apply_window_layout_to_window<R: tauri::Runtime>(
     let ((width, height), (min_width, min_height), (x, y)) = resolve_window_metrics(
         mode,
         prefs,
-        work_area.size.width as f64,
-        work_area.size.height as f64,
-        work_area.position.x as f64,
-        work_area.position.y as f64,
+        physical_to_logical(work_area.size.width as f64, scale_factor),
+        physical_to_logical(work_area.size.height as f64, scale_factor),
+        physical_to_logical(work_area.position.x as f64, scale_factor),
+        physical_to_logical(work_area.position.y as f64, scale_factor),
     );
 
     window
@@ -1815,6 +1835,29 @@ mod tests {
             json.get("matchedRoleName").is_some(),
             "should have matchedRoleName"
         );
+    }
+
+    #[test]
+    fn test_sidebar_without_snapshot_uses_primary_monitor_safe_default() {
+        let prefs = WindowPreferences::default();
+        let ((width, height), (min_width, min_height), (x, y)) =
+            resolve_window_metrics("sidebar", &prefs, 1920.0, 1080.0, 0.0, 0.0);
+
+        assert_eq!(min_width, 360.0);
+        assert_eq!(min_height, 560.0);
+        assert!((380.0..=460.0).contains(&width));
+        assert!((640.0..=860.0).contains(&height));
+        assert!(x >= 0.0);
+        assert!(x + width <= 1920.0);
+        assert!(y >= 0.0);
+        assert!(y + height <= 1080.0);
+    }
+
+    #[test]
+    fn test_physical_to_logical_converts_scaled_metrics() {
+        assert_eq!(physical_to_logical(2400.0, 1.5), 1600.0);
+        assert_eq!(physical_to_logical(150.0, 1.25), 120.0);
+        assert_eq!(physical_to_logical(800.0, 0.0), 800.0);
     }
 
     #[test]

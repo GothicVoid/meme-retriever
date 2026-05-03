@@ -60,27 +60,14 @@ pub fn run() {
                 let app_data_for_events = app_data.clone();
                 let event_window = window.clone();
                 window.on_window_event(move |event| {
-                    let snapshot = match event {
-                        WindowEvent::Moved(position) => Some(commands::WindowSnapshot {
-                            x: position.x as f64,
-                            y: position.y as f64,
-                            width: 0.0,
-                            height: 0.0,
-                        }),
-                        WindowEvent::Resized(size) => Some(commands::WindowSnapshot {
-                            x: 0.0,
-                            y: 0.0,
-                            width: size.width as f64,
-                            height: size.height as f64,
-                        }),
-                        _ => None,
-                    };
-
-                    if snapshot.is_none() {
+                    if !matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
                         return;
                     }
 
                     let prefs = commands::load_window_preferences_from_dir(&app_data_for_events);
+                    let Ok(scale_factor) = event_window.scale_factor() else {
+                        return;
+                    };
                     let Ok(position) = event_window.outer_position() else {
                         return;
                     };
@@ -88,10 +75,10 @@ pub fn run() {
                         return;
                     };
                     let snapshot = commands::WindowSnapshot {
-                        x: position.x as f64,
-                        y: position.y as f64,
-                        width: size.width as f64,
-                        height: size.height as f64,
+                        x: commands::physical_to_logical(position.x as f64, scale_factor),
+                        y: commands::physical_to_logical(position.y as f64, scale_factor),
+                        width: commands::physical_to_logical(size.width as f64, scale_factor),
+                        height: commands::physical_to_logical(size.height as f64, scale_factor),
                     };
                     let _ = commands::update_window_snapshot_in_dir(
                         &app_data_for_events,

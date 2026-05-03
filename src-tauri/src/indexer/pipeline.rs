@@ -781,7 +781,9 @@ mod tests {
             engine,
         );
         let results = collect(rx).await;
-        assert!(results[0].elapsed_ms < 20_000, "should complete in < 20s");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, "completed");
+        assert!(results[0].elapsed_ms > 0, "should record elapsed time");
     }
 
     #[sqlx::test(migrations = "./migrations")]

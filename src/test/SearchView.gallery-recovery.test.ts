@@ -53,6 +53,17 @@ function createTestRouter() {
   });
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 1000) {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("waitFor timeout");
+    }
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe("SearchView 搜索失败修复闭环", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -355,7 +366,9 @@ describe("SearchView 搜索失败修复闭环", () => {
     const recoveryStoreModule = await import("@/stores/taskRecovery");
     const recoveryStore = recoveryStoreModule.useTaskRecoveryStore();
     await recoveryStore.resumePendingTasks();
-    await flushPromises();
+    await waitFor(() =>
+      wrapper.get('[data-action="open-gallery-management"]').text().includes("正在继续导入")
+    );
 
     expect(wrapper.find('[data-testid="gallery-pending-badge"]').exists()).toBe(false);
     expect(wrapper.get('[data-action="open-gallery-management"]').text()).toContain("正在继续导入");
