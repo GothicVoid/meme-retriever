@@ -37,7 +37,8 @@ fn fixture(name: &str) -> String {
 
 async fn collect(mut rx: mpsc::Receiver<pipeline::IndexProgress>) -> Vec<pipeline::IndexProgress> {
     let mut results = vec![];
-    while let Ok(Some(p)) = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+    // 集成测试会触发真实的索引流水线，慢机器上单条结果返回可能超过 10 秒。
+    while let Ok(Some(p)) = tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
         results.push(p);
     }
     results
