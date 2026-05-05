@@ -13,6 +13,9 @@
 
 模型文件、ONNX Runtime 动态库和用户运行时数据不会直接进入源码仓库。
 
+- 开发环境初始化总览：`docs/SETUP.md`
 - Windows 初始化说明：`docs/SETUP_WINDOWS.md`
+- 模型资产约定：`models-manifest.json`
+- ONNX Runtime 资产约定：`runtime-manifest.json`
 - 发布约定：`docs/RELEASE.md`
 - 模型打包命令：`npm run package:models -- 2026.04.28`

@@ -1,6 +1,11 @@
 {
   "version": "2026.04.28",
   "generatedAt": "2026-04-28T11:52:36Z",
+  "distribution": {
+    "artifactName": "meme-retriever-models-2026.04.28.zip",
+    "artifactUrl": "https://github.com/GothicVoid/meme-retriever/releases/download/models-2026.04.28/meme-retriever-models-2026.04.28.zip",
+    "artifactSha256": "3cb2f67e041abbc49d37d9c3b4f0c84c5d6d165fb0057b362ba6dc00ec58bf6c"
+  },
   "selectedModels": {
     "text": "vit-b-16.txt.fp32.onnx",
     "image": "vit-b-16.img.fp32.onnx"

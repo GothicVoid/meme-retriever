@@ -134,5 +134,6 @@ SQLite 单文件，4 张表：
 - `models/vocab.txt`：BERT tokenizer 词表（CLS=101, SEP=102, PAD=0）
 
 **ONNX Runtime 配置：**
-- 需设置环境变量 `ORT_DYLIB_PATH` 指向 `libonnxruntime.so`
-- 测试时示例路径：`/home/void/projects/Chinese-CLIP/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime.so.1.24.4`
+- 当前仓库默认通过 `src-tauri/libs/` 提供 ONNX Runtime 动态库，不依赖 Python 虚拟环境中的 `onnxruntime`
+- 开发机初始化优先使用 `scripts/setup-windows.ps1` 或 `scripts/setup-linux.sh`
+- 运行时会自动将 `ORT_DYLIB_PATH` 指向仓库内或 bundle 资源目录中的动态库

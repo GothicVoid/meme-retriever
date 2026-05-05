@@ -88,6 +88,11 @@ manifest_json=$(
     printf '{\n'
     printf '  "version": "%s",\n' "${VERSION}"
     printf '  "generatedAt": "%s",\n' "${generated_at}"
+    printf '  "distribution": {\n'
+    printf '    "artifactName": "%s",\n' "${ZIP_NAME}"
+    printf '    "artifactUrl": "",\n'
+    printf '    "artifactSha256": ""\n'
+    printf '  },\n'
     printf '  "selectedModels": {\n'
     printf '    "text": "%s",\n' "${TEXT_MODEL}"
     printf '    "image": "%s"\n' "${IMAGE_MODEL}"

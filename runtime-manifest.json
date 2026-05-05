@@ -1,0 +1,18 @@
+{
+  "version": "2026.05.05",
+  "generatedAt": "2026-05-05T00:00:00Z",
+  "platforms": {
+    "windows-x64": {
+      "onnxRuntimeVersion": "1.25.20260427.4.8a77e45",
+      "artifactUrl": "https://github.com/GothicVoid/meme-retriever/releases/download/runtime-onnx-2026.05.05/onnxruntime-win-x64-1.25.20260427.4.8a77e45.zip",
+      "libraryName": "onnxruntime.dll",
+      "sha256": "ba56defa7370e97c5e2ebb93193000859938c4c45012978e689cf18eb13c3024"
+    },
+    "linux-x64": {
+      "onnxRuntimeVersion": "1.24.4",
+      "artifactUrl": "https://github.com/GothicVoid/meme-retriever/releases/download/runtime-onnx-2026.05.05/onnxruntime-linux-x64-1.24.4.tgz",
+      "libraryName": "libonnxruntime.so",
+      "sha256": "ec6cac45d04187dbca60201a48b9353d5ce321ee91cad7fabbbf760ef3667c15"
+    }
+  }
+}
