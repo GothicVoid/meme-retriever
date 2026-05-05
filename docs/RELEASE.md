@@ -16,9 +16,8 @@
 
 - tag 示例：`v0.1.0`
 - 资产示例：
-  - `meme-retriever_0.1.0_windows_x64_setup.msi`
-  - `meme-retriever_0.1.0_windows_x64_portable.zip`
-  - `SHA256SUMS.txt`
+  - `meme-retriever_0.1.0_x64-setup.exe`
+  - `meme-retriever_0.1.0_x64_zh-CN.msi`
 
 ### 2. 模型 Release
 
