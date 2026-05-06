@@ -6,7 +6,7 @@ param(
   [string]$OrtUrl,
 
   [Parameter(Mandatory = $false)]
-  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+  [string]$RepoRoot,
 
   [Parameter(Mandatory = $false)]
   [switch]$SkipNpmInstall,
@@ -16,6 +16,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+  $scriptDir = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $PSScriptRoot
+  } elseif (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) {
+    Split-Path -Parent $PSCommandPath
+  } else {
+    (Get-Location).Path
+  }
+
+  $RepoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+}
 
 $modelsDir = Join-Path $RepoRoot "src-tauri\models"
 $libsDir = Join-Path $RepoRoot "src-tauri\libs"
@@ -148,6 +160,87 @@ function Get-ArchiveRoot {
   return $ExtractedDir
 }
 
+function Get-GitHubAuthHeaders {
+  $token = $env:GITHUB_TOKEN
+  if ([string]::IsNullOrWhiteSpace($token)) {
+    $token = $env:GH_TOKEN
+  }
+
+  if ([string]::IsNullOrWhiteSpace($token)) {
+    return $null
+  }
+
+  return @{
+    Authorization = "Bearer $token"
+    Accept = "application/octet-stream"
+    "User-Agent" = "meme-retriever-setup"
+  }
+}
+
+function Get-GitHubReleaseAssetMetadata {
+  param(
+    [string]$Owner,
+    [string]$Repo,
+    [string]$Tag,
+    [string]$AssetName
+  )
+
+  $headers = Get-GitHubAuthHeaders
+  if (-not $headers) {
+    return $null
+  }
+
+  $headers.Accept = "application/vnd.github+json"
+  $releaseApi = "https://api.github.com/repos/$Owner/$Repo/releases/tags/$Tag"
+  $release = Invoke-RestMethod -Uri $releaseApi -Headers $headers
+  return $release.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
+}
+
+function Download-Artifact {
+  param(
+    [string]$Url,
+    [string]$OutputPath,
+    [string]$Label
+  )
+
+  Write-Host "Downloading $Label from $Url"
+
+  try {
+    Invoke-WebRequest -Uri $Url -OutFile $OutputPath
+    return
+  } catch {
+    $uri = [System.Uri]$Url
+    $segments = @($uri.AbsolutePath.Trim("/").Split("/"))
+    $looksLikeGitHubReleaseAsset =
+      $uri.Host -eq "github.com" -and
+      $segments.Length -ge 6 -and
+      $segments[2] -eq "releases" -and
+      $segments[3] -eq "download"
+
+    if (-not $looksLikeGitHubReleaseAsset) {
+      throw
+    }
+
+    $owner = $segments[0]
+    $repo = $segments[1]
+    $tag = $segments[4]
+    $assetName = $segments[5..($segments.Length - 1)] -join "/"
+
+    $authHeaders = Get-GitHubAuthHeaders
+    if ($authHeaders) {
+      $asset = Get-GitHubReleaseAssetMetadata -Owner $owner -Repo $repo -Tag $tag -AssetName $assetName
+      if ($asset) {
+        $assetApi = "https://api.github.com/repos/$owner/$repo/releases/assets/$($asset.id)"
+        Write-Host "Retrying $Label download with GitHub token."
+        Invoke-WebRequest -Uri $assetApi -Headers $authHeaders -OutFile $OutputPath
+        return
+      }
+    }
+
+    throw "Failed to download $Label from private GitHub release. Set GH_TOKEN or GITHUB_TOKEN before re-running setup."
+  }
+}
+
 New-Item -ItemType Directory -Path $tempDir | Out-Null
 
 try {
@@ -176,8 +269,7 @@ try {
   }
 
   $modelsZip = Join-Path $tempDir "models.zip"
-  Write-Host "Downloading models from $($modelsConfig.Url)"
-  Invoke-WebRequest -Uri $modelsConfig.Url -OutFile $modelsZip
+  Download-Artifact -Url $modelsConfig.Url -OutputPath $modelsZip -Label "models"
 
   if ($modelsConfig.Sha256) {
     $modelsSha = Get-Sha256 -Path $modelsZip
@@ -199,8 +291,7 @@ try {
       $ortExtension = ".zip"
     }
     $ortDownload = Join-Path $tempDir ("onnxruntime" + $ortExtension)
-    Write-Host "Downloading ONNX Runtime from $($runtimeConfig.Url)"
-    Invoke-WebRequest -Uri $runtimeConfig.Url -OutFile $ortDownload
+    Download-Artifact -Url $runtimeConfig.Url -OutputPath $ortDownload -Label "ONNX Runtime"
 
     if ($runtimeConfig.Sha256) {
       $downloadSha = Get-Sha256 -Path $ortDownload
