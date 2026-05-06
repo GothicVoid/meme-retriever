@@ -87,6 +87,15 @@
 - `Vitest + jsdom`
 - `cargo test`
 
+### 模型来源
+
+项目当前使用的部分多模态模型与 OCR 能力来自以下开源项目：
+
+- CLIP 模型来源：[`OFA-Sys/Chinese-CLIP`](https://github.com/OFA-Sys/Chinese-CLIP)
+- OCR 模型与相关方案来源：[`RapidAI/RapidOCR`](https://github.com/RapidAI/RapidOCR)
+
+如需准备本地开发所需模型文件，请结合 [docs/SETUP.md](./docs/SETUP.md)、[docs/SETUP_WINDOWS.md](./docs/SETUP_WINDOWS.md) 与仓库中的模型清单文件一起使用。
+
 ### 目录结构
 
 ```text
