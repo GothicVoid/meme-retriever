@@ -675,10 +675,7 @@ mod tests {
     }
 
     async fn make_engine(pool: SqlitePool) -> SearchEngine {
-        let kb = LocalKBProvider::load(std::path::Path::new("../app_data/knowledge_base.json"))
-            .unwrap_or_else(|_| {
-                LocalKBProvider::load(std::path::Path::new("/nonexistent")).unwrap()
-            });
+        let kb = LocalKBProvider::load(std::path::Path::new("/nonexistent")).unwrap();
         SearchEngine::new(pool, Box::new(kb)).await.unwrap()
     }
 

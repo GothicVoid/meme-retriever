@@ -103,7 +103,7 @@ SQLite 单文件，4 张表：
 
 - **ML 模型**：Chinese-CLIP ViT-B/16（ONNX INT8 量化）+ PaddleOCR-ONNX，通过 `ort` crate 加载，使用 `OnceCell` 懒加载
 - **向量检索**：内存中暴力余弦相似度（`src-tauri/src/search/vector_store.rs`），无外部向量数据库
-- **知识库**：JSON 文件（`app_data/knowledge_base.json`），存储表情包 canonical 名称、别名、标签，用于查询扩展
+- **知识库**：JSON 文件（应用数据目录下的 `knowledge_base.json`），存储表情包 canonical 名称、别名、标签，用于查询扩展
 - **前端路径别名**：`@` → `src/`
 - **Tauri 开发端口**：1420（dev server），1421（HMR）
 

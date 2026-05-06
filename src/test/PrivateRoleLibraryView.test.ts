@@ -18,9 +18,10 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 const mockInvoke = vi.mocked(invoke);
 const mockOpen = vi.mocked(open);
 const mockConvertFileSrc = vi.mocked(convertFileSrc);
+const mockKbPath = "C:/mock-app-data/knowledge_base.json";
 
 const mockState = {
-  path: "app_data/knowledge_base.json",
+  path: mockKbPath,
   knowledgeBase: {
     version: 1,
     entries: [
@@ -44,7 +45,7 @@ const mockState = {
 };
 
 const emptyState = {
-  path: "app_data/knowledge_base.json",
+  path: mockKbPath,
   knowledgeBase: {
     version: 1,
     entries: [],
@@ -180,7 +181,7 @@ describe("PrivateRoleLibraryView", () => {
           },
         });
         return Promise.resolve({
-          path: "app_data/knowledge_base.json",
+          path: mockKbPath,
           knowledgeBase: {
             ...mockState.knowledgeBase,
             entries: [
@@ -294,7 +295,7 @@ describe("PrivateRoleLibraryView", () => {
       name: "老板",
     });
     expect(wrapper.findAll("[data-role='example-image-card']")).toHaveLength(2);
-    expect(wrapper.html()).toContain("asset://app_data/kb_examples/entry/sample.jpg");
+    expect(wrapper.html()).toContain("asset://C:/mock-app-data/kb_examples/entry/sample.jpg");
   });
 
   it("维护工具不再暴露旧分类和匹配控制字段，新建角色按主体识别字段保存", async () => {

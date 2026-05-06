@@ -54,14 +54,6 @@ pub fn default_kb_path(app_data_dir: &Path) -> PathBuf {
 }
 
 pub fn runtime_kb_path(app_data_dir: &Path) -> PathBuf {
-    if cfg!(debug_assertions) {
-        let repo_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(|dir| dir.join("app_data").join("knowledge_base.json"));
-        if let Some(path) = repo_path.filter(|path| path.exists()) {
-            return path;
-        }
-    }
     default_kb_path(app_data_dir)
 }
 
