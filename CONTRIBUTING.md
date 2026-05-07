@@ -65,7 +65,7 @@
 
 其他重要目录：
 
-- `docs/`：环境、发布、使用说明
+- `docs/`：发布与辅助说明
 - `specs/`：需求与架构文档
 
 ## 环境与资源
@@ -80,8 +80,7 @@
 
 相关文档：
 
-- [docs/SETUP.md](./docs/SETUP.md)
-- [docs/SETUP_WINDOWS.md](./docs/SETUP_WINDOWS.md)
+- [README.md](./README.md)
 - [models-manifest.json](./models-manifest.json)
 - [runtime-manifest.json](./runtime-manifest.json)
 
